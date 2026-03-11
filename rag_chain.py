@@ -6,6 +6,8 @@ import re
 from typing import Any, List, Sequence, Optional
 from langchain_core.callbacks import Callbacks
 
+import latency
+
 import config
 from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -567,6 +569,26 @@ else:
     )
     print(f"LLM: Ollama локально (model={config.LLM_MODEL})")
 
+# --- LATENCY TRACKING PATCHES ---
+original_embed_query = embeddings.embed_query
+@latency.measure_latency("embedding")
+def wrapped_embed_query(*args, **kwargs):
+    return original_embed_query(*args, **kwargs)
+embeddings.embed_query = wrapped_embed_query
+
+original_trim_get_docs = _TrimRetriever._get_relevant_documents
+@latency.measure_latency("vector_search")
+def wrapped_trim_get_docs(self, *args, **kwargs):
+    return original_trim_get_docs(self, *args, **kwargs)
+_TrimRetriever._get_relevant_documents = wrapped_trim_get_docs
+
+original_llm_invoke = llm.__class__.invoke
+@latency.measure_latency("llm_inference")
+def wrapped_llm_invoke(self, *args, **kwargs):
+    return original_llm_invoke(self, *args, **kwargs)
+llm.__class__.invoke = wrapped_llm_invoke
+# --------------------------------
+
 UNIVERSAL_PROMPT_TEMPLATE = """Ты — точный юридический ассистент по законодательству Республики Казахстан.
 Ты имеешь доступ только к следующим нормативным актам (НҚА):
 • Конституция Республики Казахстан
@@ -682,6 +704,7 @@ CRIMINAL_PROMPT = PromptTemplate.from_template(CRIMINAL_PROMPT_TEMPLATE)
 RANGE_PROMPT = PromptTemplate.from_template(RANGE_PROMPT_TEMPLATE)
 
 
+@latency.measure_latency("prompt_template_build")
 def _select_prompt(question: str) -> PromptTemplate:
     if _extract_article_range(question):
         return RANGE_PROMPT

@@ -1,7 +1,10 @@
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from datetime import datetime, timezone
+import time
+from latency import metrics_ctx
 import rag_chain
 
 app = FastAPI(title="Legally RAG API", version="1.0")
@@ -23,6 +26,7 @@ class AnalysisResponse(BaseModel):
 class ChatResponse(BaseModel):
     result: str
     source_documents: List[dict]
+    trace_report: Optional[Dict[str, Any]] = None
 
 import numpy as np
 
@@ -40,10 +44,13 @@ def convert_numpy_types(obj):
     return obj
 
 @app.post("/api/v1/internal-chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: Request, body: ChatRequest):
+    metrics_ctx.set({})
+    x_trace_id = request.headers.get("X-Trace-ID", f"trace_{int(time.time())}")
+    start_time = time.perf_counter()
     try:
         # Invoke the RAG chain
-        response = rag_chain.invoke_qa(request.query, history=request.history)
+        response = rag_chain.invoke_qa(body.query, history=body.history)
         
         # Format the response
         result = response.get("result", "")
@@ -61,9 +68,24 @@ async def chat(request: ChatRequest):
                 # Handle case where it might be a dict already or something else
                 source_docs.append(convert_numpy_types(doc))
 
+        python_rag_total = int((time.perf_counter() - start_time) * 1000)
+        metrics = metrics_ctx.get() or {}
+        
+        trace_report = {
+            "metadata": {
+                "id": x_trace_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "metrics_ms": {
+                "python_rag_total": python_rag_total,
+                "breakdown": metrics
+            }
+        }
+
         return ChatResponse(
             result=result,
-            source_documents=source_docs
+            source_documents=source_docs,
+            trace_report=trace_report
         )
     except Exception as e:
         print(f"Error processing request: {str(e)}")

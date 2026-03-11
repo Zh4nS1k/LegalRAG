@@ -11,6 +11,7 @@ import (
 )
 
 func SetupRoutes(router *gin.Engine) {
+	router.Use(middleware.TimingMiddleware())
 	router.Use(middleware.CORSMiddleware())
 	router.Use(middleware.LoggerMiddleware())
 

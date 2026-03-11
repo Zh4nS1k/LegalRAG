@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"legally/api/middleware"
 	"legally/models"
 	"legally/services"
 	"legally/utils"
@@ -39,14 +40,16 @@ type PythonSourceDocument struct {
 type PythonChatResponse struct {
 	Result          string                 `json:"result"`
 	SourceDocuments []PythonSourceDocument `json:"source_documents"`
+	TraceReport     map[string]interface{} `json:"trace_report"`
 }
 
 // Structs for the Frontend response (matching what ChatSection.js expects)
 // Frontend expects: { answer: string, mode: string, sources: []SourceDetail }
 type ChatResponse struct {
-	Answer  string                `json:"answer"`
-	Mode    string                `json:"mode"`
-	Sources []models.SourceDetail `json:"sources"`
+	Answer      string                `json:"answer"`
+	Mode        string                `json:"mode"`
+	Sources     []models.SourceDetail `json:"sources"`
+	TraceReport interface{}           `json:"trace_report,omitempty"`
 }
 
 func HandleChat(c *gin.Context) {
@@ -57,11 +60,13 @@ func HandleChat(c *gin.Context) {
 		return
 	}
 
+	startVal := time.Now()
 	var req ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Message is required"})
 		return
 	}
+	middleware.RecordMetric(c, "request_validation", time.Since(startVal))
 
 	utils.LogInfo(fmt.Sprintf("Received chat request: %s", req.Message))
 
@@ -94,7 +99,20 @@ func HandleChat(c *gin.Context) {
 		Timeout: 180 * time.Second, // Long timeout for LLM generation
 	}
 
-	resp, err := client.Post(pythonAPIURL, "application/json", bytes.NewBuffer(jsonData))
+	startInternal := time.Now()
+	httpReq, err := http.NewRequest("POST", pythonAPIURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		utils.LogError(fmt.Sprintf("Failed to create request: %v", err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if traceID, exists := c.Get("X-Trace-ID"); exists {
+		httpReq.Header.Set("X-Trace-ID", traceID.(string))
+	}
+
+	resp, err := client.Do(httpReq)
+	middleware.RecordMetric(c, "internal_service_call", time.Since(startInternal))
 	if err != nil {
 		utils.LogError(fmt.Sprintf("Failed to call Python API: %v", err))
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ИИ-сервис недоступен. Попробуйте позже."})
@@ -144,13 +162,35 @@ func HandleChat(c *gin.Context) {
 		})
 	}
 
+	startDB := time.Now()
 	// Save AI response
 	_ = services.SaveChatMessage(userID, "assistant", pythonResp.Result, sources)
+	middleware.RecordMetric(c, "db_cache_overhead", time.Since(startDB))
+
+	var finalTraceReport interface{}
+	if timerObj, exists := c.Get("latency_timer"); exists {
+		if timer, ok := timerObj.(*middleware.Timer); ok {
+			goProcessing := time.Since(timer.StartTime).Milliseconds()
+
+			if pythonResp.TraceReport != nil {
+				if metricsMs, ok := pythonResp.TraceReport["metrics_ms"].(map[string]interface{}); ok {
+					metricsMs["go_processing"] = goProcessing
+					if breakdown, ok := metricsMs["breakdown"].(map[string]interface{}); ok {
+						for k, v := range timer.Metrics {
+							breakdown[k] = v
+						}
+					}
+				}
+				finalTraceReport = pythonResp.TraceReport
+			}
+		}
+	}
 
 	response := ChatResponse{
-		Answer:  pythonResp.Result,
-		Mode:    "legal_rag", // Hardcoded for now as per ChatSection.js logic
-		Sources: sources,
+		Answer:      pythonResp.Result,
+		Mode:        "legal_rag", // Hardcoded for now as per ChatSection.js logic
+		Sources:     sources,
+		TraceReport: finalTraceReport,
 	}
 
 	c.JSON(http.StatusOK, response)
