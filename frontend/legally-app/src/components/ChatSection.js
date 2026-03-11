@@ -23,159 +23,192 @@ const OuterContainer = styled(Box)(({ theme }) => ({
   minHeight: '100vh',
   width: '100%',
   padding: '20px',
-  backgroundColor: '#FFFFFF',
+  backgroundColor: '#f5f5f7',
+  backgroundImage: 'radial-gradient(circle at top left, rgba(230,0,0,0.02), transparent 40%), radial-gradient(circle at bottom right, rgba(0,0,0,0.02), transparent 60%)',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
 }));
 
 const ChatContainer = styled(Box)(({ theme }) => ({
   width: '95%',
   maxWidth: '1000px',
   height: '90vh',
-  backgroundColor: 'white',
-  borderRadius: '20px',
-  boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
+  backgroundColor: '#ffffff',
+  borderRadius: '24px',
+  boxShadow: '0 8px 32px rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04)',
+  border: '1px solid rgba(0,0,0,0.05)',
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
 }));
 
 const Header = styled(Box)(({ theme }) => ({
-  background: '#000000',
-  color: 'white',
+  background: 'rgba(255,255,255,0.85)',
+  backdropFilter: 'blur(12px)',
+  color: '#000000',
   padding: '20px',
   textAlign: 'center',
   position: 'relative',
-  borderBottom: '4px solid #E60000'
+  borderBottom: '1px solid rgba(0,0,0,0.06)',
+  zIndex: 10,
+  '& h1': {
+    fontWeight: '600',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    letterSpacing: '-0.5px'
+  }
 }));
 
 const StatsBadge = styled(Box)(({ theme }) => ({
   position: 'absolute',
-  top: '20px',
+  top: '50%',
   right: '20px',
-  background: 'rgba(255,255,255,0.1)',
-  padding: '8px 12px',
-  borderRadius: '15px',
+  transform: 'translateY(-50%)',
+  background: 'rgba(0,0,0,0.04)',
+  color: '#000000',
+  padding: '6px 14px',
+  borderRadius: '20px',
   fontSize: '12px',
+  fontWeight: '600',
   display: 'flex',
   alignItems: 'center',
-  gap: '5px',
+  gap: '6px',
 }));
 
 const ChatMessages = styled(Box)(({ theme }) => ({
   flex: 1,
-  padding: '20px',
+  padding: '24px 20px',
   overflowY: 'auto',
-  backgroundColor: '#FFFFFF',
+  backgroundColor: '#f5f5f7',
   display: 'flex',
   flexDirection: 'column',
+  gap: '12px',
 }));
 
 const Message = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isUser',
 })(({ theme, isUser }) => ({
-  marginBottom: '20px',
   display: 'flex',
-  alignItems: 'flex-start',
+  alignItems: 'flex-end',
   justifyContent: isUser ? 'flex-end' : 'flex-start',
   width: '100%',
+  marginBottom: '8px',
 }));
 
 const MessageAvatar = styled(Avatar, {
   shouldForwardProp: (prop) => prop !== 'isUser',
 })(({ theme, isUser }) => ({
-  width: '40px',
-  height: '40px',
+  width: '34px',
+  height: '34px',
   margin: '0 10px',
   backgroundColor: isUser ? '#E60000' : '#000000',
   color: 'white',
-  boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+  fontSize: '16px',
 }));
 
 const MessageContent = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isUser',
 })(({ theme, isUser }) => ({
-  maxWidth: '70%',
-  padding: '15px 20px',
-  borderRadius: '20px',
+  maxWidth: '75%',
+  padding: '14px 20px',
+  borderRadius: '24px',
   position: 'relative',
   wordWrap: 'break-word',
-  backgroundColor: isUser ? '#E60000' : '#FFFFFF',
+  backgroundColor: isUser ? '#E60000' : 'rgba(200, 200, 200, 0.15)',
   color: isUser ? '#FFFFFF' : '#000000',
-  border: isUser ? 'none' : '1px solid #E5E7EB',
-  borderBottomRightRadius: isUser ? '4px' : '20px',
-  borderBottomLeftRadius: isUser ? '20px' : '4px',
-  boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-  animation: 'slideUp 0.3s ease-out',
+  border: isUser ? 'none' : '1px solid rgba(0,0,0,0.06)',
+  boxShadow: '0 2px 12px rgba(0,0,0,0.03), 0 1px 4px rgba(0,0,0,0.02)',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  lineHeight: isUser ? '1.4' : '1.6',
+  fontWeight: '400',
+  fontSize: '15px',
+  animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
   '@keyframes slideUp': {
-    '0%': { transform: 'translateY(10px)', opacity: 0 },
-    '100%': { transform: 'translateY(0)', opacity: 1 }
+    '0%': { transform: 'translateY(10px) scale(0.98)', opacity: 0 },
+    '100%': { transform: 'translateY(0) scale(1)', opacity: 1 }
   }
 }));
 
 const ModeIndicator = styled(Box)(({ theme, mode }) => ({
   position: 'absolute',
-  top: '-10px',
-  right: '10px',
-  background:
-    mode === 'legal_rag'
-      ? '#E60000'
-      : mode === 'general'
-        ? '#333333'
-        : '#000000',
-  color: 'white',
-  padding: '4px 8px',
-  borderRadius: '10px',
+  top: '-12px',
+  left: '20px',
+  background: '#ffffff',
+  color: mode === 'legal_rag' ? '#E60000' : '#000000',
+  border: '1px solid rgba(0,0,0,0.06)',
+  boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+  padding: '2px 8px',
+  borderRadius: '12px',
   fontSize: '10px',
-  fontWeight: 'bold',
+  fontWeight: '600',
+  letterSpacing: '0.5px'
 }));
 
 const SourcesBox = styled(Box)(({ theme }) => ({
-  marginTop: '10px',
-  padding: '10px',
-  background: '#F3F4F6',
-  borderRadius: '10px',
-  fontSize: '12px',
+  marginTop: '14px',
+  padding: '14px',
+  background: 'rgba(245,245,247,0.8)',
+  borderRadius: '16px',
+  border: '1px solid rgba(0,0,0,0.04)',
+  fontSize: '13px',
 }));
 
 const SourceItem = styled(Box)(({ theme }) => ({
   background: 'white',
-  padding: '8px',
-  margin: '5px 0',
-  borderRadius: '5px',
-  borderLeft: '3px solid #E60000',
+  padding: '12px',
+  margin: '8px 0',
+  borderRadius: '12px',
+  borderLeft: '4px solid #E60000',
+  boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
 }));
 
 const ChatInput = styled(Box)(({ theme }) => ({
-  padding: '20px',
-  backgroundColor: 'white',
-  borderTop: '1px solid #e9ecef',
+  padding: '20px 24px',
+  backgroundColor: '#ffffff',
+  borderTop: '1px solid rgba(0,0,0,0.06)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '12px',
 }));
 
 const InputContainer = styled(Box)(({ theme }) => ({
   display: 'flex',
-  gap: '10px',
-  alignItems: 'flex-end',
+  gap: '12px',
+  alignItems: 'center',
+  backgroundColor: 'rgba(0,0,0,0.03)',
+  borderRadius: '50px',
+  padding: '8px 8px 8px 20px',
+  border: '1px solid rgba(0,0,0,0.06)',
+  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.02)',
 }));
 
 const InputField = styled(TextField)(({ theme }) => ({
   flex: 1,
   '& .MuiOutlinedInput-root': {
-    borderRadius: '25px',
-    padding: '5px 15px',
+    borderRadius: '50px',
+    padding: '8px 0',
+    '& fieldset': { border: 'none' },
   },
   '& textarea': {
     resize: 'none',
-    fontFamily: 'inherit',
-    fontSize: '16px',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontSize: '15px',
+    lineHeight: '1.4',
+    padding: '0',
+    color: '#000000',
   },
 }));
 
 const SendButton = styled(Button)(({ theme }) => ({
   background: '#E60000',
   color: 'white',
-  borderRadius: '25px',
-  padding: '15px 25px',
+  borderRadius: '50px',
+  padding: '10px 20px',
+  fontWeight: '600',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  textTransform: 'none',
+  boxShadow: '0 2px 8px rgba(230,0,0,0.2)',
   '&:hover': {
-    transform: 'translateY(-2px)',
+    transform: 'translateY(-1px)',
     background: '#CC0000',
     boxShadow: '0 4px 12px rgba(230,0,0,0.3)'
   },
@@ -186,32 +219,37 @@ const SendButton = styled(Button)(({ theme }) => ({
 
 const Controls = styled(Box)(({ theme }) => ({
   display: 'flex',
-  gap: '10px',
-  marginTop: '10px',
+  justifyContent: 'center',
+  gap: '12px',
 }));
 
 const ControlButton = styled(Button)(({ theme }) => ({
-  background: '#6c757d',
-  color: 'white',
-  borderRadius: '15px',
-  padding: '8px 15px',
-  fontSize: '12px',
+  background: 'rgba(0,0,0,0.04)',
+  color: '#000000',
+  borderRadius: '20px',
+  padding: '6px 16px',
+  fontSize: '13px',
+  fontWeight: '500',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   textTransform: 'none',
+  boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
   '&:hover': {
-    background: '#5a6268',
+    background: 'rgba(0,0,0,0.08)',
   },
 }));
 
 const TypingIndicator = styled(Box)(({ theme }) => ({
-  padding: '15px 20px',
-  background: 'white',
-  borderRadius: '20px',
-  borderBottomLeftRadius: '5px',
-  marginBottom: '20px',
-  border: '1px solid #e9ecef',
+  padding: '14px 20px',
+  background: '#ffffff',
+  borderRadius: '24px',
+  border: '1px solid rgba(0,0,0,0.06)',
   display: 'flex',
   alignItems: 'center',
   gap: '10px',
+  width: 'fit-content',
+  boxShadow: '0 2px 12px rgba(0,0,0,0.03), 0 1px 4px rgba(0,0,0,0.02)',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  fontSize: '14px',
 }));
 
 const ChatSection = ({
