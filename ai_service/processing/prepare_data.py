@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-import config
+from ai_service.core import config
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import TextSplitter

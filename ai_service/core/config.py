@@ -3,16 +3,31 @@
 import os
 from pathlib import Path
 
-# Автозагрузка переменных из .env (локально, .env в .gitignore)
-try:
-    from dotenv import load_dotenv  # type: ignore[import]
-except Exception:
-    load_dotenv = None  # type: ignore[assignment]
+# Автозагрузка переменных из .env
+import sys
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Пути
-BASE_DIR = Path(__file__).resolve().parent
-if load_dotenv is not None:
-    load_dotenv(dotenv_path=BASE_DIR / ".env", override=False)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+class EngineSettings(BaseSettings):
+    PINECONE_API_KEY: str
+    PINECONE_INDEX_NAME: str = "legally-index"
+    PINECONE_NAMESPACE: str = "default"
+    GROQ_API_KEY: str
+    HF_TOKEN: str | None = None
+    
+    model_config = SettingsConfigDict(
+        env_file=str(BASE_DIR / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+
+try:
+    env_settings = EngineSettings()
+except Exception as e:
+    sys.exit(f"\n[CRITICAL ERROR] Missing Configuration:\n{e}\n")
+
 DOCUMENTS_DIR = BASE_DIR / "documents"
 BENCHMARK_DIR = BASE_DIR / "benchmark_results"
 
@@ -42,8 +57,11 @@ ADILET_SOURCES = [
 ]
 
 # Pinecone — векторная БД (облако)
-PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "legal-rag")
-PINECONE_NAMESPACE = os.environ.get("PINECONE_NAMESPACE", "legal_kz")
+PINECONE_INDEX_NAME = env_settings.PINECONE_INDEX_NAME
+PINECONE_NAMESPACE = env_settings.PINECONE_NAMESPACE
+PINECONE_API_KEY = env_settings.PINECONE_API_KEY
+GROQ_API_KEY = env_settings.GROQ_API_KEY
+HF_TOKEN = env_settings.HF_TOKEN
 PINECONE_DIMENSION = 1024  # multilingual-e5-large
 
 # Эмбеддинги

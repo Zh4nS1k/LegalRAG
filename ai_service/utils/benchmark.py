@@ -16,7 +16,7 @@ from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
 
-import config
+from ai_service.core import config
 
 # Папка для результатов
 config.BENCHMARK_DIR.mkdir(parents=True, exist_ok=True)

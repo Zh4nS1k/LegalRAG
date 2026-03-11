@@ -6,8 +6,8 @@ from datetime import datetime
 
 import streamlit as st
 
-import config
-from rag_chain import invoke_qa, validate_answer
+from ai_service.core import config
+from ai_service.retrieval.rag_chain import invoke_qa, validate_answer
 
 CHAT_STORE_PATH = "chat_history.json"
 

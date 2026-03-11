@@ -6,9 +6,9 @@ import re
 from typing import Any, List, Sequence, Optional
 from langchain_core.callbacks import Callbacks
 
-import latency
+from ai_service.utils import latency
 
-import config
+from ai_service.core import config
 from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -57,6 +57,12 @@ def _make_embeddings() -> PrefixedEmbeddings:
     if config.HF_LOCAL_ONLY:
         model_kwargs["local_files_only"] = True
     try:
+        import logging
+        logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
+        
+        if config.HF_TOKEN:
+            os.environ["HF_TOKEN"] = config.HF_TOKEN
+
         return PrefixedEmbeddings(
             HuggingFaceEmbeddings(
                 model_name=config.EMBEDDING_MODEL,
@@ -78,12 +84,22 @@ def _make_embeddings() -> PrefixedEmbeddings:
 
 embeddings = _make_embeddings()
 
-vector_store = PineconeVectorStore(
-    index_name=config.PINECONE_INDEX_NAME,
-    embedding=embeddings,
-    namespace=config.PINECONE_NAMESPACE or "default",
-)
-print(f"Pinecone подключён: {config.PINECONE_INDEX_NAME}")
+_vector_store_instance = None
+def get_vector_store():
+    global _vector_store_instance
+    if _vector_store_instance is None:
+        try:
+            _vector_store_instance = PineconeVectorStore(
+                index_name=config.PINECONE_INDEX_NAME,
+                embedding=embeddings,
+                namespace=config.PINECONE_NAMESPACE or "default",
+                pinecone_api_key=config.PINECONE_API_KEY
+            )
+            print(f"Pinecone подключён: {config.PINECONE_INDEX_NAME}")
+        except Exception as e:
+            print(f"CRITICAL WARNING: Vector store offline. {e}")
+            raise
+    return _vector_store_instance
 
 _hybrid_k = getattr(config, "RETRIEVER_WIDE_K", getattr(config, "HYBRID_K", 8))
 _vector_kwargs = {"k": _hybrid_k}
@@ -121,7 +137,13 @@ if _filter_clauses:
     _vector_kwargs["k"] = min(getattr(config, "RETRIEVER_WIDE_K", getattr(config, "HYBRID_K", 8)) + 4, 30)
     print(f"Фильтр Pinecone search_kwargs: {_vector_kwargs.get('filter')}")
 
-_vector_retriever = vector_store.as_retriever(search_kwargs=_vector_kwargs)
+from pydantic import Field
+class LazyPineconeRetriever(BaseRetriever):
+    search_kwargs: dict = Field(default_factory=dict)
+    def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
+        return get_vector_store().as_retriever(search_kwargs=self.search_kwargs).invoke(query)
+
+_vector_retriever = LazyPineconeRetriever(search_kwargs=_vector_kwargs)
 
 
 class _FilterByCodeRetriever(BaseRetriever):
@@ -273,7 +295,7 @@ class _HeuristicRetriever(BaseRetriever):
                 for code_ru in _uk_variants:
                     try:
                         fallback_docs.extend(
-                            self.vector_store.similarity_search(
+                            get_vector_store().similarity_search(
                                 search_query,
                                 k=6,
                                 filter={"code_ru": code_ru},
@@ -324,7 +346,7 @@ class _LawAwareRetriever(BaseRetriever):
                 for code_ru in _uk_variants:
                     try:
                         extra.extend(
-                            self.vector_store.similarity_search(
+                            get_vector_store().similarity_search(
                                 search_query,
                                 k=self.min_k_criminal,
                                 filter={"code_ru": code_ru},
@@ -345,7 +367,7 @@ class _LawAwareRetriever(BaseRetriever):
             ):
                 try:
                     extra_docs.extend(
-                        self.vector_store.similarity_search(
+                        get_vector_store().similarity_search(
                             q,
                             k=4,
                             filter=uk_filter,
@@ -460,11 +482,11 @@ if _allowed_code_ru_for_filter or _filter_article:
     print("Включён пост-фильтр по кодексу/статье (только разрешённые code_ru/article_number).")
 
 # Эвристический слой для запроса/пост-фильтра
-heuristic_retriever = _HeuristicRetriever(base_retriever=base_retriever, vector_store=vector_store)
+heuristic_retriever = _HeuristicRetriever(base_retriever=base_retriever, vector_store=None)
 # Law-aware слой (для УК и обстоятельств)
 law_aware_retriever = _LawAwareRetriever(
     base_retriever=heuristic_retriever,
-    vector_store=vector_store,
+    vector_store=None,
     min_k_criminal=getattr(config, "RETRIEVER_MIN_K_CRIMINAL", 10),
 )
 retriever = law_aware_retriever
@@ -547,7 +569,7 @@ if _llm_backend == "groq":
             f"Текущая ошибка импорта: {e}"
         )
 
-    groq_api_key = os.environ.get("GROQ_API_KEY")
+    groq_api_key = config.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
     if not groq_api_key:
         raise SystemExit("Задайте GROQ_API_KEY для облачного Groq (gsk_...): export GROQ_API_KEY=...")
 

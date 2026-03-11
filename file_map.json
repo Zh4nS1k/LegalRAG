@@ -1,0 +1,12 @@
+{
+  "config.py": "ai_service/core/config.py",
+  "api.py": "ai_service/api/api.py",
+  "prepare_data.py": "ai_service/processing/prepare_data.py",
+  "fetch_adilet.py": "ai_service/processing/fetch_adilet.py",
+  "rag_chain.py": "ai_service/retrieval/rag_chain.py",
+  "build_vector_db.py": "ai_service/retrieval/build_vector_db.py",
+  "latency.py": "ai_service/utils/latency.py",
+  "benchmark.py": "ai_service/utils/benchmark.py",
+  "test_retrieval.py": "ai_service/utils/test_retrieval.py",
+  "verify_langchain.py": "ai_service/utils/verify_langchain.py"
+}

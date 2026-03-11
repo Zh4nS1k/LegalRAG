@@ -5,7 +5,11 @@ import sys
 # Add current directory to path
 sys.path.append(os.getcwd())
 
-from rag_chain import _vector_retriever, invoke_qa
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from retrieval.rag_chain import _vector_retriever, invoke_qa
 from langchain_core.documents import Document
 
 query = "Что будет если я украду яблоко?"
