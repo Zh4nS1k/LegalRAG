@@ -1,196 +1,277 @@
 ---
-description: Legally AI Agent — Roles, Workflows, and behaviours
+description: Legally AI Agent — Roles, Workflows, and Behaviours
 ---
 
-# Legally — Agent File
+# Legally — Agent & AI Workflow Reference
 
-This file documents how the AI features in the Legally platform are structured.
-It is meant for developers who need to understand or extend the AI workflows.
+This file documents all AI agents, ML pipelines, and workflow extension points in the Legally platform. It is the canonical reference for developers building on or maintaining the AI layer.
 
 ---
 
-## Overview
+## Platform Architecture
 
-The Legally platform contains two distinct AI agents:
+```
+React Frontend (3000)
+      │ REST + JWT
+      ▼
+Go / Gin Backend (8080)   ←── MongoDB Atlas
+      │ Internal REST (LAN)
+      ▼
+Python / FastAPI AI Engine (8000)
+      ├── Pinecone Vector Store
+      ├── Groq LLM (or Ollama)
+      └── HuggingFace Embeddings (multilingual-e5-large)
+```
 
-| Agent | Trigger | Technology |
-|---|---|---|
-| **RAG Chat Agent** | User sends a message in the Chat tab | LangChain + Pinecone + Groq |
-| **Contract Analysis Agent** | User uploads a PDF document | LangChain + Groq (streaming) |
-
-Both agents are served by the **Python FastAPI AI Engine** (`api.py`).
+The Go backend is the **public-facing orchestrator**. It handles auth, sessions, PDF parsing, and chat history. The Python engine is **internal-only** and must not be exposed publicly.
 
 ---
 
 ## Agent 1 — RAG Chat Agent
 
 ### Purpose
-Answer legal questions using citations from the indexed Kazakhstani legal corpus.
+Answer legal questions grounded in the official Kazakhstani legal corpus with exact article citations. Supports Russian and Kazakh language queries.
 
 ### Trigger
-`POST /api/chat` (Go backend) → internally calls `POST /api/v1/internal-chat` (Python engine)
+```
+POST /api/chat  (Go backend, authenticated)
+    └─► POST /api/v1/internal-chat  (Python engine, internal)
+```
 
-### Pipeline
+### Full Pipeline
+
 ```
 User Question
-     │
-     ▼
-[1] Hybrid Retrieval
-     ├── BM25 (lexical) — returns top-10 keyword matches
-     └── Pinecone (semantic) — returns top-10 vector matches
-     │
-     ▼
-[2] Reranker  (BAAI/bge-reranker-v2-m3)
-     └── Re-scores and filters down to top-5 most relevant chunks
-     │
-     ▼
-[3] Prompt Assembly
-     └── Injects top-5 chunks + conversation history into the prompt
-     │
-     ▼
-[4] LLM Generation  (Groq llama-3.3-70b-versatile)
-     └── Generates a legal answer with article citations
-     │
-     ▼
-[5] Response
-     └── Returns answer + source_documents (for citations in UI)
+    │
+    ▼
+[1] Query Augmentation
+    └── Appends legal synonyms, article ranges, equivalent Kazakh/Russian terms
+    │
+    ▼
+[2] Hybrid Retrieval  (Pinecone 70% + BM25 30%)
+    ├── Pinecone: semantic similarity (multilingual-e5-large, 1024-dim, cosine)
+    │   Prefix: "query: {text}" for queries, "passage: {text}" for docs
+    └── BM25: keyword match with Snowball Russian stemming (from chunks_for_bm25.pkl)
+    │
+    ▼
+[3] Heuristic Filter Layer  (_HeuristicRetriever)
+    └── Detects criminal law queries → enforces УК РК filter
+        Detects article ranges → narrows to that range
+        Detects topic focus → re-ranks by known article numbers
+    │
+    ▼
+[4] Law-Aware Supplement Layer  (_LawAwareRetriever)
+    └── If criminal query has <10 results → pulls extra from УК РК variants
+        If смягчающие/отягчающие query → adds circumstance articles
+    │
+    ▼
+[5] BGE-M3 Reranker  (BAAI/bge-reranker-v2-m3, FP16)
+    └── Computes cross-encoder scores for all (query, doc) pairs
+        Selects top-N by score (default: top-8)
+    │
+    ▼
+[6] Context Trimmer  (_TrimRetriever)
+    └── Max 8 docs × 1800 chars each → prevents LLM context overflow
+    │
+    ▼
+[7] Prompt Selection
+    ├── RANGE_PROMPT   — if query contains article range (e.g. ст. 120–135)
+    ├── CRIMINAL_PROMPT — if query is about criminal law
+    └── UNIVERSAL_PROMPT — all other queries (civil, tax, labour, family…)
+    │
+    ▼
+[8] LLM Generation  (Groq: llama-3.1-8b-instant, or Ollama)
+    └── Strictly citation-only response. Declines to speculate on missing context.
+    │
+    ▼
+[9] Response
+    └── { answer, source_documents, trace_report }
 ```
 
-### Key File
-`rag_chain.py` — function `invoke_qa(query, history)`
+### Key Files
+| File | Role |
+|---|---|
+| `ai_service/retrieval/rag_chain.py` | Full pipeline — retrievers, reranker, prompts, `invoke_qa()` |
+| `ai_service/core/config.py` | Typed Pydantic config — loads from `.env` |
+| `ai_service/api/api.py` | FastAPI endpoint handlers |
 
-### Configuration
-```python
-# In rag_chain.py
-EMBEDDING_MODEL = "intfloat/multilingual-e5-large"  # 560M multilingual model
-LLM_MODEL       = "llama-3.3-70b-versatile"          # via Groq
-RERANKER        = "BAAI/bge-reranker-v2-m3"
-TOP_K_RETRIEVE  = 10  # per retriever
-TOP_K_RERANK    = 5   # after reranking
-```
+### Configuration Variables
+| Variable | Default | Description |
+|---|---|---|
+| `PINECONE_API_KEY` | **required** | Pinecone authentication |
+| `PINECONE_INDEX_NAME` | `legally-index` | Vector index name |
+| `PINECONE_NAMESPACE` | `default` | Vector namespace |
+| `GROQ_API_KEY` | **required** | Groq LLM authentication |
+| `HF_TOKEN` | optional | HuggingFace token (prevents rate-limiting) |
+| `LEGAL_RAG_LLM` | `llama-3.1-8b-instant` | LLM model name |
+| `LEGAL_RAG_LLM_BACKEND` | `groq` | `groq` or `ollama` |
+| `LEGAL_RAG_USE_RERANKER` | `1` | Enable BGE-M3 reranker |
+| `LEGAL_RAG_CONTEXT_MAX_DOCS` | `5` | Max docs sent to LLM |
+| `LEGAL_RAG_CONTEXT_MAX_CHARS_PER_DOC` | `1200` | Max chars per doc |
+| `HF_HUB_OFFLINE` | `0` | Set `1` to use cached model only |
+| `LEGAL_RAG_HF_LOCAL_ONLY` | `0` | Same — venv-level override |
 
-### System Prompt Design
-The RAG agent uses a strict legal assistant prompt:
-- Responds **only** in the language of the user's question (Russian/Kazakh/English)
-- Always cites the article and law name for every factual claim
-- Refuses to speculate — if context is insufficient, says "I don't have data on this"
-- Never provides financial or personal legal advice — recommends consulting a lawyer
+### Prompt Design Principles
+- Always responds in the **same language** as the user's question (Russian/Kazakh)
+- Never fabricates article numbers, sanctions, or dates not present in context
+- Always cites: article number, code name, and source file
+- Mandatory disclaimer: *"Это не официальная юридическая консультация."*
+- Falls back to: *"Информация не найдена в доступных текстах законов."* when context lacks the answer
 
 ---
 
 ## Agent 2 — Contract Analysis Agent
 
 ### Purpose
-Analyse uploaded PDF contracts for legal risks, clause compliance, and document type classification.
+Analyse uploaded PDF contracts for legal risks, clause compliance, document type classification, and missing clause detection — grounded in RK law.
 
 ### Trigger
-`POST /api/analyze` (Go backend, multipart PDF upload) → analysis service forwards text to `POST /api/v1/analyze`
+```
+POST /api/analyze  (Go backend, multipart PDF, authenticated)
+    └─► Go analysis_service.go extracts text
+        └─► POST /api/v1/analyze  (Python engine, plain text)
+```
 
 ### Pipeline
 ```
 PDF Upload
-     │
-     ▼
-[1] Text Extraction  (Go backend — analysis_service.go)
-     └── Reads raw text from the uploaded PDF
-     │
-     ▼
-[2] Document Classification
-     └── LLM determines document type (Lease, Employment, Purchase, etc.)
-     │
-     ▼
-[3] Multi-Part Analysis
-     ├── Risk Assessment  (High / Medium / Low per clause)
-     ├── Legal Compliance Check  (RK law references)
-     ├── Missing Clauses Detection
-     └── Document Summary
-     │
-     ▼
-[4] Structured Response
-     └── JSON with sections: analysis, document_type, timestamp, filename
-     │
-     ▼
-[5] Persistence
-     └── Saved to MongoDB for history access
+    │
+    ▼
+[1] Text Extraction  (Go — analysis_service.go)
+    └── Reads raw text from uploaded PDF binary
+    │
+    ▼
+[2] Type Classification  (LLM pass 1)
+    └── Determines document type: Lease / Employment / Purchase / Service / NDA / Other
+    │
+    ▼
+[3] Multi-Dimensional Analysis  (LLM pass 2)
+    ├── Risk Assessment     — High / Medium / Low per clause
+    ├── Legal Compliance    — RK code references, missing mandatory terms
+    ├── Missing Clauses     — compares against standard clause checklist
+    └── Executive Summary   — plain-language summary for non-lawyers
+    │
+    ▼
+[4] Structured JSON Response
+    └── { analysis, document_type, timestamp, filename }
+    │
+    ▼
+[5] Persistence  (Go saves to MongoDB)
+    └── Available in /api/history for the user
 ```
 
 ### Key Files
-- `backend/legally/services/analysis_service.go` — orchestrates the full flow
-- `api.py`, endpoint `POST /api/v1/analyze` — runs the LLM analysis
+| File | Role |
+|---|---|
+| `ai_service/api/api.py` | `POST /api/v1/analyze` endpoint |
+| `backend/legally/services/analysis_service.go` | Go orchestrator — PDF parsing + AI call |
 
 ---
 
-## HITL (Human-In-The-Loop) Evaluation Workflow
+## Agent 3 — HITL Evaluation Agent
 
-Legally includes a full HITL system for evaluating RAG quality.
+Legally includes a Human-In-The-Loop system for rating AI response quality.
 
-### Roles
-| Role | Dashboard | Responsibilities |
+### Roles & Dashboards
+| Role | URL | Responsibilities |
 |---|---|---|
-| `admin` | `/admin/eval` | Create tasks, assign to reviewers, export results |
-| `professor` | `/reviewer/eval` | Rate AI answers, provide written feedback |
-| `student` | `/reviewer/eval` | Rate AI answers (limited set) |
+| `admin` | `/admin/eval` | Create tasks, assign to reviewers, export results as Excel |
+| `professor` | `/reviewer/eval` | Rate AI answers (1–5), provide written feedback |
+| `student` | `/reviewer/eval` | Rate AI answers (limited task assignment) |
 
 ### Workflow
 ```
-Admin creates evaluation task (question + AI answer)
+Admin creates evaluation task
+    └── question + AI-generated answer + source docs
           │
           ▼
-Admin assigns task to professor or student
+Admin assigns to professor or student
           │
           ▼
-Reviewer opens task → reads question + AI answer → submits rating (1–5) + comments
+Reviewer reads question + AI answer → submits score (1–5) + comment
           │
           ▼
-Admin exports results (CSV) for analysis
+Admin views aggregated results → exports CSV/Excel for analysis
 ```
 
 ### API Routes
-```
-GET  /api/admin/tasks          → list all tasks
-POST /api/admin/tasks          → create task
-POST /api/admin/tasks/assign   → assign to reviewer
-GET  /api/eval/my-tasks        → reviewer sees their assigned tasks
-POST /api/eval/submit          → reviewer submits rating
-GET  /api/admin/eval/export    → admin exports results
-```
-
----
-
-## Adding New Legal Documents to the Corpus
-
-1. Add the new law as a `.txt` or `.pdf` file to the `/data/laws/` directory.
-2. Re-run the vector indexing script:
-   ```bash
-   python build_vector_db.py
-   ```
-3. Confirm in Pinecone console that new vectors were added.
-4. Restart the AI Engine (`uvicorn api:app --reload --port 8000`).
-
----
-
-## Extending the RAG Agent
-
-To change the LLM, retriever, or reranker:
-
-1. Open `rag_chain.py`
-2. Locate the relevant initialisation block
-3. Replace the model name or class
-4. Re-run `verify_langchain.py` to confirm everything loads:
-   ```bash
-   python verify_langchain.py
-   ```
-
----
-
-## Environment Variables Reference (AI Engine)
-
-| Variable | Required | Default | Description |
+| Method | Endpoint | Actor | Description |
 |---|---|---|---|
-| `PINECONE_API_KEY` | ✅ | — | Pinecone authentication |
-| `PINECONE_INDEX_NAME` | ✅ | `legally-index` | Name of the vector index |
-| `GROQ_API_KEY` | ✅ | — | Groq LLM authentication |
-| `LEGAL_RAG_LLM` | ⬜ | `llama-3.3-70b-versatile` | LLM model name |
-| `LEGAL_RAG_LLM_MAX_TOKENS` | ⬜ | `2048` | Max response tokens |
-| `LEGAL_RAG_HF_LOCAL_ONLY` | ⬜ | `0` | Use cached HF model only |
-| `LEGAL_RAG_HF_CACHE_DIR` | ⬜ | default HF cache | Custom HF model cache path |
+| `GET/POST` | `/api/admin/tasks` | admin | List / create eval tasks |
+| `PUT/DELETE` | `/api/admin/tasks/:id` | admin | Edit / delete a task |
+| `POST` | `/api/admin/tasks/assign` | admin | Assign task to reviewer |
+| `POST` | `/api/admin/tasks/upload/generate` | admin | Auto-generate questions from AI |
+| `GET` | `/api/admin/eval/parsed` | admin | View parsed questions |
+| `GET` | `/api/admin/eval/rated` | admin | View crowd-rated results |
+| `GET` | `/api/admin/eval/export` | admin | Download results as Excel |
+| `GET` | `/api/eval/my-tasks` | reviewer | Get assigned tasks |
+| `POST` | `/api/eval/submit` | reviewer | Submit rating + feedback |
+
+---
+
+## Adding New Laws to the Corpus
+
+1. Add the new law as a `.txt` file to `documents/`
+2. Re-index into Pinecone:
+   ```bash
+   ./venv/bin/python ai_service/retrieval/build_vector_db.py
+   ```
+3. Rebuild the BM25 corpus:
+   ```bash
+   ./venv/bin/python -m ai_service.processing.prepare_data
+   ```
+4. Confirm vectors appear in Pinecone console
+5. Restart the AI engine — the lazy Pinecone loader picks up new vectors automatically
+
+---
+
+## Extending the RAG Pipeline
+
+### Change the LLM
+Open `ai_service/core/config.py` → update `LLM_MODEL` default, or set `LEGAL_RAG_LLM` in `.env`.
+
+### Change the Embedding Model
+1. Open `ai_service/retrieval/rag_chain.py` — locate `_make_embeddings()`
+2. Replace `config.EMBEDDING_MODEL` value in `core/config.py`
+3. **Rebuild the Pinecone index** — embedding dimensions must match
+
+### Disable the Reranker
+```env
+LEGAL_RAG_USE_RERANKER=0
+```
+
+### Add a New Retrieval Filter
+```env
+LEGAL_RAG_FILTER_CODE_RU="Трудовой кодекс РК"
+LEGAL_RAG_FILTER_ARTICLE_NUMBER="52"
+```
+
+This pins all retrieval to that specific code/article (useful for domain-specific deployments).
+
+### Smoke Testing After Changes
+```bash
+./venv/bin/python ai_service/utils/verify_langchain.py  # chain loads correctly
+./venv/bin/python ai_service/utils/test_retrieval.py    # retrieval quality audit
+./venv/bin/python -m ai_service.utils.benchmark          # full RAGAS benchmark
+```
+
+---
+
+## Latency Profiling
+
+Every response includes a `trace_report` JSON field:
+```json
+{
+  "metrics_ms": {
+    "python_rag_total": 6540,
+    "breakdown": {
+      "embedding": 120,
+      "vector_search": 380,
+      "llm_inference": 4900,
+      "prompt_template_build": 2
+    }
+  }
+}
+```
+
+Implemented via `@measure_latency` decorator in `ai_service/utils/latency.py`.

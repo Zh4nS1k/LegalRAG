@@ -1,8 +1,10 @@
-# --- Python ---
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pyo
+*.pyd
 .Python
 build/
 develop-eggs/
@@ -22,7 +24,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# --- Virtual Environments ---
+# Virtual Environments
 venv/
 .venv/
 env/
@@ -31,10 +33,10 @@ env.bak/
 venv.bak/
 rag-env-312/
 rag_env/
+ai_service/venv/
 
-# --- IDEs & Editors ---
+# IDEs & Editors
 .idea/
-.vscode/
 *.swp
 *.swo
 .project
@@ -43,27 +45,41 @@ rag_env/
 .DS_Store
 Thumbs.db
 
-# --- Logs & Databases ---
+# VS Code — keep settings & extensions, ignore user-specific state
+.vscode/launch.json
+.vscode/tasks.json
+.vscode/*.code-workspace
+
+# Logs
 *.log
+logs/
 *.sqlite
 *.sqlite3
+
+# Project-specific: RAG / Vector Data
+benchmark_results/
+chunks_for_bm25.pkl
+documents/*.txt            # raw law text files — large, regeneratable
+documents/*.pdf
 chroma_db/
 instance/
 
-# --- Project Specific (RAG/Data) ---
-# Embeddings & Indices
-benchmark_results/
-chunks_for_bm25.pkl
+# Hugging Face model cache (large, download at runtime or mount separately)
+.cache/
+hf_cache/
+~/.cache/huggingface/
 
-# Chat History (Conversation logs)
+# AI generated data
 chat_history.json
+file_map.json
 
-# Local Environment Variables
+# Environment Variables — NEVER commit
 .env
 .env.local
 .env.*.local
+# .env.example is intentionally NOT ignored (it's a template)
 
-# --- Frontend / Node.js ---
+# Frontend / Node.js
 node_modules/
 npm-debug.log*
 yarn-debug.log*
@@ -71,3 +87,24 @@ yarn-error.log*
 .next/
 out/
 .vercel
+frontend/legally-app/build/
+
+# Go build artifacts
+backend/legally/legally
+backend/legally/*.exe
+backend/legally/vendor/
+*.test
+*.prof
+
+# macOS
+.DS_Store
+*.pem
+.AppleDouble
+.LSOverride
+
+# Temp files
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig

@@ -1,176 +1,358 @@
-## Deployment Guide: Render.com
+# Deployment Guide — Legally Platform
 
-This guide describes a production-style deployment for the LegalRAG Streamlit app on Render.
-It assumes you already have:
-- a Git repository with this project,
-- a Pinecone index created and populated,
-- a Groq (or other LLM) API key,
-- optional Hugging Face model cache prepared if you want offline/local-only embeddings.
+This guide covers deploying all three layers of the Legally platform to production:
 
-Notes:
-- Render uses ephemeral disks. Do not rely on local files for persistent storage.
-- The app reads from Pinecone at runtime; embeddings are only used for query encoding.
-- If Hugging Face downloads are blocked or slow, use a cached model and enable local-only mode.
+| Layer | Service | Port |
+|---|---|---|
+| Python AI Engine | Render / Railway / VPS | 8000 |
+| Go Backend | Render / Railway / VPS | 8080 |
+| React Frontend | Vercel / Netlify / Static hosting | 80/443 |
 
---------------------------------------------------------------------------------
-## 1) Prepare the repository
+---
 
-1.1. Ensure `requirements.txt` is complete
-Render installs dependencies from `requirements.txt`. If you add new packages, update it.
+## Prerequisites
 
-1.2. Add a start command for Streamlit
-Render "Web Service" start command:
+Before deploying, you must have:
+- A Pinecone index built and populated (run `build_vector_db.py` locally first)
+- Valid API keys: `PINECONE_API_KEY`, `GROQ_API_KEY`
+- A MongoDB Atlas cluster URI (`MONGO_URI`)
+- A strong `JWT_SECRET` (generate: `openssl rand -hex 64`)
 
-    streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+---
 
-1.3. Optional: add a `render.yaml` (Blueprint)
-You can deploy via the UI or a Blueprint. If you want a Blueprint, create `render.yaml`:
+## Part 1 — Python AI Engine (FastAPI)
 
-    services:
-      - type: web
-        name: legalrag-streamlit
-        env: python
-        plan: starter
-        buildCommand: pip install -r requirements.txt
-        startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
-        autoDeploy: true
-        envVars:
-          - key: PINECONE_API_KEY
-            sync: false
-          - key: PINECONE_INDEX_NAME
-            value: legal-rag
-          - key: PINECONE_NAMESPACE
-            value: legal_kz
-          - key: LEGAL_RAG_LLM
-            value: llama-3.3-70b-versatile
-          - key: LEGAL_RAG_LLM_MAX_TOKENS
-            value: "2048"
-          - key: LEGAL_RAG_HF_READ_TIMEOUT_SEC
-            value: "60"
+### Option A: Render.com (Recommended)
 
---------------------------------------------------------------------------------
-## 2) Create the Render Web Service
-
-2.1. In Render Dashboard:
-- New + -> Web Service
+**1. Create a Web Service on Render**
 - Connect your Git repo
-- Select the branch to deploy
+- Branch: `main` (or your production branch)
+- Environment: **Python**
+- Build Command:
+  ```
+  pip install -r ai_service/requirements.txt
+  ```
+- Start Command:
+  ```
+  uvicorn ai_service.api.api:app --host 0.0.0.0 --port $PORT
+  ```
 
-2.2. Configure the service:
-- Environment: Python
-- Region: closest to your users
-- Build Command: `pip install -r requirements.txt`
-- Start Command: `streamlit run app.py --server.port $PORT --server.address 0.0.0.0`
+**2. Set Environment Variables in Render dashboard:**
 
-2.3. Set environment variables (see section 3)
+| Variable | Required | Value |
+|---|---|---|
+| `PINECONE_API_KEY` | ✅ | Your Pinecone key |
+| `PINECONE_INDEX_NAME` | ✅ | `legally-index` |
+| `PINECONE_NAMESPACE` | ✅ | `default` |
+| `GROQ_API_KEY` | ✅ | Your Groq key |
+| `HF_TOKEN` | recommended | Your HuggingFace token |
+| `HF_HUB_OFFLINE` | optional | `1` if model is pre-cached |
+| `LEGAL_RAG_HF_LOCAL_ONLY` | optional | `1` if model is pre-cached |
+| `LEGAL_RAG_USE_RERANKER` | optional | `0` to disable reranker (saves RAM) |
+| `LEGAL_RAG_LLM` | optional | `llama-3.1-8b-instant` |
 
-2.4. Create service and wait for the first deploy
+> **Note:** Render's free tier has ephemeral disks. The HuggingFace model (`multilingual-e5-large`) downloads on every cold start (~1GB). Use `HF_TOKEN` to avoid anonymous rate limits.
 
---------------------------------------------------------------------------------
-## 3) Required environment variables
+**3. `render.yaml` Blueprint (optional):**
+```yaml
+services:
+  - type: web
+    name: legally-ai-engine
+    env: python
+    plan: starter
+    buildCommand: pip install -r ai_service/requirements.txt
+    startCommand: uvicorn ai_service.api.api:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    envVars:
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_NAME
+        value: legally-index
+      - key: GROQ_API_KEY
+        sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: LEGAL_RAG_USE_RERANKER
+        value: "0"
+```
 
-These are mandatory for core functionality:
-- `PINECONE_API_KEY`
-- `PINECONE_INDEX_NAME` (default: `legal-rag`)
-- `PINECONE_NAMESPACE` (default: `legal_kz`)
-- `LEGAL_RAG_LLM` (default: `llama-3.3-70b-versatile`)
+### Option B: Docker
 
-If using Groq, add:
-- `GROQ_API_KEY`
+**`Dockerfile` for AI Engine:**
+```dockerfile
+FROM python:3.12-slim
 
-If using another provider, set the relevant API key expected by your LLM integration.
+WORKDIR /app
+COPY ai_service/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-Optional for embeddings and Hugging Face:
-- `LEGAL_RAG_HF_READ_TIMEOUT_SEC` (default: 60)
-- `LEGAL_RAG_HF_CONNECT_TIMEOUT_SEC` (default: 10)
-- `LEGAL_RAG_HF_CACHE_DIR` (if you mount a disk or custom cache path)
-- `LEGAL_RAG_HF_LOCAL_ONLY` (set to `1` if you preloaded the model)
-- `LEGAL_RAG_HF_OFFLINE` (set to `1` to force HF offline)
+COPY . .
 
---------------------------------------------------------------------------------
-## 4) Pinecone prerequisites
+EXPOSE 8000
+CMD ["uvicorn", "ai_service.api.api:app", "--host", "0.0.0.0", "--port", "8000"]
+```
 
-4.1. Create and populate the index locally:
-You must run the indexing pipeline on a machine with access to the documents:
+```bash
+docker build -t legally-ai .
+docker run -p 8000:8000 --env-file .env legally-ai
+```
 
-    export PINECONE_API_KEY="..."
-    python build_vector_db.py
+### Option C: VPS (Ubuntu/Fedora)
 
-4.2. Verify that the index exists and is non-empty:
-- In Pinecone console, ensure the index has vectors.
+```bash
+# Clone repo
+git clone https://github.com/zloo00/LegalRAG.git
+cd LegalRAG
 
-Render does NOT build the index during deploy.
+# Create venv
+python3.12 -m venv venv
+source venv/bin/activate
+pip install -r ai_service/requirements.txt
 
---------------------------------------------------------------------------------
-## 5) Embeddings strategy on Render
+# Create systemd service
+sudo nano /etc/systemd/system/legally-ai.service
+```
 
-Option A: Online HF download at runtime
-- Simplest, but can fail if HF is slow or blocked.
-- Set:
-  - `LEGAL_RAG_HF_READ_TIMEOUT_SEC=120`
+```ini
+[Unit]
+Description=Legally AI Engine
+After=network.target
 
-Option B: Pre-cache the model and use local-only
-- Download on your local machine once to cache:
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/LegalRAG
+EnvironmentFile=/home/ubuntu/LegalRAG/.env
+ExecStart=/home/ubuntu/LegalRAG/venv/bin/uvicorn ai_service.api.api:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
 
-    python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-large')"
+[Install]
+WantedBy=multi-user.target
+```
 
-- Upload the cache to a storage solution (Render disk or external bucket).
-- Set env vars:
-  - `LEGAL_RAG_HF_LOCAL_ONLY=1`
-  - `LEGAL_RAG_HF_CACHE_DIR=/path/to/cache`
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable legally-ai
+sudo systemctl start legally-ai
+sudo systemctl status legally-ai
+```
 
-If you do not provide a cache and enable local-only, the app will fail at startup.
+---
 
---------------------------------------------------------------------------------
-## 6) Streamlit configuration
+## Part 2 — Go Backend
 
-If you need custom Streamlit settings, add a `.streamlit/config.toml`:
+### Option A: Render.com
 
-    [server]
-    headless = true
-    enableCORS = false
-    enableXsrfProtection = false
+- Environment: **Go**
+- Build Command: `go build -o server ./backend/legally`
+- Start Command: `./server`
+- Root Directory: `backend/legally`
 
-Use this only if you understand the security implications.
+Environment variables:
 
---------------------------------------------------------------------------------
-## 7) Health checks and logging
+| Variable | Required | Description |
+|---|---|---|
+| `MONGO_URI` | ✅ | MongoDB Atlas connection string |
+| `DB_NAME` | ✅ | Database name (`legally_bot`) |
+| `JWT_SECRET` | ✅ | Long random secret for signing JWTs |
+| `ADMIN_IDS` | ✅ | Comma-separated admin user IDs |
+| `AI_ENGINE_URL` | ✅ | Internal URL of the Python engine (`http://localhost:8000`) |
 
-- Render shows logs in the dashboard.
-- Streamlit logs are printed to stdout/stderr.
-- Verify boot sequence:
-  - Pinecone connects
-  - Embeddings load
-  - App starts and listens on `$PORT`
+### Option B: Docker
 
---------------------------------------------------------------------------------
-## 8) Common failure modes
+```dockerfile
+FROM golang:1.21-alpine AS builder
+WORKDIR /app
+COPY backend/legally/ .
+RUN go build -o server .
 
-8.1. "ReadTimeoutError" from Hugging Face
-- Increase `LEGAL_RAG_HF_READ_TIMEOUT_SEC`
-- Or use local-only with a cached model
+FROM alpine:latest
+WORKDIR /root/
+COPY --from=builder /app/server .
+EXPOSE 8080
+CMD ["./server"]
+```
 
-8.2. "Pinecone API key missing"
-- Ensure `PINECONE_API_KEY` is set in Render env vars
+### Option C: VPS (systemd)
 
-8.3. "ImportError: invoke_qa not found"
-- Ensure `rag_chain.py` exports `invoke_qa`
-- Verify no syntax errors during deploy
+```ini
+[Unit]
+Description=Legally Go Backend
+After=network.target
 
-8.4. "Event loop is closed" during stop
-- Usually a shutdown artifact after Ctrl+C. Not a deployment issue.
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/LegalRAG/backend/legally
+EnvironmentFile=/home/ubuntu/LegalRAG/.env
+ExecStart=/home/ubuntu/LegalRAG/backend/legally/server
+Restart=always
+RestartSec=5
 
---------------------------------------------------------------------------------
-## 9) Production checklist
+[Install]
+WantedBy=multi-user.target
+```
 
-- Pinecone index built and current
-- Environment variables set
-- HF model access strategy chosen
-- App starts locally with same env vars
-- Render service uses the correct start command
+---
 
---------------------------------------------------------------------------------
-## 10) Rollback and redeploy
+## Part 3 — React Frontend
 
-- Render supports manual redeploy from the dashboard.
-- If a bad commit is deployed, use "Rollback" to a previous deploy.
+### Option A: Vercel (Recommended)
+
+```bash
+cd frontend/legally-app
+npm run build
+# Push to GitHub → Vercel auto-deploys on merge to main
+```
+
+Set environment variables in Vercel dashboard:
+```
+REACT_APP_API_URL=https://your-go-backend.onrender.com
+```
+
+### Option B: Netlify
+
+```bash
+npm run build
+# Drag and drop the build/ folder to netlify.com
+# Or connect GitHub repo: Build command: npm run build, Publish dir: build
+```
+
+### Option C: Serve from Go Backend (Self-Contained)
+
+The Go backend already serves the React build at `GET /` via its static file handler. To use this:
+
+```bash
+cd frontend/legally-app
+npm run build
+cp -r build/ ../../backend/legally/static/
+```
+
+Then access the full app on `http://localhost:8080`.
+
+---
+
+## Nginx Reverse Proxy (VPS Production)
+
+Put all services behind Nginx for SSL termination and routing:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name legally.yourdomain.com;
+
+    ssl_certificate     /etc/letsencrypt/live/legally.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/legally.yourdomain.com/privkey.pem;
+
+    # React Frontend (or serve Go directly)
+    location / {
+        root /var/www/legally-app/build;
+        try_files $uri /index.html;
+    }
+
+    # Go Backend API
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # Python AI Engine (internal only — DO NOT expose publicly)
+    # location /ai/ { proxy_pass http://127.0.0.1:8000; }
+}
+```
+
+> ⚠️ The Python AI Engine (`port 8000`) must **never** be publicly accessible — it has no authentication layer. Use a firewall rule (`ufw deny 8000`) and communicate Go→Python only on `localhost`.
+
+---
+
+## Pinecone Index Setup (One-Time)
+
+Must be run before any deployment. Run locally with your Pinecone key:
+
+```bash
+source venv/bin/activate
+export PINECONE_API_KEY="pcsk_..."
+export PINECONE_INDEX_NAME="legally-index"
+
+# Index all documents
+./venv/bin/python ai_service/retrieval/build_vector_db.py
+
+# Build BM25 corpus
+./venv/bin/python -m ai_service.processing.prepare_data
+```
+
+Expected result in Pinecone console: **~4,200 vectors**, dimension `1024`, metric `cosine`.
+
+---
+
+## HuggingFace Embedding Strategy
+
+The `multilingual-e5-large` model (~560M params, ~1.1GB) is downloaded from HuggingFace Hub at first startup.
+
+| Strategy | Speed | Reliability | Setup |
+|---|---|---|---|
+| **Online HF download** | Slow on cold start | Depends on HF | Set `HF_TOKEN` |
+| **Pre-cached, online verify** | Medium | High | Download once, set `HF_TOKEN` |
+| **Offline (cached)** | Fast | Very High | Mount cached model, set `HF_HUB_OFFLINE=1` |
+
+**Pre-cache locally:**
+```bash
+./venv/bin/python -c "
+from langchain_huggingface import HuggingFaceEmbeddings
+HuggingFaceEmbeddings(model_name='intfloat/multilingual-e5-large')
+print('Model cached.')
+"
+```
+
+Then on the server: set `HF_HUB_OFFLINE=1` and `LEGAL_RAG_HF_LOCAL_ONLY=1`.
+
+---
+
+## Health Checks
+
+| Service | Endpoint | Expected |
+|---|---|---|
+| Python AI Engine | `GET http://localhost:8000/api/v1/stats` | `200 OK` with JSON |
+| Go Backend | `GET http://localhost:8080/health` | `200 OK` |
+| React Frontend | `GET http://localhost:3000` | HTML page |
+
+---
+
+## Production Checklist
+
+- [ ] Pinecone index built and populated (`~4,200 vectors`)
+- [ ] All required env vars set in deployment platform
+- [ ] `JWT_SECRET` is long (≥64 chars) and unique
+- [ ] Python AI Engine is NOT publicly exposed (firewall rule on port 8000)
+- [ ] HuggingFace token set to avoid anonymous rate limits
+- [ ] CORS configured in Go backend to allow your frontend domain only
+- [ ] MongoDB Atlas access list includes deployment server IP
+- [ ] Nginx SSL configured with valid certificate
+- [ ] Systemd services set to restart on failure
+
+---
+
+## Rollback
+
+**Render:** Use the "Rollback" button in the Render dashboard to any previous deploy.
+
+**VPS / Git:**
+```bash
+git log --oneline -10          # find the last good commit
+git checkout <commit-hash>     # switch to it
+sudo systemctl restart legally-ai legally-go
+```
+
+---
+
+## Common Failure Modes
+
+| Error | Cause | Fix |
+|---|---|---|
+| `CRITICAL ERROR: Missing Configuration` | `.env` not loaded / key missing | Check all required vars are set in platform |
+| `ReadTimeoutError` from HuggingFace | HF Hub slow or blocked | Set `HF_TOKEN`, or enable offline mode |
+| `ValueError: Pinecone API key must be provided` | Old code path | Ensure using updated `get_vector_store()` lazy init |
+| `cannot import name 'is_torch_fx_available'` | transformers/FlagEmbedding mismatch | Set `LEGAL_RAG_USE_RERANKER=0` or upgrade transformers |
+| `dial tcp: connection refused` (Go→Python) | AI engine not running | Start Python engine first, check `AI_ENGINE_URL` |
+| `401 Unauthorized` on all API calls | JWT secret mismatch between deploys | Ensure `JWT_SECRET` is identical across restarts |
+| MongoDB `authentication failed` | Wrong URI or IP not whitelisted | Check Atlas access list and MONGO_URI format |
