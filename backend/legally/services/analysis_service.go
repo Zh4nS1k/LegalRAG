@@ -120,9 +120,8 @@ func queryPythonAnalysisAPI(text string) (string, error) {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// Increase timeout for analysis
-	client := &http.Client{Timeout: 300 * time.Second}
-	resp, err := client.Do(req)
+	// Reuse the package-level persistent HTTP client (avoids per-request TCP handshake)
+	resp, err := aiHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("ошибка запроса к Python API: %w", err)
 	}

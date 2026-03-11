@@ -20,6 +20,8 @@ func main() {
 	_ = godotenv.Load()
 	checkEnvVars()
 	db.InitMongo()
+	db.EnsureIndexes()
+
 
 	if err := os.MkdirAll("./temp", os.ModePerm); err != nil {
 		log.Fatal("❌ ERROR: Не удалось создать временную папку:", err)

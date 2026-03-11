@@ -6,11 +6,24 @@ import (
 	"fmt"
 	"legally/models"
 	"legally/repositories"
+	"net/http"
 	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+// aiHTTPClient is a persistent singleton — reuses TCP connections to the Python AI engine.
+// Creating a new http.Client per request wastes ~100–200ms on TLS handshake to localhost.
+var aiHTTPClient = &http.Client{
+	Timeout: 300 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DisableKeepAlives:   false,
+	},
+}
 
 func SaveChatMessage(userID, role, content string, sources []models.SourceDetail) error {
 	objID, err := primitive.ObjectIDFromHex(userID)

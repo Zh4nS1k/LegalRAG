@@ -89,11 +89,12 @@ CONTEXT_MAX_DOCS = int(os.environ.get("LEGAL_RAG_CONTEXT_MAX_DOCS", "5"))
 CONTEXT_MAX_CHARS_PER_DOC = int(os.environ.get("LEGAL_RAG_CONTEXT_MAX_CHARS_PER_DOC", "1200"))
 
 # Retriever (двухэтапный: широкий отбор + rerank)
-RETRIEVER_WIDE_K = 20
-RETRIEVER_TOP_K = 20  # совместимость со старым кодом
-RETRIEVER_TOP_K_AFTER_RERANK = 8
-RETRIEVER_MIN_K_CRIMINAL = 12
-HYBRID_K = 20
+# Tune via env vars — lower = faster Pinecone (free tier). Raise only if recall drops.
+RETRIEVER_WIDE_K = int(os.environ.get("LEGAL_RAG_RETRIEVER_WIDE_K", "10"))
+RETRIEVER_TOP_K = RETRIEVER_WIDE_K  # совместимость со старым кодом
+RETRIEVER_TOP_K_AFTER_RERANK = int(os.environ.get("LEGAL_RAG_RETRIEVER_TOP_K_AFTER_RERANK", "6"))
+RETRIEVER_MIN_K_CRIMINAL = int(os.environ.get("LEGAL_RAG_RETRIEVER_MIN_K_CRIMINAL", "8"))
+HYBRID_K = RETRIEVER_WIDE_K
 # Опциональные фильтры Pinecone:
 # - по кодексу (например, УК РК)
 # - по номеру статьи (например, 136 для "подмена ребенка")
