@@ -23,13 +23,13 @@ const SidebarContainer = styled(Box)(({ theme }) => ({
     color: '#FFFFFF',
     display: 'flex',
     flexDirection: 'column',
-    borderRight: '1px solid #333333',
+    borderRight: '2px solid #E60000',
 }));
 
 const NewChatButton = styled(Button)(({ theme }) => ({
     margin: '20px',
     padding: '12px',
-    borderRadius: '8px',
+    borderRadius: '12px',
     border: '1px solid #E60000',
     backgroundColor: '#E60000',
     color: 'white',
@@ -47,7 +47,7 @@ const NewChatButton = styled(Button)(({ theme }) => ({
 const SessionListItem = styled(ListItem, {
     shouldForwardProp: (prop) => prop !== 'active',
 })(({ theme, active }) => ({
-    padding: '4px 12px',
+    padding: '12px 12px',
     '&:hover .delete-btn': {
         opacity: 1,
     },
@@ -56,15 +56,15 @@ const SessionListItem = styled(ListItem, {
 const SessionButton = styled(ListItemButton, {
     shouldForwardProp: (prop) => prop !== 'active',
 })(({ theme, active }) => ({
-    borderRadius: '4px',
-    margin: '2px 8px',
-    backgroundColor: active ? 'rgba(230, 0, 0, 0.1)' : 'transparent',
+    borderRadius: '8px',
+    margin: '4px 8px',
+    backgroundColor: active ? 'transparent' : 'transparent',
     color: active ? '#FFFFFF' : '#9CA3AF',
     borderLeft: active ? '4px solid #E60000' : '4px solid transparent',
     transition: 'all 0.2s ease',
     '&:hover': {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        color: 'white',
+        backgroundColor: 'transparent',
+        color: '#E60000',
     },
 }));
 
@@ -117,7 +117,7 @@ const Sidebar = ({ sessions, activeSessionId, onSelectSession, onNewChat, onDele
                                 primaryTypographyProps={{
                                     variant: 'body2',
                                     noWrap: true,
-                                    sx: { fontSize: '0.875rem' }
+                                    sx: { fontSize: '0.875rem', fontWeight: (activeSessionId === session.id) ? 700 : 400 }
                                 }}
                             />
                         </SessionButton>

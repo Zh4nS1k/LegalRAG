@@ -41,7 +41,6 @@ const FileUploadArea = styled(Box, {
   '&:hover': {
     borderColor: '#E60000',
     backgroundColor: 'rgba(230, 0, 0, 0.02)',
-    transform: 'translateY(-2px)'
   },
 }));
 
@@ -125,7 +124,7 @@ function UploadSection({
   return (
     <Fade in timeout={600}>
       <Container maxWidth="md" sx={{ mt: 6, mb: 4 }}>
-        <Paper elevation={0} sx={{ p: 4, borderRadius: 3, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+        <Paper elevation={0} sx={{ p: 4, borderRadius: '16px', border: '1px solid #E5E7EB', overflow: 'hidden' }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 4 }}>
             <Box
               component="img"
@@ -135,8 +134,7 @@ function UploadSection({
                 width: '80%',
                 aspectRatio: '16 / 9',
                 objectFit: 'cover',
-                borderRadius: 2,
-                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                borderRadius: '16px',
               }}
             />
           </Box>

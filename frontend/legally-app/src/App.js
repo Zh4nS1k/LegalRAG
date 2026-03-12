@@ -235,7 +235,7 @@ function App() {
             justifyContent: 'space-between',
             alignItems: 'center',
             background: '#fff',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+            borderBottom: '1px solid #E5E7EB',
             padding: '0.5rem 2rem',
             position: 'sticky',
             top: 0,
@@ -244,47 +244,47 @@ function App() {
         >
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Button
-              startIcon={<HomeIcon />}
+              startIcon={<HomeIcon sx={{ fontSize: '1.2rem' }} />}
               onClick={() => navigate('/')}
-              sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000' } }}
+              sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000', bgcolor: 'transparent' } }}
             >
               Главная
             </Button>
             <Button
-              startIcon={<HistoryIcon />}
+              startIcon={<HistoryIcon sx={{ fontSize: '1.2rem' }} />}
               onClick={() => navigate('/history')}
-              sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000' } }}
+              sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000', bgcolor: 'transparent' } }}
             >
               История
             </Button>
             <Button
-              startIcon={<ProfileIcon />}
+              startIcon={<ProfileIcon sx={{ fontSize: '1.2rem' }} />}
               onClick={() => navigate('/profile')}
-              sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000' } }}
+              sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000', bgcolor: 'transparent' } }}
             >
               Профиль
             </Button>
             <Button
-              startIcon={<ChatIcon />}
+              startIcon={<ChatIcon sx={{ fontSize: '1.2rem' }} />}
               onClick={() => navigate('/chat')}
-              sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000' } }}
+              sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000', bgcolor: 'transparent' } }}
             >
               Консультация
             </Button>
             {appState.userData?.role === 'admin' && (
               <Button
-                startIcon={<EvalIcon />}
+                startIcon={<EvalIcon sx={{ fontSize: '1.2rem' }} />}
                 onClick={() => navigate('/admin/eval')}
-                sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000' } }}
+                sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000', bgcolor: 'transparent' } }}
               >
                 HITL Admin
               </Button>
             )}
             {(appState.userData?.role === 'admin' || appState.userData?.role === 'professor' || appState.userData?.role === 'student') && (
               <Button
-                startIcon={<EvalIcon />}
+                startIcon={<EvalIcon sx={{ fontSize: '1.2rem' }} />}
                 onClick={() => navigate('/reviewer/eval')}
-                sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000' } }}
+                sx={{ textTransform: 'none', color: '#000000', '&:hover': { color: '#E60000', bgcolor: 'transparent' } }}
               >
                 HITL Review
               </Button>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import evaluationService from '../../services/evaluationService';
 import UserManagement from './UserManagement';
+import axios from 'axios';
+import { Container, Card, Paper, Box, Typography } from '@mui/material';
 import TaskDetailModal from './TaskDetailModal';
 import AssignmentModal from './AssignmentModal';
 // Here is the Evalution admin page
@@ -116,12 +118,12 @@ const EvaluationAdmin = () => {
     };
 
     return (
-        <div className="eval-admin-container">
-            <div className="admin-header">
-                <div>
-                    <h1>Legally Admin Panel</h1>
-                    <p className="subtitle">HITL Pipeline & Task Management</p>
-                </div>
+        <Container maxWidth="lg" sx={{ py: 4 }} className="eval-admin-container">
+            <Card sx={{ p: 4, mb: 4, borderRadius: '16px', boxShadow: 'none', border: '1px solid #E5E7EB' }}>
+                <Typography variant="h4" fontWeight={600} gutterBottom>
+                    Legally Admin Panel
+                </Typography>
+                <p className="subtitle">HITL Pipeline & Task Management</p>
                 <div className="header-actions">
                     <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value)}>
                         <option value="csv">CSV</option>
@@ -132,7 +134,7 @@ const EvaluationAdmin = () => {
                         Export Rated
                     </button>
                 </div>
-            </div>
+            </Card>
 
             <div className="admin-nav">
                 <button className={view === 'tasks' ? 'active' : ''} onClick={() => setView('tasks')}>Tasks</button>
@@ -168,7 +170,7 @@ const EvaluationAdmin = () => {
                         </div>
                     </div>
 
-                    <div className="task-table-container">
+                    <Paper sx={{ p: 0, borderRadius: '16px', overflow: 'hidden', boxShadow: 'none', border: '1px solid #E5E7EB' }}>
                         <div className="table-header">
                             <h2>All Q&A Tasks</h2>
                             <div className="table-filters">
@@ -215,7 +217,9 @@ const EvaluationAdmin = () => {
                                 ))}
                             </tbody>
                         </table>
+                    </Paper>
 
+                    <Paper sx={{ p: 3, mb: 4, borderRadius: '16px', boxShadow: 'none', border: '1px solid #E5E7EB' }}>
                         <div className="pagination">
                             <button
                                 disabled={page === 1}
@@ -235,7 +239,7 @@ const EvaluationAdmin = () => {
                                 Next
                             </button>
                         </div>
-                    </div>
+                    </Paper>
                 </>
             ) : (
                 <UserManagement />
@@ -257,7 +261,7 @@ const EvaluationAdmin = () => {
                     onClose={() => setShowAssignModal(false)}
                 />
             )}
-        </div>
+        </Container>
     );
 };
 

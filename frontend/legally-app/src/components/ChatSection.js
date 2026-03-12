@@ -8,10 +8,12 @@ import {
   CircularProgress,
   Alert,
   Tooltip,
+  IconButton,
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import ClearIcon from '@mui/icons-material/Clear';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
 import InfoIcon from '@mui/icons-material/Info';
 import { styled } from '@mui/material/styles';
 import welcomeVideo from '../images/welcome_video_gif_legally.mp4';
@@ -33,9 +35,8 @@ const ChatContainer = styled(Box)(({ theme }) => ({
   maxWidth: '1000px',
   height: '90vh',
   backgroundColor: '#ffffff',
-  borderRadius: '24px',
-  boxShadow: '0 8px 32px rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04)',
-  border: '1px solid rgba(0,0,0,0.05)',
+  borderRadius: '16px',
+  border: '1px solid #E5E7EB',
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
@@ -101,7 +102,6 @@ const MessageAvatar = styled(Avatar, {
   margin: '0 10px',
   backgroundColor: isUser ? '#E60000' : '#000000',
   color: 'white',
-  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
   fontSize: '16px',
 }));
 
@@ -109,14 +109,13 @@ const MessageContent = styled(Box, {
   shouldForwardProp: (prop) => prop !== 'isUser',
 })(({ theme, isUser }) => ({
   maxWidth: '75%',
-  padding: '14px 20px',
-  borderRadius: '24px',
+  padding: '12px 16px',
+  borderRadius: '12px',
   position: 'relative',
   wordWrap: 'break-word',
-  backgroundColor: isUser ? '#E60000' : 'rgba(200, 200, 200, 0.15)',
+  backgroundColor: isUser ? '#E60000' : '#F3F4F6',
   color: isUser ? '#FFFFFF' : '#000000',
-  border: isUser ? 'none' : '1px solid rgba(0,0,0,0.06)',
-  boxShadow: '0 2px 12px rgba(0,0,0,0.03), 0 1px 4px rgba(0,0,0,0.02)',
+  border: 'none',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   lineHeight: isUser ? '1.4' : '1.6',
   fontWeight: '400',
@@ -134,8 +133,7 @@ const ModeIndicator = styled(Box)(({ theme, mode }) => ({
   left: '20px',
   background: '#ffffff',
   color: mode === 'legal_rag' ? '#E60000' : '#000000',
-  border: '1px solid rgba(0,0,0,0.06)',
-  boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+  border: '1px solid #E5E7EB',
   padding: '2px 8px',
   borderRadius: '12px',
   fontSize: '10px',
@@ -158,13 +156,12 @@ const SourceItem = styled(Box)(({ theme }) => ({
   margin: '8px 0',
   borderRadius: '12px',
   borderLeft: '4px solid #E60000',
-  boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
 }));
 
 const ChatInput = styled(Box)(({ theme }) => ({
   padding: '20px 24px',
   backgroundColor: '#ffffff',
-  borderTop: '1px solid rgba(0,0,0,0.06)',
+  borderTop: '1px solid #E5E7EB',
   display: 'flex',
   flexDirection: 'column',
   gap: '12px',
@@ -174,17 +171,20 @@ const InputContainer = styled(Box)(({ theme }) => ({
   display: 'flex',
   gap: '12px',
   alignItems: 'center',
-  backgroundColor: 'rgba(0,0,0,0.03)',
-  borderRadius: '50px',
+  backgroundColor: '#ffffff',
+  borderRadius: '8px',
   padding: '8px 8px 8px 20px',
-  border: '1px solid rgba(0,0,0,0.06)',
-  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.02)',
+  border: '1px solid #E5E7EB',
+  transition: 'border-color 0.2s',
+  '&:focus-within': {
+    borderColor: '#E60000',
+  }
 }));
 
 const InputField = styled(TextField)(({ theme }) => ({
   flex: 1,
   '& .MuiOutlinedInput-root': {
-    borderRadius: '50px',
+    borderRadius: '8px',
     padding: '8px 0',
     '& fieldset': { border: 'none' },
   },
@@ -201,16 +201,13 @@ const InputField = styled(TextField)(({ theme }) => ({
 const SendButton = styled(Button)(({ theme }) => ({
   background: '#E60000',
   color: 'white',
-  borderRadius: '50px',
+  borderRadius: '8px',
   padding: '10px 20px',
   fontWeight: '600',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   textTransform: 'none',
-  boxShadow: '0 2px 8px rgba(230,0,0,0.2)',
   '&:hover': {
-    transform: 'translateY(-1px)',
     background: '#CC0000',
-    boxShadow: '0 4px 12px rgba(230,0,0,0.3)'
   },
   '&:disabled': {
     opacity: 0.5,
@@ -241,13 +238,12 @@ const ControlButton = styled(Button)(({ theme }) => ({
 const TypingIndicator = styled(Box)(({ theme }) => ({
   padding: '14px 20px',
   background: '#ffffff',
-  borderRadius: '24px',
-  border: '1px solid rgba(0,0,0,0.06)',
+  borderRadius: '12px',
+  border: '1px solid #E5E7EB',
   display: 'flex',
   alignItems: 'center',
   gap: '10px',
   width: 'fit-content',
-  boxShadow: '0 2px 12px rgba(0,0,0,0.03), 0 1px 4px rgba(0,0,0,0.02)',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   fontSize: '14px',
 }));
@@ -522,6 +518,11 @@ const ChatSection = ({
 
         <ChatInput>
           <InputContainer>
+            <Tooltip title="Прикрепить файл">
+              <IconButton size="small" sx={{ color: '#666666' }}>
+                <AttachFileIcon />
+              </IconButton>
+            </Tooltip>
             <InputField
               multiline
               minRows={1}

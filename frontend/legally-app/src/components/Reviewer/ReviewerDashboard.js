@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import evaluationService from '../../services/evaluationService';
+import { Container, Card, Box, Typography } from '@mui/material';
 
 const ReviewerDashboard = () => {
     const [tasks, setTasks] = useState([]);
@@ -26,13 +27,17 @@ const ReviewerDashboard = () => {
     if (loading) return <div>Loading assigned tasks...</div>;
 
     return (
-        <div className="reviewer-dashboard">
-            <header className="admin-header">
-                <h1>Expert Evaluation Dashboard</h1>
-                <div className="stats-mini">
-                    <span className="badge status-pending">{tasks.filter(t => t.status === 'Pending').length} Pending</span>
-                </div>
-            </header>
+        <Container maxWidth="lg" sx={{ py: 4 }} className="reviewer-dashboard">
+            <Card sx={{ p: 4, mb: 4, borderRadius: '16px', boxShadow: 'none', border: '1px solid #E5E7EB' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h4" fontWeight={600} gutterBottom>
+                        Expert Evaluation Dashboard
+                    </Typography>
+                    <div className="stats-mini">
+                        <span className="badge status-pending">{tasks.filter(t => t.status === 'Pending').length} Pending</span>
+                    </div>
+                </Box>
+            </Card>
 
             <div className="task-list">
                 {(!tasks || tasks.length === 0) ? (
@@ -57,7 +62,7 @@ const ReviewerDashboard = () => {
                     </div>
                 )}
             </div>
-        </div>
+        </Container>
     );
 };
 

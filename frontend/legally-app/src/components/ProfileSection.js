@@ -25,10 +25,12 @@ import { useNavigate } from 'react-router-dom';
 
 const ProfilePaper = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(4),
-  borderRadius: theme.shape.borderRadius * 2,
+  borderRadius: '16px',
+  border: '1px solid #E5E7EB',
   maxWidth: 600,
   margin: '0 auto',
   position: 'relative',
+  boxShadow: 'none',
 }));
 
 function ProfileSection({ userData, onLogout }) {
@@ -51,7 +53,7 @@ function ProfileSection({ userData, onLogout }) {
         </Button>
       </Box>
 
-      <ProfilePaper elevation={3}>
+      <ProfilePaper elevation={0}>
         <Typography variant="h4" gutterBottom sx={{ fontWeight: 600 }}>
           Профиль пользователя
         </Typography>

@@ -16,17 +16,8 @@ const FooterContainer = styled(Box)(({ theme }) => ({
   background: theme.palette.background.paper,
   padding: theme.spacing(6, 0),
   marginTop: theme.spacing(8),
-  borderTop: `1px solid ${theme.palette.divider}`,
+  borderTop: `1px solid #E5E7EB`,
   position: 'relative',
-  '&:before': {
-    content: '""',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '3px',
-    background: 'linear-gradient(90deg, #E60000, #000000)',
-  },
 }));
 
 const FooterGrid = styled(Box)(({ theme }) => ({
@@ -77,12 +68,13 @@ function Footer() {
                   href="mailto:info@legally.kz"
                   color="inherit"
                   underline="hover"
+                  sx={{ '&:hover': { color: '#E60000' } }}
                 >
                   alua.zholdykan@narxoz.kz
                 </Link>
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                <Link href="tel:+77771234567" color="inherit" underline="hover">
+                <Link href="tel:+77771234567" color="inherit" underline="hover" sx={{ '&:hover': { color: '#E60000' } }}>
                   +7 (776) 021-64-89
                 </Link>
               </Typography>
@@ -104,6 +96,7 @@ function Footer() {
                 display="block"
                 underline="hover"
                 mb={1}
+                sx={{ '&:hover': { color: '#E60000' } }}
               >
                 Политика конфиденциальности
               </Link>
@@ -113,6 +106,7 @@ function Footer() {
                 color="text.secondary"
                 display="block"
                 underline="hover"
+                sx={{ '&:hover': { color: '#E60000' } }}
               >
                 Условия использования
               </Link>

@@ -14,27 +14,9 @@ const HeaderBox = styled(Box)(({ theme }) => ({
   background: '#000000',
   padding: theme.spacing(4, 0),
   color: '#FFFFFF',
-  boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
   position: 'relative',
   overflow: 'hidden',
-  '&:before': {
-    content: '""',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '4px',
-    background: '#E60000',
-  },
-  '&:after': {
-    content: '""',
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '1px',
-    background: 'rgba(255, 255, 255, 0.1)',
-  },
+  borderBottom: '1px solid #E60000',
 }));
 
 const AnimatedGradient = styled(Box)({
@@ -43,13 +25,7 @@ const AnimatedGradient = styled(Box)({
   left: 0,
   right: 0,
   bottom: 0,
-  background:
-    'linear-gradient(90deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.03) 100%)',
-  animation: 'shimmer 8s infinite linear',
-  '@keyframes shimmer': {
-    '0%': { transform: 'translateX(-100%)' },
-    '100%': { transform: 'translateX(100%)' },
-  },
+  bottom: 0,
 });
 
 function Header() {
@@ -79,9 +55,8 @@ function Header() {
                 src={logo}
                 alt="Logo"
                 sx={{
-                  height: isMobile ? 60 : 80,
-                  borderRadius: '8px',
-                  boxShadow: '0 4px 12px rgba(230,0,0,0.3)',
+                  height: isMobile ? 69 : 92,
+                  borderRadius: '12px',
                   transition: 'transform 0.3s ease',
                   '&:hover': { transform: 'scale(1.05)' }
                 }}
@@ -110,7 +85,6 @@ function Header() {
                 lineHeight: 1.6,
                 opacity: 0.9,
                 letterSpacing: '0.02em',
-                textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
               }}
             >
               Профессиональная проверка юридических документов на соответствие
