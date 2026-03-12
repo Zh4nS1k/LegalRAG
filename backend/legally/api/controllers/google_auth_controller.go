@@ -19,23 +19,29 @@ import (
 
 var googleOAuthConfig *oauth2.Config
 
-func init() {
-	googleOAuthConfig = &oauth2.Config{
-		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
-		RedirectURL:  os.Getenv("GOOGLE_REDIRECT_URI"),
-		Scopes: []string{
-			"https://www.googleapis.com/auth/userinfo.email",
-			"https://www.googleapis.com/auth/userinfo.profile",
-		},
-		Endpoint: google.Endpoint,
+// getConfig lazily initializes and returns the OAuth config
+// so that godotenv in main.go has time to parse .env first.
+func getConfig() *oauth2.Config {
+	if googleOAuthConfig == nil {
+		googleOAuthConfig = &oauth2.Config{
+			ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+			ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+			RedirectURL:  os.Getenv("GOOGLE_REDIRECT_URI"),
+			Scopes: []string{
+				"https://www.googleapis.com/auth/userinfo.email",
+				"https://www.googleapis.com/auth/userinfo.profile",
+			},
+			Endpoint: google.Endpoint,
+		}
 	}
+	return googleOAuthConfig
 }
 
 // GoogleLogin redirects the user to Google's OAuth consent screen.
 // GET /api/auth/google
 func GoogleLogin(c *gin.Context) {
-	if googleOAuthConfig.ClientID == "" {
+	cfg := getConfig()
+	if cfg.ClientID == "" {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error": "Google OAuth не настроен. Установите GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET в .env",
 		})
@@ -43,7 +49,7 @@ func GoogleLogin(c *gin.Context) {
 	}
 	// state = random nonce (in production use a signed CSRF token)
 	state := "legally_oauth_state"
-	url := googleOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	url := cfg.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
@@ -62,7 +68,8 @@ func GoogleCallback(c *gin.Context) {
 		return
 	}
 
-	token, err := googleOAuthConfig.Exchange(context.Background(), code)
+	cfg := getConfig()
+	token, err := cfg.Exchange(context.Background(), code)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Не удалось обменять код: " + err.Error()})
 		return

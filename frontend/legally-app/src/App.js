@@ -12,6 +12,7 @@ import ResultSection from './components/ResultSection';
 import HistorySection from './components/HistorySection';
 import Footer from './components/Footer';
 import AuthPage from './components/AuthPage';
+import AuthCallback from './components/AuthCallback';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import ReviewerRoute from './components/ReviewerRoute';
@@ -356,6 +357,19 @@ function App() {
             path="/register"
             element={
               <AuthPage onSuccess={() => navigate('/login')} type="register" />
+            }
+          />
+          <Route
+            path="/auth/callback"
+            element={
+              <AuthCallback
+                onSuccess={() => {
+                  const token = localStorage.getItem('token');
+                  setAppState((prev) => ({ ...prev, isAuthenticated: true }));
+                  fetchUserData(token);
+                  navigate('/');
+                }}
+              />
             }
           />
           <Route
