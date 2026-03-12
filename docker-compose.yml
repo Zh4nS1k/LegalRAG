@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: legally_mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+  ai_service:
+    build:
+      context: ./ai_service
+      dockerfile: Dockerfile
+    container_name: legally_ai_service
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./ai_service/.env  # Assumes there is an .env in the ai_service folder
+    # Or load root .env if shared:
+    # env_file:
+    #   - .env
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+
+  backend:
+    build:
+      context: ./backend/legally
+      dockerfile: Dockerfile
+    container_name: legally_backend
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./backend/legally/.env # Assumes there is an .env in the backend folder
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - ai_service
+
+  frontend:
+    build:
+      context: ./frontend/legally-app
+      dockerfile: Dockerfile
+    container_name: legally_frontend
+    ports:
+      - "3000:80" # Map internal nginx 80 port to exposed 3000
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+volumes:
+  mongodb_data:

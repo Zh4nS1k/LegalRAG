@@ -1,0 +1,19 @@
+# Root Docker Ignore
+.git
+.github
+.env
+.idea
+.vscode
+*.md
+.agent
+.agents
+_agent
+_agents
+**/.venv
+**/venv
+**/env
+**/__pycache__
+**/*.pyc
+**/node_modules
+**/build
+**/dist

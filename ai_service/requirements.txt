@@ -51,3 +51,10 @@ nltk>=3.8.0
 # API
 fastapi>=0.100.0
 uvicorn>=0.20.0
+
+# PyTorch CPU-only — installed via the CPU wheel index to avoid downloading
+# gigabytes of NVIDIA CUDA runtime packages (triton, nccl, cublas, etc.)
+# The --extra-index-url in Dockerfile points to https://download.pytorch.org/whl/cpu
+torch==2.6.0+cpu
+torchvision==0.21.0+cpu
+torchaudio==2.6.0+cpu
