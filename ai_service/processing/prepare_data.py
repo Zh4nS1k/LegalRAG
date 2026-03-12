@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from ai_service.core import config
+from core import config
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import TextSplitter

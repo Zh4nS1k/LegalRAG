@@ -11,7 +11,7 @@ import requests
 import urllib3
 from bs4 import BeautifulSoup
 
-from ai_service.core import config
+from core import config
 
 # SSL: adilet.zan.kz иногда не проходит верификацию на Mac/Python 3.12
 # (промежуточный сертификат в trust store). Для официального сайта verify=False безопасно.

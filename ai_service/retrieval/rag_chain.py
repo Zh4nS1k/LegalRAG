@@ -8,7 +8,7 @@ from langchain_core.callbacks import Callbacks
 
 from utils import latency
 
-from ai_service.core import config
+from core import config
 from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 

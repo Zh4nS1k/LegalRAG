@@ -6,11 +6,11 @@ import pickle
 import os
 import time
 
-from ai_service.core import config
+from core import config
 from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
-from ai_service.processing.prepare_data import chunks, raw_docs
+from processing.prepare_data import chunks, raw_docs
 
 # Проверка до очистки: есть ли ст. 136 УК в распарсенных чанках
 uk_136_chunks = [c for c in chunks if "criminal_code" in c.metadata.get("source", "") and "136" in c.page_content]

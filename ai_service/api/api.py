@@ -4,8 +4,8 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 import time
-from ai_service.utils.latency import metrics_ctx
-from ai_service.retrieval import rag_chain
+from utils.latency import metrics_ctx
+from retrieval import rag_chain
 
 app = FastAPI(title="Legally RAG API", version="1.0")
 
