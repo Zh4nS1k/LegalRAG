@@ -3,15 +3,20 @@
 package controllers
 
 import (
-	"github.com/gin-gonic/gin"
+	"errors"
 	"legally/models"
 	"legally/services"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
-type AuthRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"`
+// RegisterRequest allows specifying an optional name and required role.
+type RegisterRequest struct {
+	Email    string          `json:"email"    binding:"required,email"`
+	Password string          `json:"password" binding:"required,min=8"`
+	Name     string          `json:"name"`                                    // optional
+	Role     models.UserRole `json:"role"     binding:"required,oneof=user student professor"`
 }
 
 type RefreshRequest struct {
@@ -19,41 +24,63 @@ type RefreshRequest struct {
 }
 
 func Register(c *gin.Context) {
-	var req AuthRequest
+	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":      "Проверьте введённые данные: " + bindingErrorMessage(err),
+			"error_code": "VALIDATION_ERROR",
+		})
 		return
 	}
 
-	tokens, err := services.Register(req.Email, req.Password, models.RoleUser)
+	tokens, err := services.Register(req.Email, req.Password, req.Name, req.Role)
 	if err != nil {
 		status := http.StatusBadRequest
-		if err == services.ErrUserExists {
+		code := "REGISTER_ERROR"
+		if errors.Is(err, services.ErrUserExists) {
 			status = http.StatusConflict
+			code = "EMAIL_EXISTS"
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		c.JSON(status, gin.H{"error": err.Error(), "error_code": code})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":      "Регистрация прошла успешно",
-		"accessToken":  tokens["accessToken"],
-		"refreshToken": tokens["refreshToken"],
+		"message":        "Регистрация прошла успешно. Мы отправили код подтверждения на ваш email.",
+		"accessToken":    tokens["accessToken"],
+		"refreshToken":   tokens["refreshToken"],
+		"email_verified": false,
 	})
 }
 
 func Login(c *gin.Context) {
-	var req AuthRequest
+	var req struct {
+		Email    string `json:"email"    binding:"required,email"`
+		Password string `json:"password" binding:"required"`
+	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":      "Введите email и пароль",
+			"error_code": "VALIDATION_ERROR",
+		})
 		return
 	}
 
 	tokens, err := services.Login(req.Email, req.Password)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error":   err.Error(),
-			"success": false,
+		// Return distinct error_code so the frontend can highlight the right field
+		code := "LOGIN_ERROR"
+		status := http.StatusUnauthorized
+		if errors.Is(err, services.ErrUserNotFound) {
+			code = "EMAIL_NOT_FOUND"
+			status = http.StatusNotFound
+		} else if errors.Is(err, services.ErrInvalidCredentials) {
+			code = "WRONG_PASSWORD"
+		}
+		c.JSON(status, gin.H{
+			"error":      err.Error(),
+			"error_code": code,
+			"success":    false,
 		})
 		return
 	}
@@ -65,6 +92,7 @@ func Login(c *gin.Context) {
 		"success":      true,
 	})
 }
+
 func GetUser(c *gin.Context) {
 	userID, exists := c.Get("userId")
 	if !exists {
@@ -79,11 +107,14 @@ func GetUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"email":     user.Email,
-		"role":      user.Role,
-		"createdAt": user.CreatedAt,
+		"email":          user.Email,
+		"name":           user.Name,
+		"role":           user.Role,
+		"email_verified": user.EmailVerified,
+		"createdAt":      user.CreatedAt,
 	})
 }
+
 func Refresh(c *gin.Context) {
 	var req RefreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -93,10 +124,7 @@ func Refresh(c *gin.Context) {
 
 	tokens, err := services.RefreshTokens(req.RefreshToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error":   err.Error(),
-			"success": false,
-		})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error(), "success": false})
 		return
 	}
 
@@ -113,21 +141,15 @@ func ValidateToken(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"valid": false})
 		return
 	}
-
-	// Проверка токена происходит в middleware
-	c.JSON(http.StatusOK, gin.H{
-		"valid":   true,
-		"message": "Токен действителен",
-	})
+	c.JSON(http.StatusOK, gin.H{"valid": true, "message": "Токен действителен"})
 }
 
 func Logout(c *gin.Context) {
-	// В реальном приложении здесь можно добавить токен в blacklist
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Выход выполнен успешно",
-		"success": true,
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "Выход выполнен успешно", "success": true})
 }
+
+// ─── Admin ────────────────────────────────────────────────────────────────────
+
 func AdminGetUsers(c *gin.Context) {
 	users, err := services.GetAllUsers()
 	if err != nil {
@@ -135,10 +157,10 @@ func AdminGetUsers(c *gin.Context) {
 		return
 	}
 
-	// Simplifying response to avoid sending sensitive data
 	type UserInfo struct {
 		ID    string          `json:"id"`
 		Email string          `json:"email"`
+		Name  string          `json:"name"`
 		Role  models.UserRole `json:"role"`
 	}
 
@@ -147,48 +169,44 @@ func AdminGetUsers(c *gin.Context) {
 		response = append(response, UserInfo{
 			ID:    u.ID.Hex(),
 			Email: u.Email,
+			Name:  u.Name,
 			Role:  u.Role,
 		})
 	}
-
 	c.JSON(http.StatusOK, response)
 }
+
 func AdminUpdateUserRole(c *gin.Context) {
 	var req struct {
 		UserID string          `json:"user_id" binding:"required"`
-		Role   models.UserRole `json:"role" binding:"required"`
+		Role   models.UserRole `json:"role"    binding:"required"`
 	}
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	if err := services.UpdateUserRole(req.UserID, req.Role); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user role"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update role"})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "Role updated successfully"})
 }
+
 func AdminCreateUser(c *gin.Context) {
 	var req struct {
-		Email    string          `json:"email" binding:"required,email"`
+		Email    string          `json:"email"    binding:"required,email"`
 		Password string          `json:"password" binding:"required,min=8"`
-		Role     models.UserRole `json:"role" binding:"required"`
+		Name     string          `json:"name"`
+		Role     models.UserRole `json:"role"     binding:"required"`
 	}
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	_, err := services.Register(req.Email, req.Password, req.Role)
-	if err != nil {
+	if _, err := services.Register(req.Email, req.Password, req.Name, req.Role); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user: " + err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "User created successfully"})
 }
 
@@ -198,11 +216,18 @@ func AdminDeleteUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "User ID is required"})
 		return
 	}
-
 	if err := services.DeleteUser(userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
+}
+
+// bindingErrorMessage converts a gin/validator error into a user-friendly Russian message.
+func bindingErrorMessage(err error) string {
+	msg := err.Error()
+	if len(msg) > 120 {
+		return "некорректные данные"
+	}
+	return msg
 }

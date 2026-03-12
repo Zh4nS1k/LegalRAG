@@ -16,13 +16,31 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// MAX_HISTORY_MESSAGES is the number of recent messages sent to the AI as context.
+// Each user–assistant exchange = 2 messages, so 20 = last 10 turns.
+const MAX_HISTORY_MESSAGES = 20
+
+// aiHTTPClient is re-used across all chat requests to the Python AI engine.
+// A persistent client avoids re-establishing TCP connections on every request.
+var aiHTTPClient = &http.Client{
+	Timeout: 180 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DisableKeepAlives:   false,
+	},
+}
+
 type HistoryMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
 type ChatRequest struct {
-	Message string           `json:"message" binding:"required"`
+	Message string `json:"message" binding:"required"`
+	// History is ignored server-side; real history is loaded from MongoDB per user.
+	// Kept for API backward compatibility only.
 	History []HistoryMessage `json:"history"`
 }
 
@@ -73,16 +91,39 @@ func HandleChat(c *gin.Context) {
 	// Get userId from context
 	userID := c.MustGet("userId").(string)
 
-	// Save User Message
+	// Save User Message to MongoDB
 	if err := services.SaveChatMessage(userID, "user", req.Message, nil); err != nil {
 		utils.LogError(fmt.Sprintf("Failed to save user message: %v", err))
-		// We continue processing even if save fails
+		// Continue processing even if save fails
 	}
 
-	// Prepare request to Python API
+	// ── SERVER-SIDE HISTORY LOADING ──────────────────────────────────────────
+	// Load the last MAX_HISTORY_MESSAGES for THIS user from MongoDB.
+	// This guarantees per-user isolation regardless of what the client sends.
+	dbMessages, histErr := services.GetRecentChatHistory(userID, MAX_HISTORY_MESSAGES)
+	serverHistory := make([]HistoryMessage, 0, len(dbMessages))
+	if histErr != nil {
+		utils.LogWarning(fmt.Sprintf("Could not load chat history for %s: %v", userID, histErr))
+		// Continue with empty history — better than blocking the request
+	} else {
+		for _, msg := range dbMessages {
+			// Skip the message we just saved (the current user turn)
+			// to avoid echoing it back as context
+			if msg.Role == "user" && msg.Content == req.Message {
+				continue
+			}
+			serverHistory = append(serverHistory, HistoryMessage{
+				Role:    msg.Role,
+				Content: msg.Content,
+			})
+		}
+	}
+	// ─────────────────────────────────────────────────────────────────────────
+
+	// Prepare request to Python API using server-loaded history
 	pythonPayload := PythonChatRequest{
 		Query:   req.Message,
-		History: req.History,
+		History: serverHistory, // ← always from MongoDB, never from client
 	}
 	jsonData, err := json.Marshal(pythonPayload)
 	if err != nil {
@@ -91,13 +132,8 @@ func HandleChat(c *gin.Context) {
 		return
 	}
 
-	// Python API URL (assuming localhost:8000 based on api.py)
-	// In production, this should be configurable via env vars
+	// Python API URL
 	pythonAPIURL := "http://localhost:8000/api/v1/internal-chat"
-
-	client := &http.Client{
-		Timeout: 180 * time.Second, // Long timeout for LLM generation
-	}
 
 	startInternal := time.Now()
 	httpReq, err := http.NewRequest("POST", pythonAPIURL, bytes.NewBuffer(jsonData))
@@ -111,7 +147,8 @@ func HandleChat(c *gin.Context) {
 		httpReq.Header.Set("X-Trace-ID", traceID.(string))
 	}
 
-	resp, err := client.Do(httpReq)
+	// Use the persistent aiHTTPClient — avoids a new TCP handshake on every request
+	resp, err := aiHTTPClient.Do(httpReq)
 	middleware.RecordMetric(c, "internal_service_call", time.Since(startInternal))
 	if err != nil {
 		utils.LogError(fmt.Sprintf("Failed to call Python API: %v", err))

@@ -46,6 +46,12 @@ func GetChatHistory(userID string) ([]models.ChatMessage, error) {
 	return repositories.GetChatHistory(userID)
 }
 
+// GetRecentChatHistory returns the last `limit` messages for the given user.
+// Used by HandleChat to build server-side history for the Python AI request.
+func GetRecentChatHistory(userID string, limit int) ([]models.ChatMessage, error) {
+	return repositories.GetRecentChatHistory(userID, limit)
+}
+
 func ClearChatHistory(userID string) error {
 	return repositories.ClearChatHistory(userID)
 }

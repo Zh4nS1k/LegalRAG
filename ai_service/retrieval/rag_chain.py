@@ -381,6 +381,55 @@ class _LawAwareRetriever(BaseRetriever):
         return docs
 
 
+def _enrich_with_parent_context(docs: List[Document]) -> List[Document]:
+    """
+    Context Enrichment: prepend a structured legal breadcrumb to each retrieved doc
+    so the LLM knows the full hierarchy: Code -> Chapter -> Article.
+
+    Input metadata keys used:
+        code_ru       -> e.g. "Уголовный кодекс РК"
+        chapter_title -> e.g. "Преступления против личности"
+        chapter_number -> e.g. "2"
+        article_number -> e.g. "136"
+        revision_date  -> e.g. "2024-01-01"
+        clause_level   -> e.g. "clause" | "subclause" | "article"
+
+    Output: same docs with breadcrumb header prepended to page_content.
+    """
+    enriched = []
+    for doc in docs:
+        m = doc.metadata
+        parts: list[str] = []
+
+        code = m.get("code_ru", "").strip()
+        if code:
+            parts.append(code)
+
+        chapter_num = m.get("chapter_number", "").strip()
+        chapter_title = m.get("chapter_title", "").strip()
+        if chapter_num and chapter_title:
+            parts.append(f"Глава {chapter_num}: {chapter_title}")
+        elif chapter_title:
+            parts.append(f"Глава: {chapter_title}")
+
+        art_num = m.get("article_number", "").strip()
+        if art_num:
+            parts.append(f"Статья {art_num}")
+
+        rev_date = m.get("revision_date", "").strip()
+        if rev_date:
+            parts.append(f"ред. от {rev_date}")
+
+        if parts:
+            breadcrumb = "[" + " | ".join(parts) + "]\n"
+            enriched_content = breadcrumb + doc.page_content
+            enriched.append(Document(page_content=enriched_content, metadata=m))
+        else:
+            enriched.append(doc)
+
+    return enriched
+
+
 class _TrimRetriever(BaseRetriever):
     """Обрезает количество и длину документов перед LLM, чтобы избежать переполнения контекста."""
     base_retriever: Any
@@ -415,7 +464,8 @@ class _TrimRetriever(BaseRetriever):
             if len(content) > self.max_chars_per_doc:
                 content = content[: self.max_chars_per_doc] + "\n[...текст обрезан...]"
             trimmed.append(Document(page_content=content, metadata=d.metadata))
-        return trimmed
+        # Inject parent-context breadcrumb so LLM knows Code → Chapter → Article scope
+        return _enrich_with_parent_context(trimmed)
 
 
 base_retriever = _vector_retriever
@@ -463,7 +513,7 @@ try:
 
     hybrid_retriever = EnsembleRetriever(
         retrievers=[_vector_retriever, bm25_retriever],
-        weights=[0.7, 0.3], # Pinecone favors vector search, BM25 supports exact/stem matches
+        weights=[0.6, 0.4],  # Increased BM25 to 0.4: better exact-term recall (е.г. "ст. 136")
     )
     base_retriever = hybrid_retriever
     print("Гибридный RAG готов! (BM25 + Pinecone, k=%d)" % _hybrid_k)

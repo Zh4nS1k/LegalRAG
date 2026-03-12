@@ -39,6 +39,12 @@ func SetupRoutes(router *gin.Engine) {
 		public.GET("/validate-token", controllers.ValidateToken)
 		public.GET("/laws", controllers.GetRelevantLaws)
 		public.GET("/stats", controllers.GetSystemStats)
+		// Email OTP verification
+		public.POST("/send-verification", controllers.SendVerificationCode)
+		public.POST("/verify-code", controllers.VerifyEmailCode)
+		// Google OAuth
+		public.GET("/auth/google", controllers.GoogleLogin)
+		public.GET("/auth/google/callback", controllers.GoogleCallback)
 	}
 
 	private := router.Group("/api")

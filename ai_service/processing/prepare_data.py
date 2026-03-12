@@ -1,14 +1,18 @@
-# prepare_data.py — метаданные: номер статьи, кодекс (RU/KZ)
+# prepare_data.py — Legal hierarchy-aware chunking for Kazakhstan RAG
+# Hierarchy: Document -> Chapter (Глава) -> Article (Статья) -> Clause (Пункт) -> Sub-clause (Подпункт)
 
 import re
 from pathlib import Path
+from typing import Optional
 
 from ai_service.core import config
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import TextSplitter
 
-# Маппинг имя_файла -> название кодекса (рус/каз)
+# ──────────────────────────────────────────────────────────────────────────────
+# Code name mapping: filename -> (Russian name, Kazakh name)
+# ──────────────────────────────────────────────────────────────────────────────
 CODE_NAMES = {
     "constitution.txt": ("Конституция РК", "ҚР Конституциясы"),
     "civil_code.txt": ("Гражданский кодекс РК (Общая часть)", "Азаматтық кодекс (Жалпы бөлім)"),
@@ -31,48 +35,127 @@ CODE_NAMES = {
     "law_on_ai.txt": ("Закон об искусственном интеллекте РК", "Жасанды интеллект туралы заң"),
 }
 
-# Regex для извлечения номера статьи из начала чанка (^\s* — ведущий пробел в файлах Adilet)
-ARTICLE_HEADER = re.compile(
-    r'^\s*(?:Статья|Стаття|Мәтін|Article|Section)\s*(\d+[а-яА-Яa-zA-Z]?)\.?\s*',
-    re.IGNORECASE
+# ──────────────────────────────────────────────────────────────────────────────
+# Regex patterns for legal hierarchy
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Article header: "Статья 136.", "Статья 136-1.", " Статья 136 " (with leading whitespace from Adilet)
+ARTICLE_RE = re.compile(
+    r'(?m)^\s*(Статья|Стаття|Мәтін|Article|Section)\s*(\d+[а-яА-Яa-zA-Z\-]?)\.*\s*(.*?)$',
+    re.IGNORECASE,
 )
 
+# Chapter/Section heading: "Глава 1.", "ГЛАВА 2 ", "Раздел IV", "Бөлім 3" (Kazakh)
+CHAPTER_RE = re.compile(
+    r'(?m)^\s*(?:Глава|ГЛАВА|Раздел|РАЗДЕЛ|Бөлім|Тарау|Chapter|Section)\s+'
+    r'([\dIVXLCDMivxlcdm]+)[\.\s]\s*(.*?)$',
+    re.IGNORECASE,
+)
 
-def get_article_number(chunk_text: str) -> str | None:
-    """Извлекает номер статьи из начала текста чанка."""
-    m = ARTICLE_HEADER.match(chunk_text.strip())
-    return m.group(1) if m else None
+# Clause (пункт): lines beginning with "1.", "2.", "1) ", "2) "
+CLAUSE_RE = re.compile(
+    r'(?m)^(\d+)[\.\)]\s+',
+    re.IGNORECASE,
+)
 
+# Sub-clause (подпункт): lines beginning with "1)", "2)", "а)", "б)"
+SUBCLAUSE_RE = re.compile(
+    r'(?m)^([а-яёА-ЯЁa-zA-Z\d]+\))\s+',
+    re.IGNORECASE,
+)
+
+# Revision date patterns from Adilet file headers:
+# "от 3 июля 2014 года", "от 03.07.2014", "N 226-V ЗРК от 3 июля 2014"
+REVISION_DATE_RE = re.compile(
+    r'(?:'
+    r'от\s+(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(\d{4})'  # от 3 июля 2014
+    r'|от\s+(\d{2})\.(\d{2})\.(\d{4})'  # от 03.07.2014
+    r')',
+    re.IGNORECASE,
+)
+
+_MONTH_MAP = {
+    "января": "01", "февраля": "02", "марта": "03", "апреля": "04",
+    "мая": "05", "июня": "06", "июля": "07", "августа": "08",
+    "сентября": "09", "октября": "10", "ноября": "11", "декабря": "12",
+}
+
+# Chunking size thresholds
+CHUNK_SHORT_MAX = 1000
+CHUNK_MEDIUM_MAX = 2500
+CHUNK_MEDIUM_SPLIT = 1500
+PARAGRAPH_OVERLAP = 175
+PREAMBLE_MAX = 800
+MIN_CHUNK_LEN = 50
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────────────────────
 
 def get_code_name(source_path: str) -> tuple[str, str]:
-    """По пути файла возвращает (название_рус, название_каз)."""
     name = Path(source_path).name
     return CODE_NAMES.get(name, (name.replace(".txt", ""), name.replace(".txt", "")))
 
 
-# Параметры чанкинга по типу текста (см. таблицу рекомендаций)
-CHUNK_SHORT_MAX = 1000       # ≤1000: статья целиком
-CHUNK_MEDIUM_MAX = 2500      # 1000–2500: статья целиком или по пунктам
-CHUNK_MEDIUM_SPLIT = 1500    # если >1500 в средней — делить по пунктам
-CHUNK_LONG_MIN = 2500       # >2500: делить по пунктам/подпунктам
-PARAGRAPH_OVERLAP = 175     # overlap 150–200 символов между чанками
-PREAMBLE_MAX = 800          # преамбула/раздел: один чанк если < 800 символов
-MIN_CHUNK_LEN = 50          # минимальная длина чанка
+def get_article_number(chunk_text: str) -> str | None:
+    m = ARTICLE_RE.match(chunk_text.strip())
+    return m.group(2) if m else None
 
-# Паттерн пунктов: 1), 2), 1. 2.
-PARAGRAPH_PATTERN = re.compile(
-    r'(?m)^(\d+)[\.\)]\s+',
-    re.IGNORECASE
-)
+
+def _extract_revision_date(text: str) -> str:
+    """
+    Scans the first 60 lines of a document for a revision/enactment date.
+    Returns ISO date string 'YYYY-MM-DD' or '' if not found.
+    """
+    header = "\n".join(text.splitlines()[:60])
+    m = REVISION_DATE_RE.search(header)
+    if not m:
+        return ""
+    # Named word-month form: от DD Month YYYY
+    if m.group(1):
+        day = m.group(1).zfill(2)
+        month = _MONTH_MAP.get(m.group(2).lower(), "01")
+        year = m.group(3)
+        return f"{year}-{month}-{day}"
+    # Numeric form: от DD.MM.YYYY
+    if m.group(4):
+        day, month, year = m.group(4), m.group(5), m.group(6)
+        return f"{year}-{month}-{day}"
+    return ""
+
+
+def _detect_chapter(line: str) -> tuple[str, str] | None:
+    """
+    Returns (chapter_number, chapter_title) if the line is a chapter heading, else None.
+    """
+    m = CHAPTER_RE.match(line)
+    if m:
+        num = m.group(1).strip()
+        title_part = m.group(2).strip()
+        return num, title_part
+    return None
+
+
+def _detect_clause_level(chunk_text: str) -> str:
+    """
+    Returns 'subclause', 'clause', or 'article' based on chunk content structure.
+    """
+    stripped = chunk_text.strip()
+    # Sub-clause starts with letter or short alpha marker like "а)" "б)" "1)"
+    if SUBCLAUSE_RE.match(stripped) and not ARTICLE_RE.match(stripped):
+        return "subclause"
+    if CLAUSE_RE.match(stripped) and not ARTICLE_RE.match(stripped):
+        return "clause"
+    return "article"
 
 
 def _split_by_paragraphs(text: str, overlap: int = PARAGRAPH_OVERLAP) -> list[str]:
-    """Делит текст по пунктам 1), 2), 3) с overlap 150–200 символов."""
-    parts = PARAGRAPH_PATTERN.split(text)
+    """Splits text by numbered clauses (1., 2., 1), 2)) with overlap."""
+    parts = CLAUSE_RE.split(text)
     if len(parts) <= 1:
         return [text] if text.strip() else []
 
-    # parts[0] — вступление до первого пункта, parts[1]="1", parts[2]="текст после 1)", ...
     chunks = []
     intro = parts[0].strip()
     for i in range(1, len(parts), 2):
@@ -85,9 +168,10 @@ def _split_by_paragraphs(text: str, overlap: int = PARAGRAPH_OVERLAP) -> list[st
             intro = ""
         if chunk_text.strip() and len(chunk_text) > MIN_CHUNK_LEN:
             chunks.append(chunk_text)
+
     if not chunks:
         return [text] if text.strip() else []
-    # Overlap: последние N символов предыдущего чанка в начало следующего
+
     result = []
     for k, c in enumerate(chunks):
         if k > 0 and overlap > 0 and len(result[-1]) > overlap:
@@ -98,12 +182,6 @@ def _split_by_paragraphs(text: str, overlap: int = PARAGRAPH_OVERLAP) -> list[st
 
 
 def _maybe_split_article(article_text: str) -> list[str]:
-    """
-    Применяет правила из таблицы:
-    - Короткая (≤1000): целиком
-    - Средняя (1000–2500): целиком или по пунктам если >1500
-    - Длинная (>2500): по пунктам
-    """
     n = len(article_text)
     if n <= CHUNK_SHORT_MAX:
         return [article_text]
@@ -112,22 +190,19 @@ def _maybe_split_article(article_text: str) -> list[str]:
             return [article_text]
         sub = _split_by_paragraphs(article_text)
         return sub if len(sub) > 1 else [article_text]
-    # Длинная статья
     sub = _split_by_paragraphs(article_text)
     return sub if len(sub) > 1 else [article_text]
 
 
 def _maybe_split_preamble(text: str) -> list[str]:
-    """Преамбула/раздел: один чанк если < 800 символов."""
     t = text.strip()
     if not t or len(t) < MIN_CHUNK_LEN:
         return []
     if len(t) <= PREAMBLE_MAX:
         return [t]
-    # Если длиннее — делим по заголовкам глав/разделов
     section_pattern = re.compile(
-        r'(?m)^(?:Глава|Раздел|ГЛАВА|РАЗДЕЛ|Бөлім|Тақырып)\s+[\dIVXLCDM]+[\.\s]',
-        re.IGNORECASE
+        r'(?m)^(?:Глава|Раздел|ГЛАВА|РАЗДЕЛ|Бөлім|Тақырып)\s+[\dIVXLCDM]+[.\s]',
+        re.IGNORECASE,
     )
     parts = section_pattern.split(t)
     if len(parts) > 1:
@@ -142,25 +217,31 @@ def _maybe_split_preamble(text: str) -> list[str]:
     return [t]
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Main splitter
+# ──────────────────────────────────────────────────────────────────────────────
+
 class ArticleTextSplitter(TextSplitter):
     """
-    Splitter по таблице рекомендаций:
-    - Короткая статья (≤1000): целиком
-    - Средняя (1000–2500): целиком или по пунктам при >1500
-    - Длинная (>2500): по пунктам
-    - Преамбула/раздел: один чанк если < 800 символов
+    Legal hierarchy-aware splitter for Kazakhstani law documents.
+
+    Splitting strategy (unchanged from original):
+    - Short article (≤1000 chars):  whole article as one chunk
+    - Medium (1000–2500):          whole or by clauses if >1500
+    - Long (>2500):                by clauses (Пункт)
+
+    NEW — metadata enrichment per chunk:
+    - chapter_title: nearest preceding chapter/section heading
+    - chapter_number: chapter/section number
+    - clause_level: "article" | "clause" | "subclause"
+    - revision_date: ISO date from document header (empty string if not found)
     """
 
     def split_text(self, text: str) -> list[str]:
-        # ^\s* — в УК РК заголовки часто с ведущим пробелом (" Статья 136.")
-        article_pattern = re.compile(
-            r'(?m)^\s*(Статья|Стаття|Мәтін|Article|Section)\s*(\d+[а-яА-Яa-zA-Z]?)\.?\s*(.*?$)',
-            re.IGNORECASE | re.DOTALL
-        )
-        matches = list(article_pattern.finditer(text))
+        """Return raw text chunks — chapters tracked in create_documents() for metadata."""
+        matches = list(ARTICLE_RE.finditer(text))
         if not matches:
-            preamble_chunks = _maybe_split_preamble(text)
-            return [c for c in preamble_chunks if c and len(c) > MIN_CHUNK_LEN]
+            return [c for c in _maybe_split_preamble(text) if c and len(c) > MIN_CHUNK_LEN]
 
         chunks = []
         prev_end = 0
@@ -181,45 +262,81 @@ class ArticleTextSplitter(TextSplitter):
 
         return chunks
 
-    def create_documents(self, texts: list[str], metadatas: list[dict] = None) -> list[Document]:
+    def create_documents(
+        self, texts: list[str], metadatas: list[dict] = None
+    ) -> list[Document]:
         """
-        Тексты в Document с метаданными: source, code_ru, code_kz, article_number.
-        Метаданные ограничены до 40 KB (Pinecone limit) — храним только короткие поля.
+        Creates Documents with full legal hierarchy metadata:
+        - source, code_ru, code_kz, article_number  (existing)
+        - chapter_title, chapter_number             (NEW — nearest preceding chapter)
+        - clause_level                               (NEW — article/clause/subclause)
+        - revision_date                              (NEW — from document header)
         """
         _metadatas = metadatas or [{} for _ in texts]
         documents = []
+
         for i, text in enumerate(texts):
             base_meta = dict(_metadatas[i])
             source = base_meta.get("source", "")
             code_ru, code_kz = get_code_name(source)
+            source_short = Path(source).name if source else ""
+
+            # Extract revision date once per source document
+            revision_date = _extract_revision_date(text)
+
+            # Track chapter context as we scan the raw text
+            current_chapter_number: str = ""
+            current_chapter_title: str = ""
+
             for chunk in self.split_text(text):
-                # Только короткие метаданные (Pinecone limit: 40 KB на вектор)
-                # source может быть длинным (путь), обрезаем до имени файла
-                source_short = Path(source).name if source else ""
-                meta = {
-                    "source": source_short,  # только имя файла, не полный путь
+                if not chunk or len(chunk) <= MIN_CHUNK_LEN:
+                    continue
+
+                # Update chapter context from lines at the start of this chunk
+                for line in chunk.splitlines()[:5]:
+                    chapter_hit = _detect_chapter(line)
+                    if chapter_hit:
+                        current_chapter_number, current_chapter_title = chapter_hit
+                        break
+
+                art_num = get_article_number(chunk)
+                clause_level = _detect_clause_level(chunk)
+
+                meta: dict = {
+                    "source": source_short,
                     "code_ru": code_ru,
                     "code_kz": code_kz,
+                    "clause_level": clause_level,
                 }
-                art_num = get_article_number(chunk)
                 if art_num is not None:
-                    meta["article_number"] = str(art_num)  # гарантируем строку
-                # НЕ добавляем другие поля из base_meta — они могут содержать длинный текст
-                # (например, page_content, full_text, chapter_content и т.д.)
-                new_doc = Document(page_content=chunk, metadata=meta)
-                documents.append(new_doc)
+                    meta["article_number"] = str(art_num)
+                if current_chapter_title:
+                    # Truncate to 150 chars for Pinecone metadata limit
+                    meta["chapter_title"] = current_chapter_title[:150]
+                if current_chapter_number:
+                    meta["chapter_number"] = current_chapter_number[:20]
+                if revision_date:
+                    meta["revision_date"] = revision_date
+
+                documents.append(Document(page_content=chunk, metadata=meta))
+
         return documents
 
-# Загрузка документов
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Module-level execution: load documents and produce chunks
+# ──────────────────────────────────────────────────────────────────────────────
+
 if not config.DOCUMENTS_DIR.exists():
     raise SystemExit(
         f"Папка {config.DOCUMENTS_DIR} не найдена. Сначала запустите: python fetch_adilet.py"
     )
+
 loader = DirectoryLoader(
     str(config.DOCUMENTS_DIR),
     glob="**/*.txt",
     loader_cls=TextLoader,
-    loader_kwargs={"encoding": "utf-8"}
+    loader_kwargs={"encoding": "utf-8"},
 )
 raw_docs = loader.load()
 if not raw_docs:
@@ -227,14 +344,24 @@ if not raw_docs:
         f"В {config.DOCUMENTS_DIR} нет .txt файлов. Запустите: python fetch_adilet.py"
     )
 
-# Используем кастомный splitter
 article_splitter = ArticleTextSplitter()
-
-# Разделяем
-chunks = article_splitter.create_documents([doc.page_content for doc in raw_docs], [doc.metadata for doc in raw_docs])
+chunks = article_splitter.create_documents(
+    [doc.page_content for doc in raw_docs],
+    [doc.metadata for doc in raw_docs],
+)
 
 print(f"Всего документов: {len(raw_docs)}")
 print(f"Всего чанков (статей): {len(chunks)}")
-# Пример: вывести первую чанку
+
+# Debug: show hierarchy metadata coverage
+chapter_chunks = [c for c in chunks if c.metadata.get("chapter_title")]
+dated_chunks = [c for c in chunks if c.metadata.get("revision_date")]
+clause_chunks = [c for c in chunks if c.metadata.get("clause_level") == "clause"]
+print(f"  └─ С chapter_title: {len(chapter_chunks)}")
+print(f"  └─ С revision_date: {len(dated_chunks)}")
+print(f"  └─ clause-level чанков: {len(clause_chunks)}")
+
 if chunks:
-    print("Пример чанка:\n", chunks[0].page_content[:300], "...")
+    print("\nПример чанка:")
+    print(chunks[0].page_content[:300], "...")
+    print("Метаданные:", chunks[0].metadata)

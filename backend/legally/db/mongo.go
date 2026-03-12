@@ -15,12 +15,12 @@ import (
 
 var MongoClient *mongo.Client
 
-// dbName reads the database name from the DB_NAME env var (falls back to "legally_bot").
+// dbName reads the database name from the DB_NAME env var (falls back to "legally").
 func dbName() string {
 	if name := os.Getenv("DB_NAME"); name != "" {
 		return name
 	}
-	return "legally_bot"
+	return "legally"
 }
 
 func InitMongo() {
@@ -79,13 +79,31 @@ func EnsureIndexes() {
 		}
 		_, err := coll.Indexes().CreateOne(ctx, model)
 		if err != nil {
-			// Log but don't fatal — index may already exist
 			log.Printf("⚠️  Index on %s: %v", idx.collection, err)
 		} else {
 			log.Printf("✅ Index ensured: %s %v", idx.collection, idx.keys)
 		}
 	}
+
+	// TTL index: auto-delete expired OTP codes after expires_at
+	vcColl := GetCollection("verification_codes")
+	ttlModel := mongo.IndexModel{
+		Keys:    bson.D{{Key: "expires_at", Value: 1}},
+		Options: options.Index().SetExpireAfterSeconds(0).SetBackground(true),
+	}
+	if _, err := vcColl.Indexes().CreateOne(ctx, ttlModel); err != nil {
+		log.Printf("⚠️  TTL index on verification_codes: %v", err)
+	} else {
+		log.Println("✅ TTL index ensured: verification_codes.expires_at")
+	}
+
+	// Sparse unique index on google_id (only for OAuth users)
+	_, _ = GetCollection("users").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "google_id", Value: 1}},
+		Options: options.Index().SetUnique(true).SetSparse(true).SetBackground(true),
+	})
 }
+
 
 func Ping() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

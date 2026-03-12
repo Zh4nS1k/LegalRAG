@@ -59,9 +59,10 @@ def _make_embeddings() -> PrefixedEmbeddings:
 
 embeddings = _make_embeddings()
 
-api_key = os.environ.get("PINECONE_API_KEY")
+api_key = config.PINECONE_API_KEY or os.environ.get("PINECONE_API_KEY")
 if not api_key:
-    raise SystemExit("Задайте PINECONE_API_KEY: export PINECONE_API_KEY=...")
+    raise SystemExit("Задайте PINECONE_API_KEY в .env или: export PINECONE_API_KEY=...")
+
 
 from pinecone import Pinecone, ServerlessSpec
 pc = Pinecone(api_key=api_key)
@@ -94,7 +95,8 @@ print(f"Подключение к индексу {index_name} (namespace: {names
 vector_store = PineconeVectorStore(
     index_name=index_name,
     embedding=embeddings,
-    namespace=namespace
+    namespace=namespace,
+    pinecone_api_key=api_key,  # explicit — pydantic-settings doesn't write back to os.environ
 )
 
 import json
@@ -119,7 +121,13 @@ def clean_metadata(meta: dict) -> dict:
         'chapter_text', 'page_content', 'raw_text', 'chapter_content',
         'article_text', 'snippets', 'full_article', 'raw_content'
     ]
-    allowed = ['source', 'code_ru', 'code_kz', 'article_number', 'chapter', 'section']
+    allowed = [
+        'source', 'code_ru', 'code_kz', 'article_number',
+        # Legal hierarchy fields (NEW)
+        'chapter_title', 'chapter_number', 'clause_level', 'revision_date',
+        # Legacy fields
+        'chapter', 'section',
+    ]
 
     clean = {}
     for k, v in meta.items():
@@ -228,20 +236,45 @@ if max_total_est > 40960:
     print(f"\n⚠️  СТОП: оценка размера > 40 KB. Уменьшите MAX_PAGE_CONTENT_CHARS.")
     raise SystemExit("См. константы MAX_PAGE_CONTENT_CHARS / MAX_TEXT_IN_METADATA_BYTES выше.")
 
+import time as _time
+
 print(f"Загрузка {len(clean_chunks)} чанков (пакетами по 50)...")
 
 BATCH_SIZE = 50
 total_chunks = len(clean_chunks)
+total_batches = (total_chunks + BATCH_SIZE - 1) // BATCH_SIZE
+
+# Set SKIP_BATCHES=143 to resume from batch 144 (0-indexed skip)
+import os as _os
+skip_n = int(_os.environ.get("SKIP_BATCHES", "0"))
+if skip_n > 0:
+    print(f"⏭  Пропускаем первые {skip_n} батчей (резюме с позиции {skip_n * BATCH_SIZE})")
 
 for i in range(0, total_chunks, BATCH_SIZE):
-    batch = clean_chunks[i : i + BATCH_SIZE]
-    print(f"   Бач {i // BATCH_SIZE + 1}/{(total_chunks + BATCH_SIZE - 1) // BATCH_SIZE}: документы {i} - {i + len(batch)}")
-    try:
-        vector_store.add_documents(batch, batch_size=32)
-    except Exception as e:
-        print(f"❌ Ошибка в баче {i}: {e}")
-        # Можно добавить break или continue, в зависимости от желаемого поведения
-        # Пока просто логируем и идем дальше (или останавливаемся, если критично)
+    batch_num = i // BATCH_SIZE + 1
+    if batch_num <= skip_n:
+        continue
+
+    batch = clean_chunks[i: i + BATCH_SIZE]
+    print(f"   Бач {batch_num}/{total_batches}: документы {i} - {i + len(batch)}")
+
+    # Retry with exponential backoff (3 attempts: 5s, 10s, 20s)
+    for attempt in range(3):
+        try:
+            vector_store.add_documents(batch, batch_size=32)
+            break  # success
+        except Exception as e:
+            wait = 5 * (2 ** attempt)
+            print(f"   ⚠️  Попытка {attempt + 1}/3 не удалась: {e}")
+            if attempt < 2:
+                print(f"   ⏳ Ждём {wait}с перед повтором...")
+                _time.sleep(wait)
+            else:
+                print(f"   ❌ Батч {batch_num} пропущен после 3 попыток.")
+
+    # Brief cooldown to avoid free-tier rate limits
+    _time.sleep(0.3)
+
 
 # Сохраняем очищенные чанки для BM25
 with open(config.CHUNKS_PICKLE_PATH, "wb") as f:
