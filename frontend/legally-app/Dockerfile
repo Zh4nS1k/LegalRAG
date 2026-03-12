@@ -19,9 +19,10 @@ RUN npm run build
 # --- Production stage ---
 FROM nginx:alpine
 
-# ВНИМАНИЕ: Проверьте, куда ваш билд складывает файлы. 
-# В Vite это обычно /app/dist, в Create React App — /app/build.
 COPY --from=builder /app/build /usr/share/nginx/html
+
+# Custom nginx config to support React Router client-side routes
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
