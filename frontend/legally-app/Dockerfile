@@ -1,28 +1,28 @@
-# Build stage
-FROM node:18-alpine AS builder
+# 1. Используем Node.js 20 (как того требуют библиотеки)
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files and install dependencies
+# 2. Копируем файлы зависимостей
 COPY package*.json ./
-RUN npm ci
 
-# Copy the application source code
+# 3. Используем 'npm install' вместо 'npm ci', чтобы сгладить конфликты версий в lock-файле
+# Если проект на React, иногда помогает флаг --legacy-peer-deps
+RUN npm install
+
+# 4. Копируем остальной код
 COPY . .
 
-# Build the React application
+# 5. Собираем проект
 RUN npm run build
 
-# Production stage
+# --- Production stage ---
 FROM nginx:alpine
 
-# Copy the built assets from the builder stage to Nginx's default directory
+# ВНИМАНИЕ: Проверьте, куда ваш билд складывает файлы. 
+# В Vite это обычно /app/dist, в Create React App — /app/build.
 COPY --from=builder /app/build /usr/share/nginx/html
 
-# Copy a custom nginx configuration if needed
-# COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Expose port 80 (to be mapped in docker-compose)
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]

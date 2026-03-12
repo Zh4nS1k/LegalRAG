@@ -1,34 +1,40 @@
-# Build stage
-FROM golang:1.23-alpine AS builder
+# --- Этап сборки (Builder) ---
+FROM golang:1.25-alpine AS builder
 
+# Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Install git for downloading dependencies
+# Устанавливаем необходимые системные зависимости
 RUN apk add --no-cache git
 
-# Copy go mod files
+# Сначала копируем только файлы зависимостей (для эффективного кэширования слоев)
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the rest of the source code
+# Копируем весь исходный код
 COPY . .
 
-# Build the Go application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o legally main.go
+# Собираем бинарный файл
+# -ldflags="-s -w" уменьшает размер файла, удаляя отладочную информацию
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -a -installsuffix cgo -o legally main.go
 
-# Final stage
+# --- Финальный этап (Runtime) ---
 FROM alpine:latest
 
 WORKDIR /app
 
-# Install CA certificates for HTTPS requests
+# Устанавливаем сертификаты (нужны для HTTPS запросов к API) и часовые пояса
 RUN apk --no-cache add ca-certificates tzdata
 
-# Copy the pre-built binary file from the previous stage
+# Копируем бинарный файл из builder
 COPY --from=builder /app/legally .
-COPY --from=builder /app/templates ./templates
-# Ensure .env is explicitly passed/mounted, we don't copy local .env
+
+# Копируем статические файлы (templates, .env и т.д.), если они существуют.
+# Чтобы билд не падал, если папка вдруг отсутствует, копируем всё содержимое
+# или убедитесь, что папка точно есть в корне проекта.
+# COPY --from=builder /app/templates ./templates
 
 EXPOSE 8080
 
+# Запуск приложения
 CMD ["./legally"]

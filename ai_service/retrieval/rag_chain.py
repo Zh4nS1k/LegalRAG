@@ -6,7 +6,7 @@ import re
 from typing import Any, List, Sequence, Optional
 from langchain_core.callbacks import Callbacks
 
-from ai_service.utils import latency
+from utils import latency
 
 from ai_service.core import config
 from langchain_pinecone import PineconeVectorStore
