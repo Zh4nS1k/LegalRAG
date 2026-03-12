@@ -16,17 +16,22 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { styled } from '@mui/material/styles';
 
-const SidebarContainer = styled(Box)(({ theme }) => ({
-    width: '280px',
+const SidebarContainer = styled(Box, {
+    shouldForwardProp: (prop) => prop !== 'isOpen',
+})(({ theme, isOpen }) => ({
+    width: isOpen ? '280px' : '0px',
     height: '100%',
     backgroundColor: '#000000',
     color: '#FFFFFF',
     display: 'flex',
     flexDirection: 'column',
-    borderRight: '2px solid #E60000',
+    borderRight: isOpen ? '2px solid #E60000' : 'none',
+    overflow: 'hidden',
+    transition: 'width 0.3s ease',
 }));
 
 const NewChatButton = styled(Button)(({ theme }) => ({
+    width: 'calc(100% - 40px)',
     margin: '20px',
     padding: '12px',
     borderRadius: '12px',
@@ -68,11 +73,10 @@ const SessionButton = styled(ListItemButton, {
     },
 }));
 
-const Sidebar = ({ sessions, activeSessionId, onSelectSession, onNewChat, onDeleteSession }) => {
+const Sidebar = ({ sessions, activeSessionId, onSelectSession, onNewChat, onDeleteSession, isOpen }) => {
     return (
-        <SidebarContainer>
+        <SidebarContainer isOpen={isOpen}>
             <NewChatButton
-                fullWidth
                 startIcon={<AddIcon />}
                 onClick={onNewChat}
             >

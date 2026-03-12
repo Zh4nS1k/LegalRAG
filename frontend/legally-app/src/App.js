@@ -28,8 +28,10 @@ import {
   Person as ProfileIcon,
   Chat as ChatIcon,
   VerifiedUser as EvalIcon,
+  Menu as MenuIcon,
+  ChevronLeft as ChevronLeftIcon
 } from '@mui/icons-material';
-import { Box, Typography, Button, Modal, Fade, Avatar } from '@mui/material';
+import { Box, Typography, Button, Modal, Fade, Avatar, IconButton } from '@mui/material';
 import Sidebar from './components/Sidebar';
 import { useChatHistory } from './hooks/useChatHistory';
 import './styles/index.css';
@@ -47,6 +49,7 @@ function App() {
   const navigate = useNavigate();
   const abortControllerRef = useRef(null);
   const chatHistory = useChatHistory();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [appState, setAppState] = useState({
     isLoading: false,
     fileInfo: null,
@@ -390,13 +393,30 @@ function App() {
               <ProtectedRoute isAuthenticated={appState.isAuthenticated}>
                 <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
                   <Sidebar
+                    isOpen={isSidebarOpen}
                     sessions={chatHistory.sessions}
                     activeSessionId={chatHistory.activeSessionId}
                     onSelectSession={chatHistory.setActiveSessionId}
                     onNewChat={chatHistory.createNewSession}
                     onDeleteSession={chatHistory.deleteSession}
                   />
-                  <Box sx={{ flex: 1, height: '100%', overflow: 'hidden' }}>
+                  <Box sx={{ flex: 1, height: '100%', overflow: 'hidden', position: 'relative' }}>
+                    <IconButton 
+                      onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                      size="small"
+                      sx={{ 
+                        position: 'absolute', 
+                        top: 20, 
+                        left: 20, 
+                        zIndex: 100, 
+                        bgcolor: 'white', 
+                        border: '1px solid #E5E7EB',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                        '&:hover': { bgcolor: '#f9f9f9' } 
+                      }}
+                    >
+                      {isSidebarOpen ? <ChevronLeftIcon /> : <MenuIcon />}
+                    </IconButton>
                     <ChatSection
                       activeSession={chatHistory.activeSession}
                       addMessageToSession={chatHistory.addMessageToSession}
