@@ -132,8 +132,8 @@ func HandleChat(c *gin.Context) {
 		return
 	}
 
-	// Python API URL
-	pythonAPIURL := "http://localhost:8000/api/v1/internal-chat"
+	// Python API URL (use AI_SERVICE_URL in Docker, e.g. http://ai_service:8000)
+	pythonAPIURL := utils.GetAIServiceBaseURL() + "/api/v1/internal-chat"
 
 	startInternal := time.Now()
 	httpReq, err := http.NewRequest("POST", pythonAPIURL, bytes.NewBuffer(jsonData))

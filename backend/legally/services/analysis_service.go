@@ -15,9 +15,9 @@ import (
 	"time"
 )
 
-const (
-	apiEndpoint = "http://localhost:8000/api/v1/analyze"
-)
+func getAnalyzeEndpoint() string {
+	return utils.GetAIServiceBaseURL() + "/api/v1/analyze"
+}
 
 type HttpError struct {
 	Status  int
@@ -113,7 +113,7 @@ func queryPythonAnalysisAPI(text string) (string, error) {
 		return "", fmt.Errorf("ошибка маршалинга payload: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", apiEndpoint, bytes.NewBuffer(body))
+	req, err := http.NewRequest("POST", getAnalyzeEndpoint(), bytes.NewBuffer(body))
 	if err != nil {
 		return "", fmt.Errorf("ошибка создания запроса: %w", err)
 	}

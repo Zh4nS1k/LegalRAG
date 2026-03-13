@@ -146,8 +146,8 @@ func ClearFileCache(c *gin.Context) {
 }
 
 func GetSystemStats(c *gin.Context) {
-	// Call Python API for stats
-	resp, err := http.Get("http://localhost:8000/api/v1/stats")
+	// Call Python API for stats (use AI_SERVICE_URL in Docker, e.g. http://ai_service:8000)
+	resp, err := http.Get(utils.GetAIServiceBaseURL() + "/api/v1/stats")
 	if err != nil {
 		utils.LogError(fmt.Sprintf("Ошибка получения статистики от Python API: %v", err))
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Stats service unavailable"})

@@ -7,6 +7,7 @@ import (
 	"io"
 	"legally/models"
 	"legally/repositories"
+	"legally/utils"
 	"net/http"
 	"strconv"
 	"strings"
@@ -230,7 +231,7 @@ func parseUploadFile(c *gin.Context) ([]BatchQuestion, error) {
 }
 
 func processBatchAndSetPending(tasks []models.EvaluationTask) {
-	pythonAPI := "http://localhost:8000/api/v1/generate-eval-data"
+	pythonAPI := utils.GetAIServiceBaseURL() + "/api/v1/generate-eval-data"
 	for _, task := range tasks {
 		evalData, err := fetchEvalDataFromPython(pythonAPI, task.Question)
 		if err != nil {
