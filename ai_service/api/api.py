@@ -33,6 +33,10 @@ async def _warmup_rag():
     logger.info("[START] Model Initialization")
     t0 = time.perf_counter()
     try:
+        # Level 1: Hooks - Absolute Guarantee
+        from ai_service.lifecycle_hooks import pre_flight_check
+        pre_flight_check()
+
         from ai_service.retrieval import rag_chain
 
         rag_chain.get_embeddings()

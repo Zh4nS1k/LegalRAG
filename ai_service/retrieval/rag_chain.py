@@ -12,6 +12,7 @@ import sys
 
 from ai_service.utils import latency
 from ai_service.utils.connectivity import is_internet_available, is_cache_populated
+from ai_service.lifecycle_hooks import network_sensor
 
 from ai_service.core import config
 
@@ -103,6 +104,10 @@ def _make_embeddings() -> PrefixedEmbeddings:
     local_only = config.HF_LOCAL_ONLY or not internet_ok
     model_kwargs: dict = {"local_files_only": local_only}
 
+    # Device selection: force CPU if GPU disabled or insufficient
+    device = "cpu" if os.environ.get("CUDA_VISIBLE_DEVICES") == "" else ("cuda" if torch.cuda.is_available() else "cpu")
+    model_kwargs["device"] = device
+
     try:
         from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -125,6 +130,10 @@ def _make_embeddings() -> PrefixedEmbeddings:
             "Не удалось загрузить эмбеддинги. Проверьте сеть или запустите: python -m ai_service.scripts.download_models. Кэш: %s"
             % cache_folder
         ) from exc
+
+
+# Apply connectivity hook
+_make_embeddings = network_sensor(_make_embeddings)
 
 
 def get_embeddings() -> PrefixedEmbeddings:
@@ -835,9 +844,9 @@ def _ensure_latency_patches() -> None:
 
     _ensure_latency_patches._done = True
 
-UNIVERSAL_PROMPT_TEMPLATE = """Ты — точный юридический ассистент по законодательству Республики Казахстан.
-Ты имеешь доступ только к следующим нормативным актам (НҚА):
-• Конституция Республики Казахстан
+UNIVERSAL_PROMPT_TEMPLATE = """You are a Legal Synthesizer. Based on the verified context {context} and the analyzed user intent {input}, provide a final legal standing. Mention the 'Flip-Point' (what could change the outcome)."""
+
+CRIMINAL_PROMPT_TEMPLATE = """Ты — эксперт по Уголовному кодексу РК.
 • Гражданский кодекс РК (Общая и Особенная части)
 • Трудовой кодекс РК
 • Налоговый кодекс РК
