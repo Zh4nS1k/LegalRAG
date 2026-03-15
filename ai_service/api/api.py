@@ -1,13 +1,57 @@
+import logging
+import os
+import time
 import uvicorn
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
-import time
-from utils.latency import metrics_ctx
-from retrieval import rag_chain
+
+from ai_service.utils.latency import metrics_ctx
+
+logger = logging.getLogger("ai_service.api")
+
+# Configure diagnostic logging (granular step-by-step for tracing hangs/timeouts)
+_log_level = os.environ.get("LEGAL_RAG_LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+# Reduce noise from third-party libs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
 
 app = FastAPI(title="Legally RAG API", version="1.0")
+
+
+@app.on_event("startup")
+async def _warmup_rag():
+    """Load all RAG components before accepting connections. Server binds after warmup (~2–3 min)."""
+    logger.info("[START] Model Initialization")
+    t0 = time.perf_counter()
+    try:
+        from ai_service.retrieval import rag_chain
+
+        rag_chain.get_embeddings()
+        rag_chain.get_vector_store()
+        rag_chain.get_retriever()
+        rag_chain.get_llm()
+        elapsed = time.perf_counter() - t0
+        logger.info("[SUCCESS] Model Initialization (%.2fs)", elapsed)
+    except Exception as e:
+        elapsed = time.perf_counter() - t0
+        logger.error("[FAIL] Model Initialization (%.2fs): %s", elapsed, e, exc_info=True)
+        raise
+
+
+@app.get("/health")
+async def health():
+    """Health check: 200 when ready (server only binds after warmup)."""
+    return {"status": "ok"}
+
 
 class ChatRequest(BaseModel):
     query: str
@@ -27,6 +71,9 @@ class ChatResponse(BaseModel):
     result: str
     source_documents: List[dict]
     trace_report: Optional[Dict[str, Any]] = None
+    confidence_score: float = 0.0
+    missing_fields: Optional[List[str]] = None
+    clarifying_questions: Optional[List[str]] = None
 
 import numpy as np
 
@@ -45,65 +92,72 @@ def convert_numpy_types(obj):
 
 @app.post("/api/v1/internal-chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest):
+    logger.info("[START] Incoming Request Parsing")
     metrics_ctx.set({})
     x_trace_id = request.headers.get("X-Trace-ID", f"trace_{int(time.time())}")
     start_time = time.perf_counter()
     try:
-        # Invoke the RAG chain
-        response = rag_chain.invoke_qa(body.query, history=body.history)
-        
-        # Format the response
+        _query = body.query
+        _history = body.history or []
+        logger.info("[SUCCESS] Request Parsed (query_len=%d, history_len=%d)", len(_query), len(_history))
+    except Exception as e:
+        logger.error("Request parsing failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        from ai_service.retrieval import detective_mode
+
+        # Detective Mode: completeness → agentic (HyDE, Censor, Self-RAG, CoVe) → causality/skeptic/flip → confidence
+        response = detective_mode.invoke_detective_qa(
+            body.query,
+            history=body.history,
+            trace_id=x_trace_id,
+        )
         result = response.get("result", "")
         source_docs = []
-        
         for doc in response.get("source_documents", []):
             if hasattr(doc, "metadata"):
-                # Clean metadata of numpy types
                 metadata = convert_numpy_types(doc.metadata)
-                source_docs.append({
-                    "page_content": doc.page_content,
-                    "metadata": metadata
-                })
+                source_docs.append({"page_content": doc.page_content, "metadata": metadata})
             else:
-                # Handle case where it might be a dict already or something else
                 source_docs.append(convert_numpy_types(doc))
 
-        python_rag_total = int((time.perf_counter() - start_time) * 1000)
-        metrics = metrics_ctx.get() or {}
-        
-        trace_report = {
-            "metadata": {
-                "id": x_trace_id,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            },
-            "metrics_ms": {
-                "python_rag_total": python_rag_total,
-                "breakdown": metrics
-            }
-        }
+        trace_report = response.get("trace_report") or {}
+        trace_report.setdefault("metadata", {})["id"] = x_trace_id
+        trace_report["metadata"]["timestamp"] = datetime.now(timezone.utc).isoformat()
+        ms = trace_report.get("metrics_ms") or {}
+        ms["python_rag_total"] = int((time.perf_counter() - start_time) * 1000)
+        if metrics_ctx.get():
+            ms["breakdown"] = metrics_ctx.get()
+        trace_report["metrics_ms"] = ms
 
         return ChatResponse(
             result=result,
             source_documents=source_docs,
-            trace_report=trace_report
+            trace_report=trace_report,
+            confidence_score=response.get("confidence_score", 0.0),
+            missing_fields=response.get("missing_fields") or [],
+            clarifying_questions=response.get("clarifying_questions"),
         )
     except Exception as e:
-        print(f"Error processing request: {str(e)}")
+        logger.error("Step failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/analyze", response_model=AnalysisResponse)
 async def analyze(request: AnalysisRequest):
     try:
-        # Call the analysis function from rag_chain
+        from ai_service.retrieval import rag_chain
+
         result = rag_chain.analyze_text(request.text)
         return AnalysisResponse(result=result)
     except Exception as e:
-        print(f"Error during analysis: {str(e)}")
+        logger.error("Analysis step failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/stats")
 async def get_stats():
     try:
+        from ai_service.retrieval import rag_chain
         # Get stats from Pinecone index via LangChain vectorstore
         # Note: This depends on the specific vectorstore implementation
         # For Pinecone, we can access the index directly
@@ -116,24 +170,24 @@ async def get_stats():
             }
         }
         
-        if hasattr(rag_chain, "_vector_store"):
-            # Try to get Pinecone index stats
-            try:
-                index_stats = rag_chain._vector_store.get_pinecone_index().describe_index_stats()
+        try:
+            vs = rag_chain.get_vector_store()
+            if hasattr(vs, "_index"):
+                index_stats = vs._index.describe_index_stats()
                 stats["total_vectors"] = index_stats.get("total_vector_count", 0)
                 stats["index_dimension"] = index_stats.get("dimension", 0)
-            except Exception as e:
-                print(f"Failed to get Pinecone stats: {e}")
-                # Fallback: maybe just return 0 or cached value
-        
+        except Exception as e:
+            logger.error("Failed to get Pinecone stats: %s", e, exc_info=True)
+
         return stats
     except Exception as e:
-        print(f"Error fetching stats: {str(e)}")
+        logger.error("Stats fetch failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/generate-eval-data")
 async def generate_eval_data(request: ChatRequest):
     try:
+        from ai_service.retrieval import rag_chain
         # We reuse ChatRequest (query: str) for simpler reuse
         response = rag_chain.invoke_qa(request.query)
         
@@ -151,7 +205,7 @@ async def generate_eval_data(request: ChatRequest):
             "articles": articles
         }
     except Exception as e:
-        print(f"Error generating eval data: {str(e)}")
+        logger.error("Generate eval data failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

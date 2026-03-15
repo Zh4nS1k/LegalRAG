@@ -1,11 +1,17 @@
 # prepare_data.py — Legal hierarchy-aware chunking for Kazakhstan RAG
-# Hierarchy: Document -> Chapter (Глава) -> Article (Статья) -> Clause (Пункт) -> Sub-clause (Подпункт)
+# Recursive semantic splitting only: no character-count limits. Chunks follow strict legal hierarchy:
+# Document -> Chapter (Глава) -> Article (Статья) -> Clause (Пункт) -> Sub-clause (Подпункт).
+# Lineage metadata on every chunk: code_ru, revision_date, article_number (for Pinecone hard filtering).
 
 import re
+import sys
 from pathlib import Path
 from typing import Optional
 
-from core import config
+# Allow running as script from ai_service: python processing/prepare_data.py
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from ai_service.core import config
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import TextSplitter
@@ -80,13 +86,8 @@ _MONTH_MAP = {
     "сентября": "09", "октября": "10", "ноября": "11", "декабря": "12",
 }
 
-# Chunking size thresholds
-CHUNK_SHORT_MAX = 1000
-CHUNK_MEDIUM_MAX = 2500
-CHUNK_MEDIUM_SPLIT = 1500
-PARAGRAPH_OVERLAP = 175
-PREAMBLE_MAX = 800
-MIN_CHUNK_LEN = 50
+# Minimum chunk length (avoid tiny fragments); no max — hierarchy-only splitting
+MIN_CHUNK_LEN = 30
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -101,6 +102,14 @@ def get_code_name(source_path: str) -> tuple[str, str]:
 def get_article_number(chunk_text: str) -> str | None:
     m = ARTICLE_RE.match(chunk_text.strip())
     return m.group(2) if m else None
+
+
+def get_article_title(chunk_text: str) -> str:
+    """Extract article title from first line if it matches Article header (e.g. 'Статья 136. Подмена ребенка')."""
+    m = ARTICLE_RE.match(chunk_text.strip())
+    if m and m.lastindex >= 3 and m.group(3):
+        return m.group(3).strip()[:200]
+    return ""
 
 
 def _extract_revision_date(text: str) -> str:
@@ -150,11 +159,14 @@ def _detect_clause_level(chunk_text: str) -> str:
     return "article"
 
 
-def _split_by_paragraphs(text: str, overlap: int = PARAGRAPH_OVERLAP) -> list[str]:
-    """Splits text by numbered clauses (1., 2., 1), 2)) with overlap."""
-    parts = CLAUSE_RE.split(text)
+def _split_article_into_clauses(article_text: str) -> list[str]:
+    """
+    Recursive semantic split: Article → Clauses (1. 2. 3. or 1) 2)).
+    Each returned string is one clause (no character-count splitting).
+    """
+    parts = CLAUSE_RE.split(article_text)
     if len(parts) <= 1:
-        return [text] if text.strip() else []
+        return [article_text] if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN else []
 
     chunks = []
     intro = parts[0].strip()
@@ -162,46 +174,66 @@ def _split_by_paragraphs(text: str, overlap: int = PARAGRAPH_OVERLAP) -> list[st
         if i + 1 >= len(parts):
             break
         num, content = parts[i], parts[i + 1]
-        chunk_text = f"{num}) " + content.strip()
+        clause_text = f"{num}) " + content.strip()
         if intro and i == 1:
-            chunk_text = intro + "\n" + chunk_text
+            clause_text = intro + "\n" + clause_text
             intro = ""
-        if chunk_text.strip() and len(chunk_text) > MIN_CHUNK_LEN:
-            chunks.append(chunk_text)
+        if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN:
+            chunks.append(clause_text)
+    return chunks if chunks else ([article_text] if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN else [])
 
-    if not chunks:
-        return [text] if text.strip() else []
 
+def _split_clause_into_subclauses(clause_text: str) -> list[str]:
+    """
+    Recursive semantic split: Clause → Sub-clauses (а) б) в) or 1) 2)).
+    SUBCLAUSE_RE captures marker including parenthesis (e.g. "а)"); split gives [intro, "а)", content, ...].
+    """
+    parts = SUBCLAUSE_RE.split(clause_text)
+    if len(parts) <= 1:
+        return [clause_text] if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN else []
+
+    chunks = []
+    intro = parts[0].strip()
+    for i in range(1, len(parts), 2):
+        if i + 1 >= len(parts):
+            break
+        marker, content = parts[i], parts[i + 1]  # marker is e.g. "а)" or "1)"
+        sub_text = marker + " " + content.strip()
+        if intro and i == 1:
+            sub_text = intro + "\n" + sub_text
+            intro = ""
+        if sub_text.strip() and len(sub_text.strip()) >= MIN_CHUNK_LEN:
+            chunks.append(sub_text)
+    return chunks if chunks else ([clause_text] if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN else [])
+
+
+def _split_article_by_hierarchy(article_text: str) -> list[str]:
+    """
+    Strict legal hierarchy: Article → Clause → Sub-clause.
+    No character-count splitting. Each chunk is one semantic unit.
+    """
+    clauses = _split_article_into_clauses(article_text)
+    if not clauses:
+        return []
     result = []
-    for k, c in enumerate(chunks):
-        if k > 0 and overlap > 0 and len(result[-1]) > overlap:
-            prefix = result[-1][-overlap:]
-            c = prefix + "\n" + c
-        result.append(c)
-    return result
+    for clause in clauses:
+        subclauses = _split_clause_into_subclauses(clause)
+        for sub in subclauses:
+            if sub.strip() and len(sub.strip()) >= MIN_CHUNK_LEN:
+                result.append(sub)
+    return result if result else ([article_text] if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN else [])
 
 
-def _maybe_split_article(article_text: str) -> list[str]:
-    n = len(article_text)
-    if n <= CHUNK_SHORT_MAX:
-        return [article_text]
-    if n <= CHUNK_MEDIUM_MAX:
-        if n <= CHUNK_MEDIUM_SPLIT:
-            return [article_text]
-        sub = _split_by_paragraphs(article_text)
-        return sub if len(sub) > 1 else [article_text]
-    sub = _split_by_paragraphs(article_text)
-    return sub if len(sub) > 1 else [article_text]
-
-
-def _maybe_split_preamble(text: str) -> list[str]:
+def _split_preamble_by_hierarchy(text: str) -> list[str]:
+    """
+    Preamble / intro: split only by Chapter/Раздел/Бөлім boundaries.
+    No character-count limits.
+    """
     t = text.strip()
     if not t or len(t) < MIN_CHUNK_LEN:
         return []
-    if len(t) <= PREAMBLE_MAX:
-        return [t]
     section_pattern = re.compile(
-        r'(?m)^(?:Глава|Раздел|ГЛАВА|РАЗДЕЛ|Бөлім|Тақырып)\s+[\dIVXLCDM]+[.\s]',
+        r'(?m)^(?:Глава|Раздел|ГЛАВА|РАЗДЕЛ|Бөлім|Тақырып)\s+[\dIVXLCDM]+[.\s]\s*(.*?)$',
         re.IGNORECASE,
     )
     parts = section_pattern.split(t)
@@ -211,7 +243,7 @@ def _maybe_split_preamble(text: str) -> list[str]:
             header = parts[i] if i < len(parts) else ""
             body = parts[i + 1] if i + 1 < len(parts) else ""
             chunk = (header + body).strip()
-            if len(chunk) > MIN_CHUNK_LEN:
+            if len(chunk) >= MIN_CHUNK_LEN:
                 result.append(chunk)
         return result if result else [t]
     return [t]
@@ -223,25 +255,19 @@ def _maybe_split_preamble(text: str) -> list[str]:
 
 class ArticleTextSplitter(TextSplitter):
     """
-    Legal hierarchy-aware splitter for Kazakhstani law documents.
+    Recursive semantic splitter — no character-count splitting.
+    Chunks strictly follow legal hierarchy: Article (Статья) → Clause (Пункт) → Sub-clause (Подпункт).
 
-    Splitting strategy (unchanged from original):
-    - Short article (≤1000 chars):  whole article as one chunk
-    - Medium (1000–2500):          whole or by clauses if >1500
-    - Long (>2500):                by clauses (Пункт)
-
-    NEW — metadata enrichment per chunk:
-    - chapter_title: nearest preceding chapter/section heading
-    - chapter_number: chapter/section number
-    - clause_level: "article" | "clause" | "subclause"
-    - revision_date: ISO date from document header (empty string if not found)
+    - Preamble: split only by Chapter/Раздел/Бөлім boundaries.
+    - Each Article: split into Clauses (1. 2. 3. or 1) 2)); each Clause into Sub-clauses (а) б) в)) if present.
+    - One chunk = one semantic unit (full article if no clauses, else one clause or one sub-clause).
     """
 
     def split_text(self, text: str) -> list[str]:
-        """Return raw text chunks — chapters tracked in create_documents() for metadata."""
+        """Return raw text chunks by hierarchy only; chapter/article context set in create_documents()."""
         matches = list(ARTICLE_RE.finditer(text))
         if not matches:
-            return [c for c in _maybe_split_preamble(text) if c and len(c) > MIN_CHUNK_LEN]
+            return [c for c in _split_preamble_by_hierarchy(text) if c and len(c.strip()) >= MIN_CHUNK_LEN]
 
         chunks = []
         prev_end = 0
@@ -250,13 +276,13 @@ class ArticleTextSplitter(TextSplitter):
             if start > prev_end:
                 preamble = text[prev_end:start].strip()
                 if preamble:
-                    for c in _maybe_split_preamble(preamble):
-                        if c and len(c) > MIN_CHUNK_LEN:
+                    for c in _split_preamble_by_hierarchy(preamble):
+                        if c and len(c.strip()) >= MIN_CHUNK_LEN:
                             chunks.append(c)
             next_start = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
             article_text = text[start:next_start].strip()
-            for c in _maybe_split_article(article_text):
-                if c and len(c) > MIN_CHUNK_LEN:
+            for c in _split_article_by_hierarchy(article_text):
+                if c and len(c.strip()) >= MIN_CHUNK_LEN:
                     chunks.append(c)
             prev_end = next_start
 
@@ -266,11 +292,9 @@ class ArticleTextSplitter(TextSplitter):
         self, texts: list[str], metadatas: list[dict] = None
     ) -> list[Document]:
         """
-        Creates Documents with full legal hierarchy metadata:
-        - source, code_ru, code_kz, article_number  (existing)
-        - chapter_title, chapter_number             (NEW — nearest preceding chapter)
-        - clause_level                               (NEW — article/clause/subclause)
-        - revision_date                              (NEW — from document header)
+        Creates Documents with mandatory lineage metadata for Pinecone hard filtering:
+        - code_ru, revision_date, article_number (required on every chunk).
+        Plus: source, code_kz, chapter_title, chapter_number, clause_level.
         """
         _metadatas = metadatas or [{} for _ in texts]
         documents = []
@@ -281,15 +305,15 @@ class ArticleTextSplitter(TextSplitter):
             code_ru, code_kz = get_code_name(source)
             source_short = Path(source).name if source else ""
 
-            # Extract revision date once per source document
-            revision_date = _extract_revision_date(text)
+            # Lineage: revision date once per source (mandatory; empty if not found)
+            revision_date = _extract_revision_date(text) or ""
 
             # Track chapter context as we scan the raw text
             current_chapter_number: str = ""
             current_chapter_title: str = ""
 
             for chunk in self.split_text(text):
-                if not chunk or len(chunk) <= MIN_CHUNK_LEN:
+                if not chunk or len(chunk.strip()) < MIN_CHUNK_LEN:
                     continue
 
                 # Update chapter context from lines at the start of this chunk
@@ -301,22 +325,23 @@ class ArticleTextSplitter(TextSplitter):
 
                 art_num = get_article_number(chunk)
                 clause_level = _detect_clause_level(chunk)
+                article_title = get_article_title(chunk)
 
+                # Mandatory lineage metadata for Pinecone hard filtering (code_ru, revision_date, article_number)
                 meta: dict = {
                     "source": source_short,
                     "code_ru": code_ru,
                     "code_kz": code_kz,
+                    "article_number": str(art_num) if art_num is not None else "",
+                    "revision_date": revision_date,
                     "clause_level": clause_level,
                 }
-                if art_num is not None:
-                    meta["article_number"] = str(art_num)
                 if current_chapter_title:
-                    # Truncate to 150 chars for Pinecone metadata limit
                     meta["chapter_title"] = current_chapter_title[:150]
                 if current_chapter_number:
                     meta["chapter_number"] = current_chapter_number[:20]
-                if revision_date:
-                    meta["revision_date"] = revision_date
+                if article_title:
+                    meta["article_title"] = article_title
 
                 documents.append(Document(page_content=chunk, metadata=meta))
 

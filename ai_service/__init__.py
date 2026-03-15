@@ -1,0 +1,2 @@
+"""LegalRAG AI service package."""
+

@@ -2,14 +2,10 @@
 import os
 import sys
 
-# Add current directory to path
-sys.path.append(os.getcwd())
+# Allow running as script from repo root or ai_service/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from retrieval.rag_chain import _vector_retriever, invoke_qa
+from ai_service.retrieval.rag_chain import _vector_retriever, invoke_qa
 from langchain_core.documents import Document
 
 query = "Что будет если я украду яблоко?"

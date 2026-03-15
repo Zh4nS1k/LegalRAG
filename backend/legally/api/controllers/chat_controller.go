@@ -56,18 +56,25 @@ type PythonSourceDocument struct {
 }
 
 type PythonChatResponse struct {
-	Result          string                 `json:"result"`
-	SourceDocuments []PythonSourceDocument `json:"source_documents"`
-	TraceReport     map[string]interface{} `json:"trace_report"`
+	Result               string                 `json:"result"`
+	SourceDocuments      []PythonSourceDocument `json:"source_documents"`
+	TraceReport          map[string]interface{} `json:"trace_report"`
+	ConfidenceScore      float64                `json:"confidence_score"`
+	MissingFields        []string               `json:"missing_fields"`
+	ClarifyingQuestions  []string               `json:"clarifying_questions"`
 }
 
 // Structs for the Frontend response (matching what ChatSection.js expects)
 // Frontend expects: { answer: string, mode: string, sources: []SourceDetail }
+// Detective Mode adds: confidence_score, missing_fields, clarifying_questions
 type ChatResponse struct {
-	Answer      string                `json:"answer"`
-	Mode        string                `json:"mode"`
-	Sources     []models.SourceDetail `json:"sources"`
-	TraceReport interface{}           `json:"trace_report,omitempty"`
+	Answer               string                `json:"answer"`
+	Mode                 string                `json:"mode"`
+	Sources              []models.SourceDetail `json:"sources"`
+	TraceReport          interface{}           `json:"trace_report,omitempty"`
+	ConfidenceScore      float64               `json:"confidence_score,omitempty"`
+	MissingFields        []string              `json:"missing_fields,omitempty"`
+	ClarifyingQuestions  []string              `json:"clarifying_questions,omitempty"`
 }
 
 func HandleChat(c *gin.Context) {
@@ -224,10 +231,13 @@ func HandleChat(c *gin.Context) {
 	}
 
 	response := ChatResponse{
-		Answer:      pythonResp.Result,
-		Mode:        "legal_rag", // Hardcoded for now as per ChatSection.js logic
-		Sources:     sources,
-		TraceReport: finalTraceReport,
+		Answer:              pythonResp.Result,
+		Mode:                "legal_rag",
+		Sources:             sources,
+		TraceReport:         finalTraceReport,
+		ConfidenceScore:     pythonResp.ConfidenceScore,
+		MissingFields:       pythonResp.MissingFields,
+		ClarifyingQuestions: pythonResp.ClarifyingQuestions,
 	}
 
 	c.JSON(http.StatusOK, response)

@@ -9,14 +9,16 @@ langchain>=0.3.0
 langchain-classic>=1.0.0
 langchain-core>=0.3.0
 langchain-community>=0.3.0
+# Use >=0.1.0 for Python 3.12/3.13 (avoids numpy<2 and source build). For Python 3.14 use ==0.0.1.
 langchain-pinecone>=0.1.0
 pinecone>=5.0.0
 langchain-huggingface>=0.1.0
 langchain-ollama>=0.2.0
 langchain-text-splitters>=0.3.0
 
-# .env
+# .env and config (BaseSettings)
 python-dotenv>=1.0.0
+pydantic-settings>=2.0.0
 
 
 
@@ -26,7 +28,8 @@ sentence-transformers>=2.2.0
 # Гибридный поиск: BM25
 rank_bm25>=0.2.2
 
-# Reranker для топ-релевантных чанков
+# Reranker для топ-релевантных чанков (transformers<5 required: is_torch_fx_available removed in v5)
+transformers>=4.44,<5.0
 flashrank>=0.2.0
 FlagEmbedding>=1.2.0
 peft>=0.10.0
@@ -52,9 +55,7 @@ nltk>=3.8.0
 fastapi>=0.100.0
 uvicorn>=0.20.0
 
-# PyTorch CPU-only — installed via the CPU wheel index to avoid downloading
-# gigabytes of NVIDIA CUDA runtime packages (triton, nccl, cublas, etc.)
-# The --extra-index-url in Dockerfile points to https://download.pytorch.org/whl/cpu
-torch==2.6.0+cpu
-torchvision==0.21.0+cpu
-torchaudio==2.6.0+cpu
+# PyTorch — standard PyPI wheels (no +cpu; use Dockerfile --extra-index-url for CPU-only in Docker)
+torch==2.6.0
+torchvision==0.21.0
+torchaudio==2.6.0

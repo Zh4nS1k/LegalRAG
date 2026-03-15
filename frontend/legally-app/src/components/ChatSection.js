@@ -352,12 +352,15 @@ const ChatSection = ({
 
       const data = await response.json();
 
-      // Add AI response to session
+      // Add AI response to session (Detective Mode: confidence_score, missing_fields, clarifying_questions)
       const aiMsg = {
         content: data.answer,
         isUser: false,
         mode: data.mode,
         sources: data.sources || [],
+        confidence_score: data.confidence_score,
+        missing_fields: data.missing_fields || [],
+        clarifying_questions: data.clarifying_questions || [],
       };
       addMessageToSession(activeSession.id, aiMsg);
 
@@ -452,6 +455,16 @@ const ChatSection = ({
                   <ModeIndicator mode={message.mode}>
                     {message.mode === 'legal_rag' ? 'RAG' : 'GPT'}
                   </ModeIndicator>
+                )}
+                {message.confidence_score !== undefined && message.confidence_score !== null && (
+                  <Typography variant="caption" sx={{ display: 'block', mb: 1, opacity: 0.85 }}>
+                    Уверенность: {Math.round((message.confidence_score ?? 0) * 100)}%
+                  </Typography>
+                )}
+                {message.missing_fields && message.missing_fields.length > 0 && (
+                  <Typography variant="caption" sx={{ display: 'block', mb: 1, color: 'warning.main' }}>
+                    Недостающие данные: {message.missing_fields.join(', ')}
+                  </Typography>
                 )}
                 <Typography
                   component="div"

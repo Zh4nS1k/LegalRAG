@@ -4,13 +4,20 @@
 
 import pickle
 import os
+import sys
 import time
+from pathlib import Path
 
-from core import config
+# Allow running as script from ai_service: python retrieval/build_vector_db.py
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+import sys
+from ai_service.core import config
+from ai_service.utils.connectivity import is_internet_available, is_cache_populated
 from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
-from processing.prepare_data import chunks, raw_docs
+from ai_service.processing.prepare_data import chunks, raw_docs
 
 # Проверка до очистки: есть ли ст. 136 УК в распарсенных чанках
 uk_136_chunks = [c for c in chunks if "criminal_code" in c.metadata.get("source", "") and "136" in c.page_content]
@@ -33,28 +40,34 @@ class PrefixedEmbeddings:
 
 
 def _make_embeddings() -> PrefixedEmbeddings:
+    """Hybrid Connectivity Hook: internet first, local fallback, fail-safe if neither."""
     config.configure_hf_hub()
-    model_kwargs: dict = {}
-    if config.HF_LOCAL_ONLY:
-        model_kwargs["local_files_only"] = True
+    cache_folder = config.HF_CACHE_DIR
+
+    internet_ok = is_internet_available(timeout=2.0)
+    cache_ok = is_cache_populated(cache_folder)
+
+    if not internet_ok and not cache_ok:
+        print("No local model found and no internet access. Cache:", cache_folder)
+        sys.exit("No local model found and no internet access.")
+
+    local_only = config.HF_LOCAL_ONLY or not internet_ok
+    model_kwargs: dict = {"local_files_only": local_only}
+
     try:
         return PrefixedEmbeddings(
             HuggingFaceEmbeddings(
                 model_name=config.EMBEDDING_MODEL,
                 encode_kwargs={"normalize_embeddings": True},
                 model_kwargs=model_kwargs,
-                cache_folder=config.HF_CACHE_DIR,
+                cache_folder=cache_folder,
             )
         )
     except Exception as exc:
-        msg = (
-            "Не удалось загрузить эмбеддинги Hugging Face. "
-            "Проверьте доступ к huggingface.co или скачайте модель заранее. "
-            "Подсказки: увеличьте таймаут через LEGAL_RAG_HF_READ_TIMEOUT_SEC, "
-            "используйте LEGAL_RAG_HF_CACHE_DIR, "
-            "или включите LEGAL_RAG_HF_LOCAL_ONLY=1 после кэширования модели."
-        )
-        raise RuntimeError(msg) from exc
+        raise RuntimeError(
+            "Не удалось загрузить эмбеддинги. Проверьте сеть или запустите download_models. Кэш: %s"
+            % cache_folder
+        ) from exc
 
 
 embeddings = _make_embeddings()

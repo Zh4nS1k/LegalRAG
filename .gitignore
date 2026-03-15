@@ -66,6 +66,7 @@ instance/
 
 # Hugging Face model cache (large, download at runtime or mount separately)
 .cache/
+.models_cache/
 hf_cache/
 ~/.cache/huggingface/
 

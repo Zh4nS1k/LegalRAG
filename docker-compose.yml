@@ -12,12 +12,24 @@ services:
     build:
       context: ./ai_service
       dockerfile: Dockerfile
+      args:
+        PREFETCH_HF_MODEL: "0"  # 0=download on first run (faster build); 1=pre-download for offline
     container_name: legally_ai_service
     ports:
       - "8001:8000" # <--- ВНЕШНИЙ 8001 : ВНУТРЕННИЙ 8000
     env_file:
       - ./ai_service/.env
+    environment:
+      - LEGAL_RAG_HF_CACHE_DIR=/app/.models_cache
+    volumes:
+      - hf_cache:/app/.models_cache
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 240s
     depends_on:
       - mongodb
 
@@ -30,10 +42,15 @@ services:
       - "8080:8080"
     env_file:
       - ./backend/legally/.env
+    # Allow backend to reach host (for native ai_service): use AI_SERVICE_URL=http://host.docker.internal:8000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     depends_on:
-      - mongodb
-      - ai_service
+      mongodb:
+        condition: service_started
+      ai_service:
+        condition: service_healthy
 
   frontend:
     build:
@@ -48,3 +65,4 @@ services:
 
 volumes:
   mongodb_data:
+  hf_cache:

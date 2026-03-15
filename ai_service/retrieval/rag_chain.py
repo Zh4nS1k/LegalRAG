@@ -1,43 +1,70 @@
 # rag_chain.py — Pinecone + BM25, reranker, строгий промпт
 
-import pickle
+import logging
 import os
 import re
+import threading
+import time
 from typing import Any, List, Sequence, Optional
 from langchain_core.callbacks import Callbacks
 
-from utils import latency
+import sys
 
-from core import config
-from langchain_pinecone import PineconeVectorStore
-from langchain_huggingface import HuggingFaceEmbeddings
+from ai_service.utils import latency
+from ai_service.utils.connectivity import is_internet_available, is_cache_populated
+
+from ai_service.core import config
+
+logger = logging.getLogger("ai_service.rag")
 
 from langchain_core.prompts import PromptTemplate
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 
-try:
+_nltk_ready = False
+_stemmer = None
+
+
+def _ensure_nltk() -> bool:
+    """Lazy NLTK setup (avoid downloading at import/startup)."""
+    global _nltk_ready, _stemmer
+    if _nltk_ready:
+        return True
+    try:
+        import nltk  # local import: expensive
+        from nltk.stem import SnowballStemmer
+
+        # Download required NLTK data quietly if not present
+        try:
+            nltk.data.find("tokenizers/punkt")
+        except LookupError:
+            nltk.download("punkt", quiet=True)
+        try:
+            nltk.data.find("tokenizers/punkt_tab")
+        except LookupError:
+            nltk.download("punkt_tab", quiet=True)
+
+        _stemmer = SnowballStemmer("russian")
+        _nltk_ready = True
+        return True
+    except Exception:
+        return False
+
+
+def bm25_preprocess_func(text: str) -> List[str] | None:
+    if not _ensure_nltk():
+        return None
     import nltk
-    from nltk.stem import SnowballStemmer
-    # Download required NLTK data quietly if not present
-    try:
-        nltk.data.find('tokenizers/punkt')
-    except LookupError:
-        nltk.download('punkt', quiet=True)
-    try:
-        nltk.data.find('tokenizers/punkt_tab')
-    except LookupError:
-        nltk.download('punkt_tab', quiet=True)
-    
-    _stemmer = SnowballStemmer("russian")
-    
-    def bm25_preprocess_func(text: str) -> List[str]:
-        tokens = nltk.word_tokenize(text.lower())
-        return [_stemmer.stem(t) for t in tokens if t.isalnum()]
-except ImportError:
-    print("NLTK not found. BM25 stemming disabled.")
-    bm25_preprocess_func = None
+    tokens = nltk.word_tokenize((text or "").lower())
+    return [_stemmer.stem(t) for t in tokens if t.isalnum()]
+
+
+_init_lock = threading.Lock()
+_embeddings_instance = None
+_vector_store_instance = None
+_retriever_instance = None
+_llm_instance = None
 
 
 class PrefixedEmbeddings:
@@ -52,53 +79,83 @@ class PrefixedEmbeddings:
 
 
 def _make_embeddings() -> PrefixedEmbeddings:
+    """Hybrid Connectivity Hook: internet first, local fallback, fail-safe if neither."""
+    logger.info("[START] Model Initialization (embeddings)")
+    t0 = time.perf_counter()
     config.configure_hf_hub()
-    model_kwargs: dict = {}
-    if config.HF_LOCAL_ONLY:
-        model_kwargs["local_files_only"] = True
-    try:
-        import logging
-        logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
-        
-        if config.HF_TOKEN:
-            os.environ["HF_TOKEN"] = config.HF_TOKEN
+    logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
+    if config.HF_TOKEN:
+        os.environ["HF_TOKEN"] = config.HF_TOKEN
 
-        return PrefixedEmbeddings(
+    # Deterministic path: project .models_cache (never /app or system-protected)
+    cache_folder = config.HF_CACHE_DIR
+
+    # Connectivity check with 2s timeout (no hangs)
+    internet_ok = is_internet_available(timeout=2.0)
+    cache_ok = is_cache_populated(cache_folder)
+
+    # Fail-safe: no internet + empty cache → exit immediately
+    if not internet_ok and not cache_ok:
+        logger.error("No local model found and no internet access. Cache: %s", cache_folder)
+        sys.exit("No local model found and no internet access.")
+
+    # Smart loader: internet → normal (allow cache updates); no internet → local_files_only
+    local_only = config.HF_LOCAL_ONLY or not internet_ok
+    model_kwargs: dict = {"local_files_only": local_only}
+
+    try:
+        from langchain_huggingface import HuggingFaceEmbeddings
+
+        emb = PrefixedEmbeddings(
             HuggingFaceEmbeddings(
                 model_name=config.EMBEDDING_MODEL,
                 encode_kwargs={"normalize_embeddings": True},
                 model_kwargs=model_kwargs,
-                cache_folder=config.HF_CACHE_DIR,
+                cache_folder=cache_folder,
             )
         )
+        elapsed = time.perf_counter() - t0
+        mode = "local cache" if local_only else "internet"
+        logger.info("[SUCCESS] Model Initialization (embeddings, %s) (%.2fs)", mode, elapsed)
+        return emb
     except Exception as exc:
-        msg = (
-            "Не удалось загрузить эмбеддинги Hugging Face. "
-            "Проверьте доступ к huggingface.co или скачайте модель заранее. "
-            "Подсказки: увеличьте таймаут через LEGAL_RAG_HF_READ_TIMEOUT_SEC, "
-            "используйте LEGAL_RAG_HF_CACHE_DIR, "
-            "или включите LEGAL_RAG_HF_LOCAL_ONLY=1 после кэширования модели."
-        )
-        raise RuntimeError(msg) from exc
+        elapsed = time.perf_counter() - t0
+        logger.error("[FAIL] Model Initialization (embeddings) (%.2fs): %s", elapsed, exc, exc_info=True)
+        raise RuntimeError(
+            "Не удалось загрузить эмбеддинги. Проверьте сеть или запустите: python -m ai_service.scripts.download_models. Кэш: %s"
+            % cache_folder
+        ) from exc
 
 
-embeddings = _make_embeddings()
+def get_embeddings() -> PrefixedEmbeddings:
+    global _embeddings_instance
+    if _embeddings_instance is None:
+        with _init_lock:
+            if _embeddings_instance is None:
+                _embeddings_instance = _make_embeddings()
+    return _embeddings_instance
 
-_vector_store_instance = None
 def get_vector_store():
     global _vector_store_instance
     if _vector_store_instance is None:
-        try:
-            _vector_store_instance = PineconeVectorStore(
-                index_name=config.PINECONE_INDEX_NAME,
-                embedding=embeddings,
-                namespace=config.PINECONE_NAMESPACE or "default",
-                pinecone_api_key=config.PINECONE_API_KEY
-            )
-            print(f"Pinecone подключён: {config.PINECONE_INDEX_NAME}")
-        except Exception as e:
-            print(f"CRITICAL WARNING: Vector store offline. {e}")
-            raise
+        with _init_lock:
+            if _vector_store_instance is None:
+                logger.info("[START] Pinecone Vector Store Initialization")
+                t0 = time.perf_counter()
+                try:
+                    from langchain_pinecone import PineconeVectorStore
+                    _vector_store_instance = PineconeVectorStore(
+                        index_name=config.PINECONE_INDEX_NAME,
+                        embedding=get_embeddings(),
+                        namespace=config.PINECONE_NAMESPACE or "default",
+                        pinecone_api_key=config.PINECONE_API_KEY,
+                    )
+                    elapsed = time.perf_counter() - t0
+                    logger.info("[SUCCESS] Pinecone Vector Store Initialization (%.2fs)", elapsed)
+                except Exception as e:
+                    elapsed = time.perf_counter() - t0
+                    logger.error("[FAIL] Pinecone Vector Store Initialization (%.2fs): %s", elapsed, e, exc_info=True)
+                    raise
     return _vector_store_instance
 
 _hybrid_k = getattr(config, "RETRIEVER_WIDE_K", getattr(config, "HYBRID_K", 8))
@@ -381,20 +438,44 @@ class _LawAwareRetriever(BaseRetriever):
         return docs
 
 
+def _fetch_parent_context_from_store(code_ru: str, article_number: str) -> tuple[str, str, str]:
+    """
+    When a clause/subclause chunk is missing Chapter or Article title, pull from Pinecone:
+    fetch sibling chunks with same code_ru + article_number; return first that has chapter_title
+    and optionally article_title for full legal context.
+    Returns (chapter_number, chapter_title, article_title).
+    """
+    if not code_ru or not article_number:
+        return "", "", ""
+    try:
+        store = get_vector_store()
+        siblings = store.similarity_search(
+            f"Глава статья {article_number} {code_ru}",
+            k=5,
+            filter={"code_ru": code_ru, "article_number": article_number},
+        )
+        best_cn, best_ct, best_at = "", "", ""
+        for s in siblings:
+            ct = (s.metadata.get("chapter_title") or "").strip()
+            cn = (s.metadata.get("chapter_number") or "").strip()
+            at = (s.metadata.get("article_title") or "").strip()
+            if ct:
+                best_cn, best_ct = cn, ct[:150]
+            if at:
+                best_at = at[:200]
+            if best_ct and best_at:
+                break
+        return best_cn, best_ct, best_at
+    except Exception as e:
+        print(f"Context enrichment: could not fetch parent for {code_ru} ст.{article_number}: {e}")
+    return "", "", ""
+
+
 def _enrich_with_parent_context(docs: List[Document]) -> List[Document]:
     """
-    Context Enrichment: prepend a structured legal breadcrumb to each retrieved doc
-    so the LLM knows the full hierarchy: Code -> Chapter -> Article.
-
-    Input metadata keys used:
-        code_ru       -> e.g. "Уголовный кодекс РК"
-        chapter_title -> e.g. "Преступления против личности"
-        chapter_number -> e.g. "2"
-        article_number -> e.g. "136"
-        revision_date  -> e.g. "2024-01-01"
-        clause_level   -> e.g. "clause" | "subclause" | "article"
-
-    Output: same docs with breadcrumb header prepended to page_content.
+    Context Enrichment: prepend Code -> Chapter -> Article breadcrumb to each doc.
+    When a clause/subclause is found and Chapter or Article title is missing,
+    pull parent Chapter and Article title from Pinecone for full legal context.
     """
     enriched = []
     for doc in docs:
@@ -407,14 +488,29 @@ def _enrich_with_parent_context(docs: List[Document]) -> List[Document]:
 
         chapter_num = m.get("chapter_number", "").strip()
         chapter_title = m.get("chapter_title", "").strip()
+        article_title = (m.get("article_title") or "").strip()
+        art_num = m.get("article_number", "").strip()
+        clause_level = (m.get("clause_level") or "").strip().lower()
+
+        # For clause/subclause chunks missing chapter or article title, pull from vector store
+        if (clause_level in ("clause", "subclause")) and code and art_num:
+            if not chapter_title or not article_title:
+                cn, ct, at = _fetch_parent_context_from_store(code, art_num)
+                if ct:
+                    chapter_num, chapter_title = cn, ct
+                if at:
+                    article_title = at
+
         if chapter_num and chapter_title:
             parts.append(f"Глава {chapter_num}: {chapter_title}")
         elif chapter_title:
             parts.append(f"Глава: {chapter_title}")
 
-        art_num = m.get("article_number", "").strip()
         if art_num:
-            parts.append(f"Статья {art_num}")
+            if article_title:
+                parts.append(f"Статья {art_num}. {article_title}")
+            else:
+                parts.append(f"Статья {art_num}")
 
         rev_date = m.get("revision_date", "").strip()
         if rev_date:
@@ -468,198 +564,262 @@ class _TrimRetriever(BaseRetriever):
         return _enrich_with_parent_context(trimmed)
 
 
-base_retriever = _vector_retriever
-
-# Чанки для BM25 (из pickle или prepare_data)
-_chunks = None
-_pkl = getattr(config, "CHUNKS_PICKLE_PATH", None) or (config.BASE_DIR / "chunks_for_bm25.pkl")
-if _pkl and _pkl.exists():
+def _load_bm25_chunks() -> list[Document] | None:
+    """Load BM25 chunks lazily from pickle (preferred) or prepare_data."""
     try:
-        with open(_pkl, "rb") as f:
-            _chunks = pickle.load(f)
-        if _chunks:
-            print(f"Чанки для BM25: {len(_chunks)} из {_pkl.name}")
+        import pickle  # local import: keep module import fast
+        _pkl = getattr(config, "CHUNKS_PICKLE_PATH", None) or (config.BASE_DIR / "chunks_for_bm25.pkl")
+        if _pkl and _pkl.exists():
+            with open(_pkl, "rb") as f:
+                chunks = pickle.load(f)
+            if chunks:
+                print(f"Чанки для BM25: {len(chunks)} из {_pkl.name}")
+                return chunks
     except Exception as e:
-        print(f"Не удалось загрузить {_pkl.name}: {e}")
-if _chunks is None and config.DOCUMENTS_DIR.exists():
+        print(f"Не удалось загрузить chunks_for_bm25.pkl: {e}")
     try:
-        import prepare_data
-        _chunks = getattr(prepare_data, "chunks", None)
-        if _chunks:
-            print(f"Чанки для BM25 из prepare_data: {len(_chunks)}")
+        if config.DOCUMENTS_DIR.exists():
+            from ai_service.processing import prepare_data as _pd
+            chunks = getattr(_pd, "chunks", None)
+            if chunks:
+                print(f"Чанки для BM25 из prepare_data: {len(chunks)}")
+                return chunks
     except Exception as e:
         print(f"prepare_data не загружен: {e}")
+    return None
 
-# BM25 + EnsembleRetriever (критично для ст. 136 УК и каз. терминов: баланы ауыстыру и т.д.)
-try:
-    from langchain_community.retrievers import BM25Retriever
-    try:
-        from langchain.retrievers import EnsembleRetriever
-    except ImportError:
+
+def get_retriever():
+    """Build retriever lazily (Pinecone + optional BM25 + optional reranker)."""
+    global _retriever_instance
+    if _retriever_instance is not None:
+        return _retriever_instance
+
+    with _init_lock:
+        if _retriever_instance is not None:
+            return _retriever_instance
+
+        base_retriever: Any = _vector_retriever
+
+        # Optional BM25 hybrid: build only when first request comes in.
         try:
-            from langchain.retrievers.ensemble import EnsembleRetriever
-        except ImportError:
-            from langchain_classic.retrievers import EnsembleRetriever
+            from langchain_community.retrievers import BM25Retriever
+            try:
+                from langchain.retrievers import EnsembleRetriever
+            except ImportError:
+                try:
+                    from langchain.retrievers.ensemble import EnsembleRetriever
+                except ImportError:
+                    from langchain_classic.retrievers import EnsembleRetriever
 
-    if not _chunks:
-        raise ValueError("Нет чанков. Запустите: python build_vector_db.py")
-    
-    # Use preprocessing if available
-    if bm25_preprocess_func:
-        bm25_retriever = BM25Retriever.from_documents(_chunks, preprocess_func=bm25_preprocess_func, k=_hybrid_k)
-        print("BM25 инициализирован со стеммингом (Snowball/Russian).")
-    else:
-        bm25_retriever = BM25Retriever.from_documents(_chunks, k=_hybrid_k)
+            chunks = _load_bm25_chunks()
+            if chunks:
+                if _ensure_nltk():
+                    bm25_retriever = BM25Retriever.from_documents(
+                        chunks, preprocess_func=lambda t: bm25_preprocess_func(t) or [], k=_hybrid_k
+                    )
+                    print("BM25 инициализирован со стеммингом (Snowball/Russian).")
+                else:
+                    bm25_retriever = BM25Retriever.from_documents(chunks, k=_hybrid_k)
 
-    hybrid_retriever = EnsembleRetriever(
-        retrievers=[_vector_retriever, bm25_retriever],
-        weights=[0.6, 0.4],  # Increased BM25 to 0.4: better exact-term recall (е.г. "ст. 136")
-    )
-    base_retriever = hybrid_retriever
-    print("Гибридный RAG готов! (BM25 + Pinecone, k=%d)" % _hybrid_k)
-except ImportError as e:
-    print(f"Ошибка импорта BM25/Ensemble: {e}")
-    print("Установите: pip install langchain-community rank_bm25 (и langchain или langchain-classic)")
-except Exception as e:
-    print(f"BM25 не запустился: {e}. Используется только Pinecone.")
+                _vector_w = getattr(config, "VECTOR_WEIGHT", 0.6)
+                _bm25_w = getattr(config, "BM25_WEIGHT", 0.4)
+                base_retriever = EnsembleRetriever(
+                    retrievers=[_vector_retriever, bm25_retriever],
+                    weights=[_vector_w, _bm25_w],
+                )
+                print("Гибридный RAG готов! (BM25 + Pinecone, k=%d)" % _hybrid_k)
+        except Exception as e:
+            # Don't block startup: hybrid is optional.
+            print(f"BM25 не запустился: {e}. Используется только Pinecone.")
 
-if _allowed_code_ru_for_filter or _filter_article:
-    base_retriever = _FilterByCodeRetriever(
-        retriever=base_retriever,
-        allowed_code_ru=_allowed_code_ru_for_filter,
-        article_number=_filter_article,
-    )
-    print("Включён пост-фильтр по кодексу/статье (только разрешённые code_ru/article_number).")
+        # Post-filtering layer if enabled
+        if _allowed_code_ru_for_filter or _filter_article:
+            base_retriever = _FilterByCodeRetriever(
+                retriever=base_retriever,
+                allowed_code_ru=_allowed_code_ru_for_filter,
+                article_number=_filter_article,
+            )
+            print("Включён пост-фильтр по кодексу/статье (только разрешённые code_ru/article_number).")
 
-# Эвристический слой для запроса/пост-фильтра
-heuristic_retriever = _HeuristicRetriever(base_retriever=base_retriever, vector_store=None)
-# Law-aware слой (для УК и обстоятельств)
-law_aware_retriever = _LawAwareRetriever(
-    base_retriever=heuristic_retriever,
-    vector_store=None,
-    min_k_criminal=getattr(config, "RETRIEVER_MIN_K_CRIMINAL", 10),
-)
-retriever = law_aware_retriever
-# ------------------- УЛУЧШЕННЫЙ RERANKER -------------------
-# ------------------- УЛУЧШЕННЫЙ RERANKER (BGE-M3) -------------------
-if config.USE_RERANKER:
-    try:
-        from FlagEmbedding import FlagReranker
-        try:
-            from langchain.retrievers import ContextualCompressionRetriever
-            from langchain.retrievers.document_compressors.base import BaseDocumentCompressor
-        except ImportError:
-            from langchain_classic.retrievers import ContextualCompressionRetriever
-            from langchain_classic.retrievers.document_compressors.base import BaseDocumentCompressor
-        
-        print("Инициализация BAAI/bge-reranker-v2-m3 (это может занять время)...")
-        # Global initialization to avoid reloading per request
-        _reranker_model = FlagReranker('BAAI/bge-reranker-v2-m3', use_fp16=True)
-        print("BGE-M3 Reranker успешно загружен.")
-
-        class BGEReranker(BaseDocumentCompressor):
-            top_n: int = 8
-            
-            def compress_documents(
-                self, documents: Sequence[Document], query: str, callbacks: Optional[Callbacks] = None
-            ) -> Sequence[Document]:
-                if not documents:
-                    return []
-                
-                # BGE expects pairs: [query, doc]
-                pairs = [[query, d.page_content] for d in documents]
-                scores = _reranker_model.compute_score(pairs)
-                
-                # If single doc, scores is float; if multiple, list[float]
-                if isinstance(scores, float):
-                    scores = [scores]
-                
-                # Attach scores and sort
-                scored_docs = []
-                for i, doc in enumerate(documents):
-                    doc.metadata["relevance_score"] = scores[i]
-                    scored_docs.append((doc, scores[i]))
-                
-                # Sort descending by score
-                scored_docs.sort(key=lambda x: x[1], reverse=True)
-                
-                # Return top_n
-                return [d for d, s in scored_docs[:self.top_n]]
-
-        compressor = BGEReranker(top_n=getattr(config, "RETRIEVER_TOP_K_AFTER_RERANK", 8))
-        
-        retriever = ContextualCompressionRetriever(
-            base_compressor=compressor,
-            base_retriever=law_aware_retriever,
+        # Heuristic + law-aware layers
+        heuristic_retriever = _HeuristicRetriever(base_retriever=base_retriever, vector_store=None)
+        law_aware_retriever = _LawAwareRetriever(
+            base_retriever=heuristic_retriever,
+            vector_store=None,
+            min_k_criminal=getattr(config, "RETRIEVER_MIN_K_CRIMINAL", 10),
         )
-        print(f"Reranker включён (модель: BAAI/bge-reranker-v2-m3, top_n: {compressor.top_n})")
+        retr: Any = law_aware_retriever
 
-    except Exception as e:
-        print(f"Reranker BGE-M3 не запустился: {e}. Проверьте установку FlagEmbedding и peft.")
-        print("Используется только retrieval без переранжирования.")
-else:
-    print("Reranker отключён в config (USE_RERANKER=False)")
+        # Optional reranker (very heavy) — build lazily on first request.
+        if config.USE_RERANKER:
+            try:
+                from FlagEmbedding import FlagReranker
+                try:
+                    from langchain.retrievers import ContextualCompressionRetriever
+                    from langchain.retrievers.document_compressors.base import BaseDocumentCompressor
+                except ImportError:
+                    from langchain_classic.retrievers import ContextualCompressionRetriever
+                    from langchain_classic.retrievers.document_compressors.base import BaseDocumentCompressor
 
-# Обрезка контекста перед LLM (для защиты от слишком длинных запросов)
-retriever = _TrimRetriever(
-    base_retriever=retriever,
-    max_docs=getattr(config, "CONTEXT_MAX_DOCS", 8),
-    max_chars_per_doc=getattr(config, "CONTEXT_MAX_CHARS_PER_DOC", 1800),
-)
+                config.configure_hf_hub()
+                logger.info("[START] Reranker initialization (%s)", config.RERANKER_MODEL)
+                t_rerank = time.perf_counter()
+                _reranker_model = FlagReranker(config.RERANKER_MODEL, use_fp16=True)
+                logger.info("[SUCCESS] Reranker initialized (%.2fs)", time.perf_counter() - t_rerank)
 
-# Выбор LLM: локальная Ollama или облачный Groq (\"облачный оллама\")
-_llm_backend = os.environ.get("LEGAL_RAG_LLM_BACKEND", "groq").lower()
-if _llm_backend == "groq":
-    try:
-        from langchain_groq import ChatGroq  # type: ignore[import]
-    except Exception as e:  # pragma: no cover
-        raise SystemExit(
-            "Для использования облачного Groq установите пакет 'langchain-groq':\n"
-            "  pip install langchain-groq\n"
-            f"Текущая ошибка импорта: {e}"
+                class BGEReranker(BaseDocumentCompressor):
+                    top_n: int = 8
+
+                    def compress_documents(
+                        self, documents: Sequence[Document], query: str, callbacks: Optional[Callbacks] = None
+                    ) -> Sequence[Document]:
+                        if not documents:
+                            return []
+                        pairs = [[query, d.page_content] for d in documents]
+                        scores = _reranker_model.compute_score(pairs)
+                        if isinstance(scores, float):
+                            scores = [scores]
+                        scored_docs = []
+                        for i, doc in enumerate(documents):
+                            doc.metadata["relevance_score"] = scores[i]
+                            scored_docs.append((doc, scores[i]))
+                        scored_docs.sort(key=lambda x: x[1], reverse=True)
+                        return [d for d, _ in scored_docs[: self.top_n]]
+
+                compressor = BGEReranker(top_n=getattr(config, "RETRIEVER_TOP_K_AFTER_RERANK", 8))
+                retr = ContextualCompressionRetriever(
+                    base_compressor=compressor,
+                    base_retriever=law_aware_retriever,
+                )
+            except Exception as e:
+                logger.error("Reranker BGE-M3 failed: %s (using retrieval without reranking)", e, exc_info=True)
+
+        # Trim context before LLM
+        retr = _TrimRetriever(
+            base_retriever=retr,
+            max_docs=getattr(config, "CONTEXT_MAX_DOCS", 8),
+            max_chars_per_doc=getattr(config, "CONTEXT_MAX_CHARS_PER_DOC", 1800),
         )
 
-    groq_api_key = config.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
-    if not groq_api_key:
-        raise SystemExit("Задайте GROQ_API_KEY для облачного Groq (gsk_...): export GROQ_API_KEY=...")
+        _retriever_instance = retr
 
-    llm = ChatGroq(
-        groq_api_key=groq_api_key,
-        model_name=config.LLM_MODEL,  # например: llama-3.1-70b-versatile
-        temperature=config.LLM_TEMPERATURE,
-        max_tokens=config.LLM_MAX_TOKENS,
-    )
-    print(f"LLM: Groq (model={config.LLM_MODEL})")
-else:
-    from langchain_ollama import OllamaLLM
+    # Call outside lock — _ensure_latency_patches calls get_llm() which needs _init_lock (avoid deadlock)
+    _ensure_latency_patches()
+    return _retriever_instance
 
-    llm = OllamaLLM(
-        model=config.LLM_MODEL,
-        temperature=config.LLM_TEMPERATURE,
-        base_url=config.OLLAMA_BASE_URL,
-        num_predict=config.LLM_MAX_TOKENS,
-    )
-    print(f"LLM: Ollama локально (model={config.LLM_MODEL})")
 
-# --- LATENCY TRACKING PATCHES ---
-original_embed_query = embeddings.embed_query
-@latency.measure_latency("embedding")
-def wrapped_embed_query(*args, **kwargs):
-    return original_embed_query(*args, **kwargs)
-embeddings.embed_query = wrapped_embed_query
+def get_llm():
+    global _llm_instance
+    if _llm_instance is None:
+        with _init_lock:
+            if _llm_instance is None:
+                logger.info("[START] LLM Initialization")
+                t0 = time.perf_counter()
+                try:
+                    _llm_backend = os.environ.get("LEGAL_RAG_LLM_BACKEND", "groq").lower()
+                    if _llm_backend == "groq":
+                        try:
+                            from langchain_groq import ChatGroq  # type: ignore[import]
+                        except Exception as e:  # pragma: no cover
+                            raise SystemExit(
+                                "Для использования облачного Groq установите пакет 'langchain-groq':\n"
+                                "  pip install langchain-groq\n"
+                                f"Текущая ошибка импорта: {e}"
+                            )
+                        groq_api_key = config.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
+                        if not groq_api_key:
+                            raise SystemExit("Задайте GROQ_API_KEY для облачного Groq (gsk_...): export GROQ_API_KEY=...")
+                        _llm_instance = ChatGroq(
+                            groq_api_key=groq_api_key,
+                            model_name=config.LLM_MODEL,
+                            temperature=config.LLM_TEMPERATURE,
+                            max_tokens=config.LLM_MAX_TOKENS,
+                        )
+                        logger.info("[SUCCESS] LLM Initialization (Groq, model=%s) (%.2fs)", config.LLM_MODEL, time.perf_counter() - t0)
+                    else:
+                        from langchain_ollama import OllamaLLM
 
-original_trim_get_docs = _TrimRetriever._get_relevant_documents
-@latency.measure_latency("vector_search")
-def wrapped_trim_get_docs(self, *args, **kwargs):
-    return original_trim_get_docs(self, *args, **kwargs)
-_TrimRetriever._get_relevant_documents = wrapped_trim_get_docs
+                        _llm_instance = OllamaLLM(
+                            model=config.LLM_MODEL,
+                            temperature=config.LLM_TEMPERATURE,
+                            base_url=config.OLLAMA_BASE_URL,
+                            num_predict=config.LLM_MAX_TOKENS,
+                        )
+                        logger.info("[SUCCESS] LLM Initialization (Ollama, model=%s) (%.2fs)", config.LLM_MODEL, time.perf_counter() - t0)
+                except Exception as e:
+                    elapsed = time.perf_counter() - t0
+                    logger.error("[FAIL] LLM Initialization (%.2fs): %s", elapsed, e, exc_info=True)
+                    raise
+    return _llm_instance
 
-original_llm_invoke = llm.__class__.invoke
-@latency.measure_latency("llm_inference")
-def wrapped_llm_invoke(self, *args, **kwargs):
-    return original_llm_invoke(self, *args, **kwargs)
-llm.__class__.invoke = wrapped_llm_invoke
-# --------------------------------
+
+def _ensure_latency_patches() -> None:
+    # Patch once, when heavy components exist. Add diagnostic logging for each step.
+    if getattr(_ensure_latency_patches, "_done", False):
+        return
+    try:
+        emb = get_embeddings()
+        original_embed_query = emb.embed_query
+
+        @latency.measure_latency("embedding")
+        def wrapped_embed_query(*args, **kwargs):
+            logger.info("[START] Embedding Query")
+            t0 = time.perf_counter()
+            try:
+                out = original_embed_query(*args, **kwargs)
+                logger.info("[SUCCESS] Query Embedded (%.2fs)", time.perf_counter() - t0)
+                return out
+            except Exception as exc:
+                logger.error("Embedding failed: %s", exc, exc_info=True)
+                raise
+
+        emb.embed_query = wrapped_embed_query
+    except Exception:
+        pass
+
+    try:
+        original_trim_get_docs = _TrimRetriever._get_relevant_documents
+
+        @latency.measure_latency("vector_search")
+        def wrapped_trim_get_docs(self, *args, **kwargs):
+            logger.info("[START] Pinecone Vector Search")
+            t0 = time.perf_counter()
+            try:
+                docs = original_trim_get_docs(self, *args, **kwargs)
+                elapsed = time.perf_counter() - t0
+                logger.info("[SUCCESS] Retrieved %d chunks (%.2fs)", len(docs), elapsed)
+                return docs
+            except Exception as exc:
+                logger.error("Pinecone Vector Search failed: %s", exc, exc_info=True)
+                raise
+
+        _TrimRetriever._get_relevant_documents = wrapped_trim_get_docs
+    except Exception:
+        pass
+
+    try:
+        llm = get_llm()
+        original_llm_invoke = llm.__class__.invoke
+
+        @latency.measure_latency("llm_inference")
+        def wrapped_llm_invoke(self, *args, **kwargs):
+            logger.info("[START] LLM Prompt Construction")
+            logger.info("[START] LLM Inference")
+            t0 = time.perf_counter()
+            try:
+                out = original_llm_invoke(self, *args, **kwargs)
+                logger.info("[SUCCESS] LLM Response Generated (%.2fs)", time.perf_counter() - t0)
+                return out
+            except Exception as exc:
+                logger.error("LLM Inference failed: %s", exc, exc_info=True)
+                raise
+
+        llm.__class__.invoke = wrapped_llm_invoke
+    except Exception:
+        pass
+
+    _ensure_latency_patches._done = True
 
 UNIVERSAL_PROMPT_TEMPLATE = """Ты — точный юридический ассистент по законодательству Республики Казахстан.
 Ты имеешь доступ только к следующим нормативным актам (НҚА):
@@ -820,50 +980,91 @@ def _make_qa_chain(prompt: PromptTemplate) -> Any:
     )
 
     # LCEL pipeline: Retriever -> Document Chain -> Retrieval Chain
-    question_answer_chain = create_stuff_documents_chain(llm, prompt, document_prompt=document_prompt)
+    question_answer_chain = create_stuff_documents_chain(get_llm(), prompt, document_prompt=document_prompt)
     
     # Wrap retriever to ensure metadata exists before docs hit the document chain
-    retriever_with_safeguard = retriever | _fill_missing_metadata
+    retriever_with_safeguard = get_retriever() | _fill_missing_metadata
     
     return create_retrieval_chain(retriever_with_safeguard, question_answer_chain)
 
 
-_QA_CHAINS = {
-    "universal": _make_qa_chain(UNIVERSAL_PROMPT),
-    "criminal": _make_qa_chain(CRIMINAL_PROMPT),
-    "range": _make_qa_chain(RANGE_PROMPT),
-}
+_QA_CHAINS = None
 
-qa_chain = _QA_CHAINS["universal"]
+
+def _get_qa_chains() -> dict[str, Any]:
+    global _QA_CHAINS
+    if _QA_CHAINS is None:
+        with _init_lock:
+            if _QA_CHAINS is None:
+                _QA_CHAINS = {
+                    "universal": _make_qa_chain(UNIVERSAL_PROMPT),
+                    "criminal": _make_qa_chain(CRIMINAL_PROMPT),
+                    "range": _make_qa_chain(RANGE_PROMPT),
+                }
+    return _QA_CHAINS
+
+
+def _history_str(history: Optional[List[dict]] = None) -> str:
+    if not history:
+        return ""
+    s = "История предыдущих сообщений:\n"
+    for msg in history:
+        role = "Пользователь" if msg.get("role") == "user" else "Ассистент"
+        s += f"{role}: {msg.get('content')}\n"
+    return s + "\n"
+
+
+def invoke_qa_with_context(
+    query: str,
+    context_docs: List[Document],
+    history: Optional[List[dict]] = None,
+) -> dict:
+    """Run QA using a pre-retrieved list of documents (no retriever). Used by agentic workflow."""
+    _ensure_latency_patches()
+    docs = _fill_missing_metadata(list(context_docs))
+    prompt = _select_prompt(query)
+    if prompt is RANGE_PROMPT:
+        chain = _get_qa_chains()["range"]
+    elif prompt is CRIMINAL_PROMPT:
+        chain = _get_qa_chains()["criminal"]
+    else:
+        chain = _get_qa_chains()["universal"]
+    # Retrieval chain expects "input", "chat_history", and injects "context" from retriever.
+    # Our chain was built with retriever; we invoke the inner question_answer_chain by passing context directly.
+    # create_retrieval_chain(retriever, question_answer_chain) passes retriever output as "context".
+    # So we need to invoke the part that takes context. The retrieval chain does: context = retriever.invoke(input), then question_answer_chain.invoke({**input, "context": context}).
+    # So we can't easily invoke just the question_answer_chain without the retriever. Alternative: use the same prompt and create_stuff_documents_chain and invoke with context=docs.
+    document_prompt = PromptTemplate(
+        input_variables=["page_content", "source", "article_number", "code_ru"],
+        template="Источник: {source}\nКодекс: {code_ru}\nСтатья: {article_number}\nТекст: {page_content}",
+    )
+    question_answer_chain = create_stuff_documents_chain(get_llm(), prompt, document_prompt=document_prompt)
+    res = question_answer_chain.invoke({
+        "context": docs,
+        "input": query,
+        "chat_history": _history_str(history),
+    })
+    return {"result": res, "source_documents": docs}
 
 
 def invoke_qa(query: str, history: Optional[List[dict]] = None) -> dict:
+    _ensure_latency_patches()
     prompt = _select_prompt(query)
     if prompt is RANGE_PROMPT:
-        chain = _QA_CHAINS["range"]
+        chain = _get_qa_chains()["range"]
     elif prompt is CRIMINAL_PROMPT:
-        chain = _QA_CHAINS["criminal"]
+        chain = _get_qa_chains()["criminal"]
     else:
-        chain = _QA_CHAINS["universal"]
-    
-    # Format chat history for the prompt
-    history_str = ""
-    if history:
-        history_str = "История предыдущих сообщений:\n"
-        for msg in history:
-            role = "Пользователь" if msg.get("role") == "user" else "Ассистент"
-            history_str += f"{role}: {msg.get('content')}\n"
-        history_str += "\n"
+        chain = _get_qa_chains()["universal"]
 
-    # LCEL expects "input" for the question
     res = chain.invoke({
         "input": query,
-        "chat_history": history_str
+        "chat_history": _history_str(history),
     })
-    
+
     return {
         "result": res.get("answer", ""),
-        "source_documents": res.get("context", [])
+        "source_documents": res.get("context", []),
     }
 
 _KZ_CHARS = set("әғқңөұүһі")
@@ -977,7 +1178,8 @@ def validate_answer(question: str, response: str, sources: List[Document]) -> st
 
 def analyze_text(text: str) -> str:
     """Analyses the provided text using the configured LLM."""
-    chain = ANALYSIS_PROMPT | llm
+    _ensure_latency_patches()
+    chain = ANALYSIS_PROMPT | get_llm()
     result = chain.invoke({"text": text})
     # Extract content string if it's an AIMessage
     return result.content if hasattr(result, "content") else str(result)
@@ -985,7 +1187,7 @@ def analyze_text(text: str) -> str:
 if __name__ == "__main__":
     question = "Статья 136 УК РК баланы ауыстыру"
     print(f"\nВопрос: {question}\n")
-    docs = retriever.invoke(question)
+    docs = get_retriever().invoke(question)
     for i, doc in enumerate(docs[:5], 1):
         print(f"{i}. {doc.metadata.get('source')} | {doc.metadata.get('code_ru', '')} ст.{doc.metadata.get('article_number', '')}")
         print(f"   {doc.page_content[:250].replace(chr(10), ' ')}...\n")
