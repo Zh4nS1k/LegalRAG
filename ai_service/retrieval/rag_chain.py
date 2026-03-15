@@ -198,7 +198,19 @@ from pydantic import Field
 class LazyPineconeRetriever(BaseRetriever):
     search_kwargs: dict = Field(default_factory=dict)
     def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
-        return get_vector_store().as_retriever(search_kwargs=self.search_kwargs).invoke(query)
+        # Diagnostic: log raw similarity scores
+        vs = get_vector_store()
+        docs_with_scores = vs.similarity_search_with_score(query, **self.search_kwargs)
+        if docs_with_scores:
+            scores = [score for _, score in docs_with_scores]
+            logger.info(f"[DIAG] Top 5 similarity scores: {scores[:5]}")
+            if scores and scores[0] < 0.6:
+                logger.critical(f"[RETR_FAIL] Low similarity score detected: {scores[0]}. Check embedding model version.")
+            # Log metadata of first 3 chunks
+            for i, (doc, score) in enumerate(docs_with_scores[:3]):
+                logger.info(f"[DIAG] Chunk {i+1} metadata: code_ru={doc.metadata.get('code_ru')}, article={doc.metadata.get('article_number')}, score={score}")
+        docs = [doc for doc, _ in docs_with_scores]
+        return docs
 
 _vector_retriever = LazyPineconeRetriever(search_kwargs=_vector_kwargs)
 
@@ -237,8 +249,10 @@ def _extract_article_range(query: str) -> tuple[int, int] | None:
 def _augment_retrieval_query(query: str) -> str:
     q = (query or "").lower()
     extras: list[str] = []
-    if any(token in q for token in ("баланы ауыстыру", "ауыстыр", "нәресте", "білезік", "подмена ребенка")):
-        extras.append("подмена ребенка статья 136 УК РК")
+    if any(token in q for token in ("несовершеннолетний", "несовершеннолетние", "несовершеннолетних", "minor", "underage", "кәмелетке толмаған", "кәмелетке толмағандар")):
+        extras.append("работники, не достигшие восемнадцатилетнего возраста")
+        extras.append("статья 76 Трудовой кодекс РК")
+        extras.append("запрет ночной работы несовершеннолетних")
     if any(token in q for token in ("субсид", "субсидия", "гос", "государ", "бюджет", "грант", "инвест", "смет", "договор", "фиктив", "жалған", "құжат", "алаяқ", "мемлекеттік", "қаржы", "ақша")):
         extras.append("алаяқтық 190 УК РК")
         extras.append("қылмыстық жолмен алынған ақшаны заңдастыру 218 УК РК")
@@ -1062,9 +1076,27 @@ def invoke_qa(query: str, history: Optional[List[dict]] = None) -> dict:
         "chat_history": _history_str(history),
     })
 
+    answer = res.get("answer", "")
+    source_documents = res.get("context", [])
+
+    if not source_documents:
+        # Fallback to internal knowledge
+        logger.warning("[FALLBACK] No documents retrieved, using internal knowledge for query: %s", query)
+        fallback_prompt = PromptTemplate.from_template(
+            "⚠️ ВНИМАНИЕ: Информация не найдена в текущей базе данных. Ниже приведен общий правовой анализ на основе НПА РК:\n\n"
+            "Вопрос: {input}\n\n"
+            "Ответьте на основе вашего общего знания законодательства Республики Казахстан. Будьте точны и ссылайтесь на релевантные статьи."
+        )
+        fallback_chain = fallback_prompt | get_llm()
+        answer = fallback_chain.invoke({"input": query})
+        retrieval_method = "internal_fallback"
+    else:
+        retrieval_method = "hybrid"
+
     return {
-        "result": res.get("answer", ""),
-        "source_documents": res.get("context", []),
+        "result": answer,
+        "source_documents": source_documents,
+        "retrieval_method": retrieval_method,
     }
 
 _KZ_CHARS = set("әғқңөұүһі")
