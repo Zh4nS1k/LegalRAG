@@ -1,6 +1,8 @@
 # agentic_workflow.py — Board of Directors: Linguist-Analyst, Censor, Self-RAG, CoVe
 # Trace_id is preserved through all modules for Go/Python boundary.
 
+import asyncio
+import json
 import logging
 import re
 import time
@@ -46,18 +48,20 @@ def _get_reranker():
 
 # ─── 1. Linguist-Analyst: HyDE + Query expansion (RU/KZ) ─────────────────────
 
-def _linguist_hyde(query: str, trace_id: str) -> Tuple[str, dict]:
+async def _linguist_hyde(query: str, trace_id: str) -> Tuple[str, dict]:
     """Generate hypothetical legal answer (HyDE) for better retrieval. Returns (hypothetical_doc, metrics)."""
     t0 = time.perf_counter()
     llm = rag_chain.get_llm()
     prompt = (
         "Ты — эксперт по законодательству РК. Дай краткий гипотетический ответ (2–3 предложения), "
         "как могла бы звучать формулировка из закона или судебной практики по вопросу. "
-        "Пиши только суть, без вводных слов. Вопрос: {query}"
+        "Пиши только JSON: {\"hypothesis\": \"твой ответ здесь\"}. Вопрос: {query}"
     )
     try:
-        resp = llm.invoke(prompt.format(query=query))
-        hyde_doc = resp.content if hasattr(resp, "content") else str(resp)
+        resp = await asyncio.to_thread(llm.invoke, prompt.format(query=query))
+        text = resp.content if hasattr(resp, "content") else str(resp)
+        data = json.loads(text)
+        hyde_doc = data.get("hypothesis", "").strip()
     except Exception as e:
         hyde_doc = ""
         logger.error("[%s] HyDE (Groq/Ollama) failed: %s", trace_id, e, exc_info=True)
@@ -65,7 +69,7 @@ def _linguist_hyde(query: str, trace_id: str) -> Tuple[str, dict]:
     return hyde_doc.strip() or "", {"linguist_hyde_ms": ms}
 
 
-def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
+async def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
     """Generate 3–5 query variations in Russian and Kazakh. Returns (list of query strings, metrics)."""
     t0 = time.perf_counter()
     n = min(5, max(3, N_VARIATIONS))
@@ -73,12 +77,13 @@ def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
     prompt = (
         f"Сгенерируй ровно {n} коротких перефразировок следующего юридического вопроса: "
         "половину на русском, половину на казахском. Каждый вариант — одна строка, без нумерации. "
-        "Вопрос: {query}"
+        "Respond with JSON: {{\"variations\": [\"вар1\", \"вар2\", ...]}} Вопрос: {query}"
     )
     try:
-        resp = llm.invoke(prompt.format(query=query))
+        resp = await asyncio.to_thread(llm.invoke, prompt.format(query=query))
         text = resp.content if hasattr(resp, "content") else str(resp)
-        lines = [s.strip() for s in text.splitlines() if s.strip()][: n + 2]
+        data = json.loads(text)
+        lines = data.get("variations", [])
     except Exception as e:
         lines = []
         logger.error("[%s] Query expansion (Groq/Ollama) failed: %s", trace_id, e, exc_info=True)
@@ -89,7 +94,7 @@ def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
 
 # ─── 2. Multi-query retrieval (HyDE + variations) → Top-50 ────────────────────
 
-def _retrieve_candidates(queries: List[str], hyde_doc: str, trace_id: str) -> Tuple[List[Document], dict]:
+async def _retrieve_candidates(queries: List[str], hyde_doc: str, trace_id: str) -> Tuple[List[Document], dict]:
     """Run vector search for each query (and HyDE doc if present). Merge and dedupe to up to TOP_K_CANDIDATES."""
     t0 = time.perf_counter()
     store = rag_chain.get_vector_store()
@@ -101,40 +106,52 @@ def _retrieve_candidates(queries: List[str], hyde_doc: str, trace_id: str) -> Tu
 
     seen_keys: set = set()
     merged: List[Document] = []
+    scores: List[float] = []
     search_queries = list(queries)
     if hyde_doc:
         # HyDE: use hypothetical answer as a "query" for embedding (passage-style for consistency with index)
         search_queries.append(hyde_doc)
 
-    for q in search_queries:
-        try:
-            docs = store.similarity_search(q, **search_kwargs)
-            for d in docs:
+    if search_queries:
+        search_tasks = [asyncio.to_thread(store.similarity_search_with_score, q, **search_kwargs) for q in search_queries]
+        search_results = await asyncio.gather(*search_tasks)
+        for docs_with_scores in search_results:
+            for d, score in docs_with_scores:
                 key = (d.metadata.get("source"), d.metadata.get("article_number"), d.page_content[:100])
                 if key not in seen_keys:
                     seen_keys.add(key)
                     merged.append(d)
+                    scores.append(score)
                     if len(merged) >= TOP_K_CANDIDATES:
                         break
-        except Exception as e:
-            logger.error("[%s] Pinecone retrieval for query failed: %s", trace_id, e, exc_info=True)
-        if len(merged) >= TOP_K_CANDIDATES:
-            break
+            if len(merged) >= TOP_K_CANDIDATES:
+                break
 
     ms = round((time.perf_counter() - t0) * 1000)
-    return merged[:TOP_K_CANDIDATES], {"retrieval_candidates_ms": ms, "n_candidates": len(merged)}
+    return merged[:TOP_K_CANDIDATES], scores[:TOP_K_CANDIDATES], {"retrieval_candidates_ms": ms, "n_candidates": len(merged)}
 
 
 # ─── 3. The Censor: Rerank with bge-reranker-v2-m3 → Top-5 + scores ──────────
 
-def _censor_rerank(query: str, candidates: List[Document], trace_id: str) -> Tuple[List[Document], List[float], dict]:
+async def _censor_rerank(query: str, candidates: List[Document], candidate_scores: Optional[List[float]], trace_id: str) -> Tuple[List[Document], List[float], dict]:
     """Rerank candidates with BGE-M3; return top RERANKER_TOP_N docs and their scores."""
     t0 = time.perf_counter()
     if not candidates:
         return [], [], {"censor_rerank_ms": 0}
+
+    # Early exit: if top Pinecone score > 0.82, skip reranker
+    if candidate_scores and max(candidate_scores) > 0.82:
+        sorted_indices = sorted(range(len(candidates)), key=lambda i: candidate_scores[i], reverse=True)
+        top_docs = [candidates[i] for i in sorted_indices[:RERANKER_TOP_N]]
+        top_scores = [candidate_scores[i] for i in sorted_indices[:RERANKER_TOP_N]]
+        return top_docs, top_scores, {"censor_rerank_ms": 0}
+
+    # Limit reranker to top 10 if many candidates
+    rerank_candidates = candidates[:10] if len(candidates) > 10 else candidates
+
     model = _get_reranker()
-    pairs = [[query, d.page_content] for d in candidates]
-    scores = model.compute_score(pairs)
+    pairs = [[query, d.page_content] for d in rerank_candidates]
+    scores = await asyncio.to_thread(model.compute_score, pairs)
     if isinstance(scores, float):
         scores = [scores]
     for i, doc in enumerate(candidates):
@@ -172,7 +189,7 @@ def _extract_cited_articles(response: str) -> List[Tuple[str, str]]:
     return cited[:10]
 
 
-def _cove_verify(response: str, source_docs: List[Document], trace_id: str) -> Tuple[str, bool, dict]:
+async def _cove_verify(response: str, source_docs: List[Document], trace_id: str) -> Tuple[str, bool, dict]:
     """Verify that key statements in the response match the cited articles in context. Returns (verified_response, all_ok, metrics)."""
     t0 = time.perf_counter()
     if not COVE_ENABLED or not source_docs:
@@ -194,7 +211,7 @@ def _cove_verify(response: str, source_docs: List[Document], trace_id: str) -> T
         "Вопрос: Соответствует ли ответ приведённому контексту? Ответь одним словом: ДА или НЕТ."
     )
     try:
-        resp = llm.invoke(prompt.format(context=context_str, response=response[:2000]))
+        resp = await asyncio.to_thread(llm.invoke, prompt.format(context=context_str, response=response[:2000]))
         ans = (resp.content if hasattr(resp, "content") else str(resp)).strip().upper()
         all_ok = "НЕТ" not in ans[:10]
         if not all_ok:
@@ -208,7 +225,7 @@ def _cove_verify(response: str, source_docs: List[Document], trace_id: str) -> T
 
 # ─── Main pipeline ───────────────────────────────────────────────────────────
 
-def invoke_agentic_qa(
+async def invoke_agentic_qa(
     query: str,
     history: Optional[List[dict]] = None,
     trace_id: Optional[str] = None,
@@ -221,18 +238,44 @@ def invoke_agentic_qa(
     metrics: dict = {}
     t_total = time.perf_counter()
 
-    # 1. Linguist-Analyst
-    hyde_doc, m1 = _linguist_hyde(query, trace_id)
-    metrics.update(m1)
-    queries, m2 = _linguist_expand(query, trace_id)
-    metrics.update(m2)
+    # 1. Linguist: Query expansion and HyDE
+    queries, m_ling_expand = await _linguist_expand(query, trace_id)
+    hyde_doc, m_ling_hyde = await _linguist_hyde(query, trace_id)
+    metrics.update(m_ling_expand)
+    metrics.update(m_ling_hyde)
 
     # 2. Multi-query retrieval → candidates (up to 50)
-    candidates, m3 = _retrieve_candidates(queries, hyde_doc, trace_id)
+    candidates, candidate_scores, m3 = await _retrieve_candidates([query], "", trace_id)
     metrics.update(m3)
 
+    # Additional retrieval with expanded queries and HyDE
+    if len(queries) > 1 or hyde_doc:
+        additional_queries = queries[1:] if len(queries) > 1 else []
+        if hyde_doc:
+            additional_queries.append(hyde_doc)
+        if additional_queries:
+            additional_candidates, additional_scores, m3_add = await _retrieve_candidates(additional_queries, "", trace_id)
+            candidates.extend(additional_candidates)
+            candidate_scores.extend(additional_scores)
+            # Dedupe
+            seen = {}
+            for i, d in enumerate(candidates):
+                key = (d.metadata.get("source"), d.page_content[:100])
+                if key not in seen:
+                    seen[key] = (d, candidate_scores[i])
+            merged = list(seen.values())
+            if merged:
+                candidates, candidate_scores = zip(*merged)
+                candidates = list(candidates)
+                candidate_scores = list(candidate_scores)
+            else:
+                candidates, candidate_scores = [], []
+            candidates = candidates[:TOP_K_CANDIDATES]
+            candidate_scores = candidate_scores[:TOP_K_CANDIDATES]
+            m3["retrieval_candidates_ms"] += m3_add.get("retrieval_candidates_ms", 0)
+
     # 3. The Censor: rerank to top 5 with scores
-    top_docs, top_scores, m4 = _censor_rerank(query, candidates, trace_id)
+    top_docs, top_scores, m4 = await _censor_rerank(query, candidates, candidate_scores, trace_id)
     metrics.update(m4)
 
     # 4. Self-RAG: reject if confidence too low
@@ -263,13 +306,13 @@ def invoke_agentic_qa(
 
     # 5. QA with top 5 context
     t_qa = time.perf_counter()
-    qa_result = rag_chain.invoke_qa_with_context(query, top_docs, history=history)
+    qa_result = await asyncio.to_thread(rag_chain.invoke_qa_with_context, query, top_docs, history=history)
     metrics["qa_ms"] = round((time.perf_counter() - t_qa) * 1000)
     result = qa_result.get("result", "")
     source_documents = qa_result.get("source_documents", [])
 
     # 6. CoVe verification
-    result, cove_ok, m5 = _cove_verify(result, source_documents, trace_id)
+    result, cove_ok, m5 = await _cove_verify(result, source_documents, trace_id)
     metrics.update(m5)
     if not cove_ok:
         metrics["cove_replaced"] = True

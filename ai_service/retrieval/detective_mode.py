@@ -325,7 +325,7 @@ def _compute_confidence(
 
 # ─── Main entry ─────────────────────────────────────────────────────────────
 
-def invoke_detective_qa(
+async def invoke_detective_qa(
     query: str,
     history: Optional[List[dict]] = None,
     trace_id: Optional[str] = None,
@@ -379,7 +379,7 @@ def invoke_detective_qa(
         }
 
     # STAGE 3: THE REASONER (Hybrid Synthesis)
-    agentic_out = agentic_workflow.invoke_agentic_qa(expanded_query, history=history, trace_id=trace_id)
+    agentic_out = await agentic_workflow.invoke_agentic_qa(expanded_query, history=history, trace_id=trace_id)
     result = agentic_out.get("result", "")
     source_documents = agentic_out.get("source_documents", [])
     trace_report = agentic_out.get("trace_report") or {}

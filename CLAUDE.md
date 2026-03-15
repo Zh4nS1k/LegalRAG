@@ -13,8 +13,12 @@ Write mechanical code, not clever code. Reliability > Intelligence.
 ## Rule 5: No LLM Hallucinations
 If data insufficient, return "Flip-Point: Data incomplete for conclusion."
 
-## Rule 6: Strict JSON for Scripts
-All script outputs must be valid JSON with no extra text.
+## Rule 7: Performance Budget
+Total processing must not exceed 15s.
+
+## Rule 8: Reranking is a "Premium Skill" — use it only if the primary search is ambiguous (score < 0.7).
+
+## Rule 9: Use ujson instead of standard json for faster serialization of large vector lists.
 
 ## Rule 7: Absolute Isolation
 Hooks isolate dependencies; Scripts handle logic; Skills standardize processes.</content>

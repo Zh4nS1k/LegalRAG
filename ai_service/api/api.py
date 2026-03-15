@@ -112,7 +112,7 @@ async def chat(request: Request, body: ChatRequest):
         from ai_service.retrieval import detective_mode
 
         # Detective Mode: completeness → agentic (HyDE, Censor, Self-RAG, CoVe) → causality/skeptic/flip → confidence
-        response = detective_mode.invoke_detective_qa(
+        response = await detective_mode.invoke_detective_qa(
             body.query,
             history=body.history,
             trace_id=x_trace_id,

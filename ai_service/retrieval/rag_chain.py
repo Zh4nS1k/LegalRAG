@@ -844,7 +844,15 @@ def _ensure_latency_patches() -> None:
 
     _ensure_latency_patches._done = True
 
-UNIVERSAL_PROMPT_TEMPLATE = """You are a Legal Synthesizer. Based on the verified context {context} and the analyzed user intent {input}, provide a final legal standing. Mention the 'Flip-Point' (what could change the outcome)."""
+UNIVERSAL_PROMPT_TEMPLATE = """You are a Legal Synthesizer. Based on the verified context {context} and the analyzed user intent {input}, provide a final legal standing. Mention the 'Flip-Point' (what could change the outcome).
+
+{chat_history}
+Context:
+{context}
+
+Question: {input}
+
+Answer:"""
 
 CRIMINAL_PROMPT_TEMPLATE = """Ты — эксперт по Уголовному кодексу РК.
 • Гражданский кодекс РК (Общая и Особенная части)
