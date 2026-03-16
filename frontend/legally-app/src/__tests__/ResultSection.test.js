@@ -28,9 +28,11 @@ describe('ResultSection Component', () => {
   test('renders tabs correctly', () => {
     render(<ResultSection data={mockData} onBackClick={() => {}} />);
     
-    expect(screen.getByText(/Полный анализ/i)).toBeInTheDocument();
-    expect(screen.getByText(/Риски/i)).toBeInTheDocument();
-    expect(screen.getByText(/Рекомендации/i)).toBeInTheDocument();
+    // ResultSection renders both a span and a Typography (caption) with the same text in the Tab label.
+    // Use getAllByText and check that at least one is present.
+    expect(screen.getAllByText(/Полный анализ/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Риски/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Рекомендации/i).length).toBeGreaterThanOrEqual(1);
   });
 
   test('handles empty analysis gracefully', () => {
