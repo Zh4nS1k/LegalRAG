@@ -98,9 +98,10 @@ class SherlockEngine:
             # Принудительная корректировка типичных ошибок
             validated_codes = []
             for code in selected:
-                if code == "ЗК" and ("зарплат" in q_lower or "увольн" in q_lower):
-                    logger.warning("Sherlock Validation: Dropping ЗК for labor query, adding ТК")
-                    if "ТК" not in validated_codes: validated_codes.append("ТК")
+                if (code == "ЗК" or code == "ГК") and ("зарплат" in q_lower or "увольн" in q_lower or "работодател" in q_lower):
+                    logger.warning(f"Sherlock Validation: Dropping {code} for labor query, adding ТК")
+                    if "ТК" not in validated_codes:
+                        validated_codes.append("ТК")
                 elif code == "ГК" and ("штраф" in q_lower or "полиция" in q_lower):
                     logger.info("Sherlock Validation: Adding КоАП for penalty query")
                     if "КоАП" not in validated_codes: validated_codes.append("КоАП")

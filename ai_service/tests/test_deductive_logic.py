@@ -13,17 +13,17 @@ def sherlock():
 
 @pytest.mark.asyncio
 async def test_classify_and_validate_labor(sherlock):
-    # Mock LLM response for labor query choosing ZK (Land Code) by mistake
+    # Mock LLM response for labor query choosing GK (Civil Code)
     mock_resp = MagicMock()
-    mock_resp.content = '{"selected_codes": ["ЗК"], "reasoning": "testing error", "facts": {"action": "salary"}}'
+    mock_resp.content = '{"selected_codes": ["ГК"], "reasoning": "testing error", "facts": {"action": "salary"}}'
     sherlock.llm.invoke.return_value = mock_resp
     
     query = "Работодатель не платит зарплату"
     result = await sherlock.classify_and_validate(query)
     
-    # Validation logic should swap ЗК for ТК
+    # Validation logic should swap ГК for ТК
     assert "ТК" in result["selected_codes"]
-    assert "ЗК" not in result["selected_codes"]
+    assert "ГК" not in result["selected_codes"]
 
 @pytest.mark.asyncio
 async def test_classify_and_validate_penalty(sherlock):
@@ -47,7 +47,7 @@ async def test_stage_3_targeted_fetch(sherlock):
     
     sherlock.vectorstore.similarity_search.assert_called_once()
     args, kwargs = sherlock.vectorstore.similarity_search.call_args
-    assert kwargs["filter"]["code_ru"] == "Трудовой кодекс Республики Казахстан"
+    assert kwargs["filter"]["code_ru"] == "Трудовой кодекс РК"
 
 def test_stage_4_fact_check(sherlock):
     doc1 = MagicMock(page_content="Статья 437. Нарушение тишины в ночное время (с 23 до 6 часов утра)")
