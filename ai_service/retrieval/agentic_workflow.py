@@ -55,7 +55,7 @@ async def _linguist_hyde(query: str, trace_id: str) -> Tuple[str, dict]:
     prompt = (
         "Ты — эксперт по законодательству РК. Дай краткий гипотетический ответ (2–3 предложения), "
         "как могла бы звучать формулировка из закона или судебной практики по вопросу. "
-        "Пиши только JSON: {\"hypothesis\": \"твой ответ здесь\"}. Вопрос: {query}"
+        "Пиши только JSON: {{\"hypothesis\": \"твой ответ здесь\"}}. Вопрос: {query}"
     )
     try:
         resp = await asyncio.to_thread(llm.invoke, prompt.format(query=query))
@@ -77,7 +77,7 @@ async def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
     prompt = (
         f"Сгенерируй ровно {n} коротких перефразировок следующего юридического вопроса: "
         "половину на русском, половину на казахском. Каждый вариант — одна строка, без нумерации. "
-        "Respond with JSON: {{\"variations\": [\"вар1\", \"вар2\", ...]}} Вопрос: {query}"
+        "Respond with JSON: {{'variations': ['вар1', 'вар2', ...]}} Вопрос: {query}"
     )
     try:
         resp = await asyncio.to_thread(llm.invoke, prompt.format(query=query))
