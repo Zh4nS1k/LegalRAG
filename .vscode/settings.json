@@ -1,20 +1,24 @@
 {
-    "python.envFile": "${workspaceFolder}/.env",
-    "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python",
-    "python.analysis.extraPaths": [
-        "${workspaceFolder}"
-    ],
-    "python.analysis.venvPath": "${workspaceFolder}",
-    "python.analysis.venv": "venv",
-    "python.analysis.typeCheckingMode": "basic",
-    "python.analysis.diagnosticSeverityOverrides": {
-        "reportMissingModuleSource": "none",
-        "reportMissingTypeStubs": "none",
-        "reportGeneralTypeIssues": "none",
-        "reportUnknownVariableType": "none",
-        "reportUnknownMemberType": "none",
-        "reportUnknownArgumentType": "none",
-        "reportUnknownParameterType": "none",
-        "reportPrivateImportUsage": "none"
-    }
+  "python.envFile": "${workspaceFolder}/.env",
+  "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}"
+  ],
+  "python.analysis.venvPath": "${workspaceFolder}",
+  "python.analysis.venv": "venv",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingModuleSource": "none",
+    "reportMissingTypeStubs": "none",
+    "reportGeneralTypeIssues": "none",
+    "reportUnknownVariableType": "none",
+    "reportUnknownMemberType": "none",
+    "reportUnknownArgumentType": "none",
+    "reportUnknownParameterType": "none",
+    "reportPrivateImportUsage": "none"
+  },
+  "[go]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "golang.go"
+  }
 }

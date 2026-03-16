@@ -60,8 +60,20 @@ async def _linguist_hyde(query: str, trace_id: str) -> Tuple[str, dict]:
     try:
         resp = await asyncio.to_thread(llm.invoke, prompt.format(query=query))
         text = resp.content if hasattr(resp, "content") else str(resp)
-        data = json.loads(text)
-        hyde_doc = data.get("hypothesis", "").strip()
+        # Robust JSON extraction: look for {...} in the text
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            json_text = match.group(0)
+            try:
+                data = json.loads(json_text)
+                hyde_doc = data.get("hypothesis", "").strip()
+            except json.JSONDecodeError:
+                # Fallback: if { } present but not valid JSON, try to extract value manually
+                # or just use the whole text if it's short
+                hyde_doc = text.strip() if len(text) < 300 else ""
+        else:
+            # Fallback: no { } found, use the whole response if it looks reasonable
+            hyde_doc = text.strip() if len(text) < 300 else ""
     except Exception as e:
         hyde_doc = ""
         logger.error("[%s] HyDE (Groq/Ollama) failed: %s", trace_id, e, exc_info=True)
@@ -82,8 +94,21 @@ async def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
     try:
         resp = await asyncio.to_thread(llm.invoke, prompt.format(query=query))
         text = resp.content if hasattr(resp, "content") else str(resp)
-        data = json.loads(text)
-        lines = data.get("variations", [])
+        # Robust JSON extraction
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            json_text = match.group(0)
+            try:
+                data = json.loads(json_text)
+                lines = data.get("variations", [])
+            except json.JSONDecodeError:
+                # If JSON fails, try to split by lines as a secondary fallback
+                lines = [l.strip() for l in text.split('\n') if l.strip() and '{' not in l and '}' not in l]
+        else:
+            # Fallback for plain text variations
+            lines = [l.strip() for l in text.split('\n') if l.strip()]
+        # Filter and limit
+        lines = [l for l in lines if l and l != query][:n]
     except Exception as e:
         lines = []
         logger.error("[%s] Query expansion (Groq/Ollama) failed: %s", trace_id, e, exc_info=True)

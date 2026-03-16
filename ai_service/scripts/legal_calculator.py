@@ -1,7 +1,3 @@
-# legal_calculator.py — Level 2: Scripts (Hard Logic)
-# Handles deterministic calculations for legal penalties, deadlines, etc.
-# AI never counts money, terms, or penalties — this script does.
-
 from datetime import datetime, timedelta
 
 
@@ -17,7 +13,9 @@ class LegalCalculator:
             "critical": 10.0
         }
 
-        base_multiplier = multipliers.get(circumstances.get("severity", "minor"), 1.0)
+        base_multiplier = multipliers.get(
+            circumstances.get("severity", "minor"), 1.0
+        )
         repeat_offender = circumstances.get("repeat_offender", False)
         if repeat_offender:
             base_multiplier *= 2.0
@@ -51,5 +49,4 @@ class LegalCalculator:
     def validate_calculation_request(request):
         """Validate that calculation request has required fields."""
         required_fields = ["calculation_type", "parameters"]
-        return all(field in request for field in required_fields)</content>
-<parameter name="filePath">/home/zhanserik/Desktop/LegalRAG/ai_service/scripts/legal_calculator.py
+        return all(field in request for field in required_fields)

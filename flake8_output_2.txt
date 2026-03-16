@@ -1,0 +1,153 @@
+ai_service/retrieval/rag_chain.py:99:80: E501 line too long (80 > 79 characters)
+ai_service/retrieval/rag_chain.py:143:80: E501 line too long (93 > 79 characters)
+ai_service/retrieval/rag_chain.py:200:1: E305 expected 2 blank lines after class or function definition, found 1
+ai_service/retrieval/rag_chain.py:274:1: E305 expected 2 blank lines after class or function definition, found 1
+ai_service/retrieval/rag_chain.py:278:80: E501 line too long (102 > 79 characters)
+ai_service/retrieval/rag_chain.py:284:80: E501 line too long (86 > 79 characters)
+ai_service/retrieval/rag_chain.py:291:80: E501 line too long (100 > 79 characters)
+ai_service/retrieval/rag_chain.py:294:80: E501 line too long (119 > 79 characters)
+ai_service/retrieval/rag_chain.py:296:80: E501 line too long (82 > 79 characters)
+ai_service/retrieval/rag_chain.py:300:80: E501 line too long (101 > 79 characters)
+ai_service/retrieval/rag_chain.py:391:80: E501 line too long (83 > 79 characters)
+ai_service/retrieval/rag_chain.py:456:80: E501 line too long (91 > 79 characters)
+ai_service/retrieval/rag_chain.py:466:80: E501 line too long (81 > 79 characters)
+ai_service/retrieval/rag_chain.py:478:80: E501 line too long (89 > 79 characters)
+ai_service/retrieval/rag_chain.py:483:80: E501 line too long (86 > 79 characters)
+ai_service/retrieval/rag_chain.py:487:9: F841 local variable 'uk_filter' is assigned to but never used
+ai_service/retrieval/rag_chain.py:490:80: E501 line too long (96 > 79 characters)
+ai_service/retrieval/rag_chain.py:528:80: E501 line too long (84 > 79 characters)
+ai_service/retrieval/rag_chain.py:534:80: E501 line too long (86 > 79 characters)
+ai_service/retrieval/rag_chain.py:542:80: E501 line too long (96 > 79 characters)
+ai_service/retrieval/rag_chain.py:584:80: E501 line too long (96 > 79 characters)
+ai_service/retrieval/rag_chain.py:586:80: E501 line too long (90 > 79 characters)
+ai_service/retrieval/rag_chain.py:587:80: E501 line too long (96 > 79 characters)
+ai_service/retrieval/rag_chain.py:613:80: E501 line too long (99 > 79 characters)
+ai_service/retrieval/rag_chain.py:619:80: E501 line too long (82 > 79 characters)
+ai_service/retrieval/rag_chain.py:638:80: E501 line too long (94 > 79 characters)
+ai_service/retrieval/rag_chain.py:665:80: E501 line too long (80 > 79 characters)
+ai_service/retrieval/rag_chain.py:673:80: E501 line too long (98 > 79 characters)
+ai_service/retrieval/rag_chain.py:679:80: E501 line too long (93 > 79 characters)
+ai_service/retrieval/rag_chain.py:682:80: E501 line too long (83 > 79 characters)
+ai_service/retrieval/rag_chain.py:684:80: E501 line too long (87 > 79 characters)
+ai_service/retrieval/rag_chain.py:685:49: E261 at least two spaces before inline comment
+ai_service/retrieval/rag_chain.py:685:80: E501 line too long (80 > 79 characters)
+ai_service/retrieval/rag_chain.py:686:18: E111 indentation is not a multiple of 4
+ai_service/retrieval/rag_chain.py:686:18: E117 over-indented
+ai_service/retrieval/rag_chain.py:686:80: E501 line too long (97 > 79 characters)
+ai_service/retrieval/rag_chain.py:687:1: W293 blank line contains whitespace
+ai_service/retrieval/rag_chain.py:688:80: E501 line too long (94 > 79 characters)
+ai_service/retrieval/rag_chain.py:692:80: E501 line too long (84 > 79 characters)
+ai_service/retrieval/rag_chain.py:693:18: E111 indentation is not a multiple of 4
+ai_service/retrieval/rag_chain.py:693:18: E117 over-indented
+ai_service/retrieval/rag_chain.py:693:22: W291 trailing whitespace
+ai_service/retrieval/rag_chain.py:694:1: W293 blank line contains whitespace
+ai_service/retrieval/rag_chain.py:697:14: E111 indentation is not a multiple of 4
+ai_service/retrieval/rag_chain.py:697:14: E117 over-indented
+ai_service/retrieval/rag_chain.py:704:80: E501 line too long (87 > 79 characters)
+ai_service/retrieval/rag_chain.py:706:80: E501 line too long (86 > 79 characters)
+ai_service/retrieval/rag_chain.py:714:80: E501 line too long (103 > 79 characters)
+ai_service/retrieval/rag_chain.py:736:80: E501 line too long (80 > 79 characters)
+ai_service/retrieval/rag_chain.py:762:80: E501 line too long (100 > 79 characters)
+ai_service/retrieval/rag_chain.py:764:80: E501 line too long (83 > 79 characters)
+ai_service/retrieval/rag_chain.py:766:80: E501 line too long (86 > 79 characters)
+ai_service/retrieval/rag_chain.py:774:80: E501 line too long (81 > 79 characters)
+ai_service/retrieval/rag_chain.py:786:80: E501 line too long (103 > 79 characters)
+ai_service/retrieval/rag_chain.py:789:80: E501 line too long (99 > 79 characters)
+ai_service/retrieval/rag_chain.py:802:80: E501 line too long (83 > 79 characters)
+ai_service/retrieval/rag_chain.py:803:80: E501 line too long (101 > 79 characters)
+ai_service/retrieval/rag_chain.py:805:80: E501 line too long (91 > 79 characters)
+ai_service/retrieval/rag_chain.py:806:80: E501 line too long (109 > 79 characters)
+ai_service/retrieval/rag_chain.py:809:80: E501 line too long (90 > 79 characters)
+ai_service/retrieval/rag_chain.py:811:80: E501 line too long (87 > 79 characters)
+ai_service/retrieval/rag_chain.py:811:88: W291 trailing whitespace
+ai_service/retrieval/rag_chain.py:813:80: E501 line too long (84 > 79 characters)
+ai_service/retrieval/rag_chain.py:814:80: E501 line too long (101 > 79 characters)
+ai_service/retrieval/rag_chain.py:820:80: E501 line too long (110 > 79 characters)
+ai_service/retrieval/rag_chain.py:835:80: E501 line too long (98 > 79 characters)
+ai_service/retrieval/rag_chain.py:841:80: E501 line too long (112 > 79 characters)
+ai_service/retrieval/rag_chain.py:847:80: E501 line too long (81 > 79 characters)
+ai_service/retrieval/rag_chain.py:852:80: E501 line too long (105 > 79 characters)
+ai_service/retrieval/rag_chain.py:865:80: E501 line too long (90 > 79 characters)
+ai_service/retrieval/rag_chain.py:868:80: E501 line too long (87 > 79 characters)
+ai_service/retrieval/rag_chain.py:871:80: E501 line too long (103 > 79 characters)
+ai_service/retrieval/rag_chain.py:875:80: E501 line too long (92 > 79 characters)
+ai_service/retrieval/rag_chain.py:877:80: E501 line too long (122 > 79 characters)
+ai_service/retrieval/rag_chain.py:884:80: E501 line too long (136 > 79 characters)
+ai_service/retrieval/rag_chain.py:894:80: E501 line too long (138 > 79 characters)
+ai_service/retrieval/rag_chain.py:897:80: E501 line too long (100 > 79 characters)
+ai_service/retrieval/rag_chain.py:903:80: E501 line too long (84 > 79 characters)
+ai_service/retrieval/rag_chain.py:916:80: E501 line too long (89 > 79 characters)
+ai_service/retrieval/rag_chain.py:936:80: E501 line too long (88 > 79 characters)
+ai_service/retrieval/rag_chain.py:939:80: E501 line too long (85 > 79 characters)
+ai_service/retrieval/rag_chain.py:957:80: E501 line too long (97 > 79 characters)
+ai_service/retrieval/rag_chain.py:969:1: E305 expected 2 blank lines after class or function definition, found 1
+ai_service/retrieval/rag_chain.py:969:80: E501 line too long (227 > 79 characters)
+ai_service/retrieval/rag_chain.py:996:80: E501 line too long (112 > 79 characters)
+ai_service/retrieval/rag_chain.py:998:80: E501 line too long (81 > 79 characters)
+ai_service/retrieval/rag_chain.py:1004:80: E501 line too long (93 > 79 characters)
+ai_service/retrieval/rag_chain.py:1011:80: E501 line too long (144 > 79 characters)
+ai_service/retrieval/rag_chain.py:1014:80: E501 line too long (84 > 79 characters)
+ai_service/retrieval/rag_chain.py:1015:80: E501 line too long (91 > 79 characters)
+ai_service/retrieval/rag_chain.py:1018:80: E501 line too long (168 > 79 characters)
+ai_service/retrieval/rag_chain.py:1028:80: E501 line too long (87 > 79 characters)
+ai_service/retrieval/rag_chain.py:1030:80: E501 line too long (117 > 79 characters)
+ai_service/retrieval/rag_chain.py:1038:80: E501 line too long (100 > 79 characters)
+ai_service/retrieval/rag_chain.py:1042:80: E501 line too long (80 > 79 characters)
+ai_service/retrieval/rag_chain.py:1046:80: E501 line too long (94 > 79 characters)
+ai_service/retrieval/rag_chain.py:1047:80: E501 line too long (80 > 79 characters)
+ai_service/retrieval/rag_chain.py:1055:80: E501 line too long (95 > 79 characters)
+ai_service/retrieval/rag_chain.py:1073:80: E501 line too long (93 > 79 characters)
+ai_service/retrieval/rag_chain.py:1074:80: E501 line too long (133 > 79 characters)
+ai_service/retrieval/rag_chain.py:1090:80: E501 line too long (108 > 79 characters)
+ai_service/retrieval/rag_chain.py:1091:80: E501 line too long (174 > 79 characters)
+ai_service/retrieval/rag_chain.py:1107:80: E501 line too long (100 > 79 characters)
+ai_service/retrieval/rag_chain.py:1117:80: E501 line too long (87 > 79 characters)
+ai_service/retrieval/rag_chain.py:1119:1: F401 'langchain_core.runnables.RunnablePassthrough' imported but unused
+ai_service/retrieval/rag_chain.py:1119:1: E402 module level import not at top of file
+ai_service/retrieval/rag_chain.py:1121:1: E302 expected 2 blank lines, found 1
+ai_service/retrieval/rag_chain.py:1125:10: E114 indentation is not a multiple of 4 (comment)
+ai_service/retrieval/rag_chain.py:1125:10: E117 over-indented (comment)
+ai_service/retrieval/rag_chain.py:1125:80: E501 line too long (105 > 79 characters)
+ai_service/retrieval/rag_chain.py:1125:106: W291 trailing whitespace
+ai_service/retrieval/rag_chain.py:1126:10: E114 indentation is not a multiple of 4 (comment)
+ai_service/retrieval/rag_chain.py:1126:10: E117 over-indented (comment)
+ai_service/retrieval/rag_chain.py:1127:10: E111 indentation is not a multiple of 4
+ai_service/retrieval/rag_chain.py:1127:10: E117 over-indented
+ai_service/retrieval/rag_chain.py:1128:1: W293 blank line contains whitespace
+ai_service/retrieval/rag_chain.py:1138:1: E302 expected 2 blank lines, found 1
+ai_service/retrieval/rag_chain.py:1141:80: E501 line too long (80 > 79 characters)
+ai_service/retrieval/rag_chain.py:1142:80: E501 line too long (105 > 79 characters)
+ai_service/retrieval/rag_chain.py:1146:80: E501 line too long (108 > 79 characters)
+ai_service/retrieval/rag_chain.py:1147:1: W293 blank line contains whitespace
+ai_service/retrieval/rag_chain.py:1148:80: E501 line too long (81 > 79 characters)
+ai_service/retrieval/rag_chain.py:1150:1: W293 blank line contains whitespace
+ai_service/retrieval/rag_chain.py:1151:80: E501 line too long (82 > 79 characters)
+ai_service/retrieval/rag_chain.py:1186:80: E501 line too long (98 > 79 characters)
+ai_service/retrieval/rag_chain.py:1195:9: F841 local variable 'chain' is assigned to but never used
+ai_service/retrieval/rag_chain.py:1196:80: E501 line too long (92 > 79 characters)
+ai_service/retrieval/rag_chain.py:1197:80: E501 line too long (112 > 79 characters)
+ai_service/retrieval/rag_chain.py:1198:80: E501 line too long (100 > 79 characters)
+ai_service/retrieval/rag_chain.py:1199:80: E501 line too long (182 > 79 characters)
+ai_service/retrieval/rag_chain.py:1200:80: E501 line too long (181 > 79 characters)
+ai_service/retrieval/rag_chain.py:1202:80: E501 line too long (80 > 79 characters)
+ai_service/retrieval/rag_chain.py:1203:80: E501 line too long (106 > 79 characters)
+ai_service/retrieval/rag_chain.py:1205:80: E501 line too long (108 > 79 characters)
+ai_service/retrieval/rag_chain.py:1214:80: E501 line too long (92 > 79 characters)
+ai_service/retrieval/rag_chain.py:1216:1: W293 blank line contains whitespace
+ai_service/retrieval/rag_chain.py:1221:80: E501 line too long (150 > 79 characters)
+ai_service/retrieval/rag_chain.py:1223:80: E501 line too long (103 > 79 characters)
+ai_service/retrieval/rag_chain.py:1243:80: E501 line too long (106 > 79 characters)
+ai_service/retrieval/rag_chain.py:1245:80: E501 line too long (129 > 79 characters)
+ai_service/retrieval/rag_chain.py:1247:80: E501 line too long (141 > 79 characters)
+ai_service/retrieval/rag_chain.py:1261:1: E305 expected 2 blank lines after class or function definition, found 1
+ai_service/retrieval/rag_chain.py:1263:80: E501 line too long (112 > 79 characters)
+ai_service/retrieval/rag_chain.py:1297:1: E303 too many blank lines (3)
+ai_service/retrieval/rag_chain.py:1297:80: E501 line too long (206 > 79 characters)
+ai_service/retrieval/rag_chain.py:1333:1: E302 expected 2 blank lines, found 1
+ai_service/retrieval/rag_chain.py:1333:80: E501 line too long (82 > 79 characters)
+ai_service/retrieval/rag_chain.py:1342:80: E501 line too long (96 > 79 characters)
+ai_service/retrieval/rag_chain.py:1365:80: E501 line too long (96 > 79 characters)
+ai_service/retrieval/rag_chain.py:1370:1: E302 expected 2 blank lines, found 1
+ai_service/retrieval/rag_chain.py:1378:1: E305 expected 2 blank lines after class or function definition, found 1
+ai_service/retrieval/rag_chain.py:1383:80: E501 line too long (131 > 79 characters)
+ai_service/scripts/legal_calculator.py:56:66: W292 no newline at end of file

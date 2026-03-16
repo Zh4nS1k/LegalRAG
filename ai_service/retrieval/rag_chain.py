@@ -3,25 +3,25 @@
 import logging
 import os
 import re
+import sys
 import threading
 import time
-from typing import Any, List, Sequence, Optional
-from langchain_core.callbacks import Callbacks
+from typing import Any, List, Optional, Sequence
 
-import sys
-
-from ai_service.utils import latency
-from ai_service.utils.connectivity import is_internet_available, is_cache_populated
-from ai_service.lifecycle_hooks import network_sensor
+import torch
+from langchain_core.callbacks import CallbackManagerForRetrieverRun, Callbacks
+from langchain_core.documents import Document
+from langchain_core.prompts import PromptTemplate
+from langchain_core.retrievers import BaseRetriever
+from pydantic import Field
 
 from ai_service.core import config
+from ai_service.lifecycle_hooks import network_sensor
+from ai_service.utils import latency
+from ai_service.utils.connectivity import (is_cache_populated,
+                                           is_internet_available)
 
 logger = logging.getLogger("ai_service.rag")
-
-from langchain_core.prompts import PromptTemplate
-from langchain_core.callbacks import CallbackManagerForRetrieverRun
-from langchain_core.documents import Document
-from langchain_core.retrievers import BaseRetriever
 
 _nltk_ready = False
 _stemmer = None
@@ -73,14 +73,17 @@ class PrefixedEmbeddings:
         self.embeddings = embeddings
 
     def embed_documents(self, texts):
-        return self.embeddings.embed_documents(["passage: " + t for t in texts])
+        return self.embeddings.embed_documents(
+            ["passage: " + t for t in texts]
+        )
 
     def embed_query(self, text):
         return self.embeddings.embed_query("query: " + text)
 
 
 def _make_embeddings() -> PrefixedEmbeddings:
-    """Hybrid Connectivity Hook: internet first, local fallback, fail-safe if neither."""
+    """Hybrid Connectivity Hook: internet first, local fallback,
+    fail-safe if neither."""
     logger.info("[START] Model Initialization (embeddings)")
     t0 = time.perf_counter()
     config.configure_hf_hub()
@@ -97,10 +100,14 @@ def _make_embeddings() -> PrefixedEmbeddings:
 
     # Fail-safe: no internet + empty cache → exit immediately
     if not internet_ok and not cache_ok:
-        logger.error("No local model found and no internet access. Cache: %s", cache_folder)
+        logger.error(
+            "No local model found and no internet access. Cache: %s",
+            cache_folder
+        )
         sys.exit("No local model found and no internet access.")
 
-    # Smart loader: internet → normal (allow cache updates); no internet → local_files_only
+    # Smart loader: internet → normal (allow cache updates);
+    # no internet → local_files_only
     local_only = config.HF_LOCAL_ONLY or not internet_ok
     model_kwargs: dict = {
         "local_files_only": local_only,
@@ -108,7 +115,10 @@ def _make_embeddings() -> PrefixedEmbeddings:
     }
 
     # Device selection: force CPU if GPU disabled or insufficient
-    device = "cpu" if os.environ.get("CUDA_VISIBLE_DEVICES") == "" else ("cuda" if torch.cuda.is_available() else "cpu")
+    device = (
+        "cpu" if os.environ.get("CUDA_VISIBLE_DEVICES") == ""
+        else ("cuda" if torch.cuda.is_available() else "cpu")
+    )
     model_kwargs["device"] = device
 
     try:
@@ -125,14 +135,19 @@ def _make_embeddings() -> PrefixedEmbeddings:
         )
         elapsed = time.perf_counter() - t0
         mode = "local cache" if local_only else "internet"
-        logger.info("[SUCCESS] Model Initialization (embeddings, %s) (%.2fs)", mode, elapsed)
+        logger.info(
+            "[SUCCESS] Model Initialization (embeddings, %s) (%.2fs)", mode, elapsed)
         return emb
     except Exception as exc:
         elapsed = time.perf_counter() - t0
-        logger.error("[FAIL] Model Initialization (embeddings) (%.2fs): %s", elapsed, exc, exc_info=True)
+        logger.error(
+            "[FAIL] Model Initialization (embeddings) (%.2fs): %s",
+            elapsed, exc, exc_info=True
+        )
         raise RuntimeError(
-            "Не удалось загрузить эмбеддинги. Проверьте сеть или запустите: python -m ai_service.scripts.download_models. Кэш: %s"
-            % cache_folder
+            "Не удалось загрузить эмбеддинги. Проверьте сеть или "
+            "запустите: python -m ai_service.scripts.download_models. "
+            "Кэш: %s" % cache_folder
         ) from exc
 
 
@@ -147,6 +162,7 @@ def get_embeddings() -> PrefixedEmbeddings:
             if _embeddings_instance is None:
                 _embeddings_instance = _make_embeddings()
     return _embeddings_instance
+
 
 def get_vector_store():
     global _vector_store_instance
@@ -164,12 +180,19 @@ def get_vector_store():
                         pinecone_api_key=config.PINECONE_API_KEY,
                     )
                     elapsed = time.perf_counter() - t0
-                    logger.info("[SUCCESS] Pinecone Vector Store Initialization (%.2fs)", elapsed)
+                    logger.info(
+                        "[SUCCESS] Pinecone Vector Store Initialization "
+                        "(%.2fs)", elapsed
+                    )
                 except Exception as e:
                     elapsed = time.perf_counter() - t0
-                    logger.error("[FAIL] Pinecone Vector Store Initialization (%.2fs): %s", elapsed, e, exc_info=True)
+                    logger.error(
+                        "[FAIL] Pinecone Vector Store Initialization "
+                        "(%.2fs): %s", elapsed, e, exc_info=True
+                    )
                     raise
     return _vector_store_instance
+
 
 _hybrid_k = getattr(config, "RETRIEVER_WIDE_K", getattr(config, "HYBRID_K", 8))
 _vector_kwargs = {"k": _hybrid_k}
@@ -190,7 +213,9 @@ _filter_clauses: list[dict] = []
 
 if _filter_code:
     # Pinecone не поддерживает $regex — используем $or по известным вариантам
-    _variants = list(dict.fromkeys([_filter_code] + [v for v in _uk_variants if v != _filter_code]))
+    _variants = list(dict.fromkeys(
+        [_filter_code] + [v for v in _uk_variants if v != _filter_code]
+    ))
     _allowed_code_ru_for_filter = _variants
     _filter_clauses.append({"$or": [{"code_ru": v} for v in _variants]})
 
@@ -204,26 +229,45 @@ if _filter_clauses:
     else:
         _vector_kwargs["filter"] = {"$and": _filter_clauses}
     # При включённых фильтрах немного увеличиваем k для надёжности
-    _vector_kwargs["k"] = min(getattr(config, "RETRIEVER_WIDE_K", getattr(config, "HYBRID_K", 8)) + 4, 30)
+    _vector_kwargs["k"] = min(
+        getattr(
+            config, "RETRIEVER_WIDE_K",
+            getattr(config, "HYBRID_K", 8)
+        ) + 4, 30
+    )
     print(f"Фильтр Pinecone search_kwargs: {_vector_kwargs.get('filter')}")
 
-from pydantic import Field
+
 class LazyPineconeRetriever(BaseRetriever):
     search_kwargs: dict = Field(default_factory=dict)
-    def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager=None
+    ) -> List[Document]:
         # Diagnostic: log raw similarity scores
         vs = get_vector_store()
-        docs_with_scores = vs.similarity_search_with_score(query, **self.search_kwargs)
+        docs_with_scores = vs.similarity_search_with_score(
+            query, **self.search_kwargs
+        )
         if docs_with_scores:
             scores = [score for _, score in docs_with_scores]
             logger.info(f"[DIAG] Top 5 similarity scores: {scores[:5]}")
             if scores and scores[0] < 0.6:
-                logger.critical(f"[RETR_FAIL] Low similarity score detected: {scores[0]}. Check embedding model version.")
+                logger.critical(
+                    "[RETR_FAIL] Low similarity score detected: "
+                    f"{scores[0]}. Check embedding model version."
+                )
             # Log metadata of first 3 chunks
             for i, (doc, score) in enumerate(docs_with_scores[:3]):
-                logger.info(f"[DIAG] Chunk {i+1} metadata: code_ru={doc.metadata.get('code_ru')}, article={doc.metadata.get('article_number')}, score={score}")
+                logger.info(
+                    f"[DIAG] Chunk {i+1} metadata: "
+                    f"code_ru={doc.metadata.get('code_ru')}, "
+                    f"article={doc.metadata.get('article_number')}, "
+                    f"score={score}"
+                )
         docs = [doc for doc, _ in docs_with_scores]
         return docs
+
 
 _vector_retriever = LazyPineconeRetriever(search_kwargs=_vector_kwargs)
 
@@ -242,16 +286,20 @@ class _FilterByCodeRetriever(BaseRetriever):
 
         if self.allowed_code_ru:
             allowed = set(self.allowed_code_ru)
-            filtered = [d for d in filtered if (d.metadata.get("code_ru") or "").strip() in allowed]
+            filtered = [d for d in filtered if (
+                d.metadata.get("code_ru") or "").strip() in allowed]
 
         if self.article_number:
-            filtered = [d for d in filtered if (d.metadata.get("article_number") or "").strip() == self.article_number]
+            filtered = [d for d in filtered if (d.metadata.get(
+                "article_number") or "").strip() == self.article_number]
 
-        return filtered if filtered else docs[:5]  # fallback: хоть что-то вернуть
+        # fallback: хоть что-то вернуть
+        return filtered if filtered else docs[:5]
 
 
 def _extract_article_range(query: str) -> tuple[int, int] | None:
-    match = re.search(r"(?:статья|ст\.|ст|бап)?\s*(\d+)\s*[-–—]\s*(\d+)", query or "", re.IGNORECASE)
+    match = re.search(
+        r"(?:статья|ст\.|ст|бап)?\s*(\d+)\s*[-–—]\s*(\d+)", query or "", re.IGNORECASE)
     if not match:
         return None
     start = int(match.group(1))
@@ -262,34 +310,75 @@ def _extract_article_range(query: str) -> tuple[int, int] | None:
 def _augment_retrieval_query(query: str) -> str:
     q = (query or "").lower()
     extras: list[str] = []
-    if any(token in q for token in ("несовершеннолетний", "несовершеннолетние", "несовершеннолетних", "minor", "underage", "кәмелетке толмаған", "кәмелетке толмағандар")):
+    if any(token in q for token in (
+        "несовершеннолетний", "несовершеннолетние", "несовершеннолетних",
+        "minor", "underage", "кәмелетке толмаған", "кәмелетке толмағандар"
+    )):
         extras.append("работники, не достигшие восемнадцатилетнего возраста")
         extras.append("статья 76 Трудовой кодекс РК")
         extras.append("запрет ночной работы несовершеннолетних")
-    if any(token in q for token in ("субсид", "субсидия", "гос", "государ", "бюджет", "грант", "инвест", "смет", "договор", "фиктив", "жалған", "құжат", "алаяқ", "мемлекеттік", "қаржы", "ақша")):
+    if any(token in q for token in (
+        "субсид", "субсидия", "гос", "государ", "бюджет", "грант", "инвест",
+        "смет", "договор", "фиктив", "жалған", "құжат", "алаяқ",
+        "мемлекеттік", "қаржы", "ақша"
+    )):
         extras.append("алаяқтық 190 УК РК")
-        extras.append("қылмыстық жолмен алынған ақшаны заңдастыру 218 УК РК")
+        extras.append(
+            "қылмыстық жолмен алынған ақшаны заңдастыру 218 УК РК"
+        )
         extras.append("субсидия алу үшін жалған құжаттар 190 УК РК")
-    if any(token in q for token in ("заңсыз кәсіпкер", "кәсіпкерлік", "лицензиясыз", "тіркеусіз", "незаконн", "без регистрации", "без лицензии", "салық төлем", "налог", "уклонен")):
+    if any(token in q for token in (
+        "заңсыз кәсіпкер", "кәсіпкерлік", "лицензиясыз", "тіркеусіз",
+        "незаконн", "без регистрации", "без лицензии", "салық төлем",
+        "налог", "уклонен"
+    )):
         extras.append("заңсыз кәсіпкерлік 214 УК РК")
         extras.append("салық төлеуден жалтару 245 УК РК")
-    if any(token in q for token in ("пирамида", "пирамид", "қаржылық пирамида", "инвестиция", "инвест", "жоғары пайда", "30-50%")):
+    if any(token in q for token in (
+        "пирамида", "пирамид", "қаржылық пирамида", "инвестиция",
+        "инвест", "жоғары пайда", "30-50%"
+    )):
         extras.append("қаржылық пирамида құру және басқару 217 УК РК")
-        extras.append("финансовая пирамида создание и руководство 217 УК РК")
+        extras.append(
+            "финансовая пирамида создание и руководство 217 УК РК"
+        )
         extras.append("реклама финансовой пирамиды 217-1 УК РК")
-    if any(token in q for token in ("дәрігер", "жедел жәрдем", "медицин", "медициналық", "фельдшер", "санитар")):
-        extras.append("ненадлежащее выполнение профессиональных обязанностей медицинским работником 317 УК РК")
-        extras.append("медициналық қызметкердің кәсіби міндеттерін тиісінше орындамауы 317 УК РК")
+    if any(token in q for token in (
+        "дәрігер", "жедел жәрдем", "медицин", "медициналық", "фельдшер",
+        "санитар"
+    )):
+        extras.append(
+            "ненадлежащее выполнение профессиональных обязанностей "
+            "медицинским работником 317 УК РК"
+        )
+        extras.append(
+            "медициналық қызметкердің кәсіби міндеттерін тиісінше "
+            "орындамауы 317 УК РК"
+        )
         extras.append("оставление в опасности 119 УК РК")
-    if any(token in q for token in ("қалдық су", "қалдық сулар", "өзен", "су ластау", "суға төгу", "тазарту жүйесі", "эколог", "өндіріс қалдық", "өндірістік қалдық", "химия", "улы зат", "жаппай улану", "жаппай ауру")):
+    if any(token in q for token in (
+        "қалдық су", "қалдық сулар", "өзен", "су ластау", "суға төгу",
+        "тазарту жүйеси", "эколог", "өндіріс қалдық", "өндірістік қалдық",
+        "химия", "улы зат", "жаппай улану", "жаппай ауру"
+    )):
         extras.append("загрязнение вод 328 УК РК")
         extras.append("су ластау 328 УК РК")
-        extras.append("нарушение правил охраны окружающей среды 324 УК РК")
+        extras.append(
+            "нарушение правил охраны окружающей среды 324 УК РК"
+        )
         extras.append("опасные химические вещества 325 УК РК")
-    if any(token in q for token in ("шетел", "сырт ел", "резидент", "жылжымайтын", "жарғылық капитал", "уставный капитал", "капиталға", "вклад", "взнос", "декларация", "деклар", "имущ", "имущественный", "прирост стоимости")):
+    if any(token in q for token in (
+        "шетел", "сырт ел", "резидент", "жылжымайтын", "жарғылық капитал",
+        "уставный капитал", "капиталға", "вклад", "взнос", "декларация",
+        "деклар", "имущ", "имущественный", "прирост стоимости"
+    )):
         extras.append("доход от прироста стоимости 228 налоговый кодекс")
-        extras.append("имущественный доход физического лица 330 налоговый кодекс")
-        extras.append("вклад в уставный капитал имущество 333 налоговый кодекс")
+        extras.append(
+            "имущественный доход физического лица 330 налоговый кодекс"
+        )
+        extras.append(
+            "вклад в уставный капитал имущество 333 налоговый кодекс"
+        )
         extras.append("иностранные источники дохода 332 налоговый кодекс")
     range_match = _extract_article_range(query)
     if range_match and ("ук" in q or "қылмыстық" in q or "уголов" in q):
@@ -307,32 +396,61 @@ def _is_criminal_query(query: str) -> bool:
 def _focus_articles_from_query(query: str) -> set[str]:
     q = (query or "").lower()
     focus: set[str] = set()
-    if any(token in q for token in ("субсид", "субсидия", "гос", "государ", "бюджет", "грант", "инвест", "смет", "договор", "фиктив", "мемлекеттік", "жалған", "алаяқ", "құжат", "қаржы", "ақша")):
+    if any(token in q for token in (
+        "субсид", "субсидия", "гос", "государ", "бюджет", "грант", "инвест",
+        "смет", "договор", "фиктив", "мемлекеттік", "жалған", "алаяқ",
+        "құжат", "қаржы", "ақша"
+    )):
         focus.update({"190", "218"})
-    if any(token in q for token in ("заңсыз кәсіпкер", "кәсіпкерлік", "лицензиясыз", "тіркеусіз", "незаконн", "без регистрации", "без лицензии", "салық төлем", "налог", "уклонен")):
+    if any(token in q for token in (
+        "заңсыз кәсіпкер", "кәсіпкерлік", "лицензиясыз", "тіркеусіз",
+        "незаконн", "без регистрации", "без лицензии", "салық төлем",
+        "налог", "уклонен"
+    )):
         focus.update({"214", "245"})
-    if any(token in q for token in ("пирамида", "пирамид", "қаржылық пирамида", "инвестиция", "инвест", "жоғары пайда", "30-50%")):
+    if any(token in q for token in (
+        "пирамида", "пирамид", "қаржылық пирамида", "инвестиция",
+        "инвест", "жоғары пайда", "30-50%"
+    )):
         focus.update({"217", "190"})
-    if any(token in q for token in ("қалдық су", "қалдық сулар", "өзен", "су ластау", "суға төгу", "тазарту жүйесі", "эколог", "өндіріс қалдық", "өндірістік қалдық", "химия", "улы зат", "жаппай улану", "жаппай ауру")):
+    if any(token in q for token in (
+        "қалдық су", "қалдық сулар", "өзен", "су ластау", "суға төгу",
+        "тазарту жүйесі", "эколог", "өндіріс қалдық", "өндірістік қалдық",
+        "химия", "улы зат", "жаппай улану", "жаппай ауру"
+    )):
         focus.update({"328", "325", "324"})
-    if any(token in q for token in ("шетел", "сырт ел", "резидент", "жылжымайтын", "жарғылық капитал", "уставный капитал", "капиталға", "вклад", "взнос", "декларация", "деклар", "имущ", "имущественный", "прирост стоимости")):
+    if any(token in q for token in (
+        "шетел", "сырт ел", "резидент", "жылжымайтын", "жарғылық капитал",
+        "уставный капитал", "капиталға", "вклад", "взнос", "декларация",
+        "деклар", "имущ", "имущественный", "прирост стоимости"
+    )):
         focus.update({"228", "330", "332", "333"})
     return focus
 
 
 def _is_subsidy_query(query: str) -> bool:
     q = (query or "").lower()
-    return any(token in q for token in ("субсид", "субсидия", "грант", "гос", "государ", "мемлекеттік", "бюджет"))
+    return any(token in q for token in (
+        "субсид", "субсидия", "грант", "гос", "государ", "мемлекеттік",
+        "бюджет"
+    ))
 
 
 def _is_illegal_business_query(query: str) -> bool:
     q = (query or "").lower()
-    return any(token in q for token in ("заңсыз кәсіпкер", "кәсіпкерлік", "лицензиясыз", "тіркеусіз", "незаконн", "без регистрации", "без лицензии", "салық төлем", "налог", "уклонен"))
+    return any(token in q for token in (
+        "заңсыз кәсіпкер", "кәсіпкерлік", "лицензиясыз", "тіркеусіз",
+        "незаконн", "без регистрации", "без лицензии", "салық төлем",
+        "налог", "уклонен"
+    ))
 
 
 def _is_pyramid_query(query: str) -> bool:
     q = (query or "").lower()
-    return any(token in q for token in ("пирамида", "пирамид", "қаржылық пирамида", "инвестиция", "инвест", "жоғары пайда", "30-50%"))
+    return any(token in q for token in (
+        "пирамида", "пирамид", "қаржылық пирамида", "инвестиция",
+        "инвест", "жоғары пайда", "30-50%"
+    ))
 
 
 def _needs_circumstances_query(query: str) -> bool:
@@ -368,10 +486,10 @@ class _HeuristicRetriever(BaseRetriever):
     ) -> List[Document]:
         search_query = _augment_retrieval_query(query)
         docs = self.base_retriever.invoke(search_query)
-        uk_filter = {"$or": [{"code_ru": v} for v in _uk_variants]}
         if _is_criminal_query(query):
             allowed = set(_uk_variants)
-            filtered = [d for d in docs if (d.metadata.get("code_ru") or "").strip() in allowed]
+            filtered = [d for d in docs if (
+                d.metadata.get("code_ru") or "").strip() in allowed]
             if filtered:
                 docs = filtered
             else:
@@ -419,11 +537,11 @@ class _LawAwareRetriever(BaseRetriever):
     ) -> List[Document]:
         search_query = _augment_retrieval_query(query)
         docs = self.base_retriever.invoke(search_query)
-        uk_filter = {"$or": [{"code_ru": v} for v in _uk_variants]}
 
         if _is_criminal_query(query):
             allowed = set(_uk_variants)
-            filtered = [d for d in docs if (d.metadata.get("code_ru") or "").strip() in allowed]
+            filtered = [d for d in docs if (
+                d.metadata.get("code_ru") or "").strip() in allowed]
             docs = filtered if filtered else docs
             if len(docs) < self.min_k_criminal:
                 extra: list[Document] = []
@@ -442,6 +560,7 @@ class _LawAwareRetriever(BaseRetriever):
                     docs = _merge_unique(docs, extra)
 
         if _needs_circumstances_query(query):
+            uk_filter = {"$or": [{"code_ru": v} for v in _uk_variants]}
             extra_docs: list[Document] = []
             for q in (
                 "смягчающие обстоятельства УК РК",
@@ -494,7 +613,8 @@ def _fetch_parent_context_from_store(code_ru: str, article_number: str) -> tuple
                 break
         return best_cn, best_ct, best_at
     except Exception as e:
-        print(f"Context enrichment: could not fetch parent for {code_ru} ст.{article_number}: {e}")
+        print(
+            f"Context enrichment: could not fetch parent for {code_ru} ст.{article_number}: {e}")
     return "", "", ""
 
 
@@ -546,7 +666,8 @@ def _enrich_with_parent_context(docs: List[Document]) -> List[Document]:
         if parts:
             breadcrumb = "[" + " | ".join(parts) + "]\n"
             enriched_content = breadcrumb + doc.page_content
-            enriched.append(Document(page_content=enriched_content, metadata=m))
+            enriched.append(
+                Document(page_content=enriched_content, metadata=m))
         else:
             enriched.append(doc)
 
@@ -565,27 +686,30 @@ class _TrimRetriever(BaseRetriever):
         if isinstance(query, dict):
             # If we receive a dict (e.g. from LCEL chain), extract the query string
             # Try common keys
-            q = query.get("input") or query.get("query") or query.get("question") or ""
-            if not q and "context" not in query: # If it's not a doc chain input
-                 print(f"DEBUG: _TrimRetriever received dict without known keys: {query.keys()}")
-            
+            q = query.get("input") or query.get(
+                "query") or query.get("question") or ""
+            if not q and "context" not in query:  # If it's not a doc chain input
+                print(
+                    f"DEBUG: _TrimRetriever received dict without known keys: {query.keys()}")
+
             # If the dict is just {"input": "..."} which is typical for create_retrieval_chain
             if q:
                 query = q
             else:
                 # Fallback: convert to string representation if needed or just empty
-                 pass 
-        
+                pass
+
         # Ensure query is string for base_retriever
         if not isinstance(query, str):
-             query = str(query)
+            query = str(query)
 
         docs = self.base_retriever.invoke(query)
         trimmed: list[Document] = []
         for d in docs[: self.max_docs]:
             content = d.page_content
             if len(content) > self.max_chars_per_doc:
-                content = content[: self.max_chars_per_doc] + "\n[...текст обрезан...]"
+                content = content[: self.max_chars_per_doc] + \
+                    "\n[...текст обрезан...]"
             trimmed.append(Document(page_content=content, metadata=d.metadata))
         # Inject parent-context breadcrumb so LLM knows Code → Chapter → Article scope
         return _enrich_with_parent_context(trimmed)
@@ -595,7 +719,8 @@ def _load_bm25_chunks() -> list[Document] | None:
     """Load BM25 chunks lazily from pickle (preferred) or prepare_data."""
     try:
         import pickle  # local import: keep module import fast
-        _pkl = getattr(config, "CHUNKS_PICKLE_PATH", None) or (config.BASE_DIR / "chunks_for_bm25.pkl")
+        _pkl = getattr(config, "CHUNKS_PICKLE_PATH", None) or (
+            config.BASE_DIR / "chunks_for_bm25.pkl")
         if _pkl and _pkl.exists():
             with open(_pkl, "rb") as f:
                 chunks = pickle.load(f)
@@ -647,7 +772,8 @@ def get_retriever():
                     )
                     print("BM25 инициализирован со стеммингом (Snowball/Russian).")
                 else:
-                    bm25_retriever = BM25Retriever.from_documents(chunks, k=_hybrid_k)
+                    bm25_retriever = BM25Retriever.from_documents(
+                        chunks, k=_hybrid_k)
 
                 _vector_w = getattr(config, "VECTOR_WEIGHT", 0.6)
                 _bm25_w = getattr(config, "BM25_WEIGHT", 0.4)
@@ -667,10 +793,12 @@ def get_retriever():
                 allowed_code_ru=_allowed_code_ru_for_filter,
                 article_number=_filter_article,
             )
-            print("Включён пост-фильтр по кодексу/статье (только разрешённые code_ru/article_number).")
+            print(
+                "Включён пост-фильтр по кодексу/статье (только разрешённые code_ru/article_number).")
 
         # Heuristic + law-aware layers
-        heuristic_retriever = _HeuristicRetriever(base_retriever=base_retriever, vector_store=None)
+        heuristic_retriever = _HeuristicRetriever(
+            base_retriever=base_retriever, vector_store=None)
         law_aware_retriever = _LawAwareRetriever(
             base_retriever=heuristic_retriever,
             vector_store=None,
@@ -683,19 +811,26 @@ def get_retriever():
             try:
                 from FlagEmbedding import FlagReranker
                 try:
-                    from langchain.retrievers import ContextualCompressionRetriever
-                    from langchain.retrievers.document_compressors.base import BaseDocumentCompressor
+                    from langchain.retrievers import \
+                        ContextualCompressionRetriever
+                    from langchain.retrievers.document_compressors.base import \
+                        BaseDocumentCompressor
                 except ImportError:
-                    from langchain_classic.retrievers import ContextualCompressionRetriever
-                    from langchain_classic.retrievers.document_compressors.base import BaseDocumentCompressor
+                    from langchain_classic.retrievers import \
+                        ContextualCompressionRetriever
+                    from langchain_classic.retrievers.document_compressors.base import \
+                        BaseDocumentCompressor
 
                 config.configure_hf_hub()
-                logger.info("[START] Reranker initialization (%s)", config.RERANKER_MODEL)
+                logger.info("[START] Reranker initialization (%s)",
+                            config.RERANKER_MODEL)
                 t_rerank = time.perf_counter()
-                # FlagReranker uses trust_remote_code=True by default in some versions, 
+                # FlagReranker uses trust_remote_code=True by default in some versions,
                 # but we'll stick to FlagReranker as it is.
-                _reranker_model = FlagReranker(config.RERANKER_MODEL, use_fp16=True)
-                logger.info("[SUCCESS] Reranker initialized (%.2fs)", time.perf_counter() - t_rerank)
+                _reranker_model = FlagReranker(
+                    config.RERANKER_MODEL, use_fp16=True)
+                logger.info("[SUCCESS] Reranker initialized (%.2fs)",
+                            time.perf_counter() - t_rerank)
 
                 class BGEReranker(BaseDocumentCompressor):
                     top_n: int = 8
@@ -716,19 +851,22 @@ def get_retriever():
                         scored_docs.sort(key=lambda x: x[1], reverse=True)
                         return [d for d, _ in scored_docs[: self.top_n]]
 
-                compressor = BGEReranker(top_n=getattr(config, "RETRIEVER_TOP_K_AFTER_RERANK", 8))
+                compressor = BGEReranker(top_n=getattr(
+                    config, "RETRIEVER_TOP_K_AFTER_RERANK", 8))
                 retr = ContextualCompressionRetriever(
                     base_compressor=compressor,
                     base_retriever=law_aware_retriever,
                 )
             except Exception as e:
-                logger.error("Reranker BGE-M3 failed: %s (using retrieval without reranking)", e, exc_info=True)
+                logger.error(
+                    "Reranker BGE-M3 failed: %s (using retrieval without reranking)", e, exc_info=True)
 
         # Trim context before LLM
         retr = _TrimRetriever(
             base_retriever=retr,
             max_docs=getattr(config, "CONTEXT_MAX_DOCS", 8),
-            max_chars_per_doc=getattr(config, "CONTEXT_MAX_CHARS_PER_DOC", 1800),
+            max_chars_per_doc=getattr(
+                config, "CONTEXT_MAX_CHARS_PER_DOC", 1800),
         )
 
         _retriever_instance = retr
@@ -746,26 +884,31 @@ def get_llm():
                 logger.info("[START] LLM Initialization")
                 t0 = time.perf_counter()
                 try:
-                    _llm_backend = os.environ.get("LEGAL_RAG_LLM_BACKEND", "groq").lower()
+                    _llm_backend = os.environ.get(
+                        "LEGAL_RAG_LLM_BACKEND", "groq").lower()
                     if _llm_backend == "groq":
                         try:
-                            from langchain_groq import ChatGroq  # type: ignore[import]
+                            from langchain_groq import \
+                                ChatGroq  # type: ignore[import]
                         except Exception as e:  # pragma: no cover
                             raise SystemExit(
                                 "Для использования облачного Groq установите пакет 'langchain-groq':\n"
                                 "  pip install langchain-groq\n"
                                 f"Текущая ошибка импорта: {e}"
                             )
-                        groq_api_key = config.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
+                        groq_api_key = config.GROQ_API_KEY or os.environ.get(
+                            "GROQ_API_KEY")
                         if not groq_api_key:
-                            raise SystemExit("Задайте GROQ_API_KEY для облачного Groq (gsk_...): export GROQ_API_KEY=...")
+                            raise SystemExit(
+                                "Задайте GROQ_API_KEY для облачного Groq (gsk_...): export GROQ_API_KEY=...")
                         _llm_instance = ChatGroq(
                             groq_api_key=groq_api_key,
                             model_name=config.LLM_MODEL,
                             temperature=config.LLM_TEMPERATURE,
                             max_tokens=config.LLM_MAX_TOKENS,
                         )
-                        logger.info("[SUCCESS] LLM Initialization (Groq, model=%s) (%.2fs)", config.LLM_MODEL, time.perf_counter() - t0)
+                        logger.info("[SUCCESS] LLM Initialization (Groq, model=%s) (%.2fs)",
+                                    config.LLM_MODEL, time.perf_counter() - t0)
                     else:
                         from langchain_ollama import OllamaLLM
 
@@ -775,10 +918,12 @@ def get_llm():
                             base_url=config.OLLAMA_BASE_URL,
                             num_predict=config.LLM_MAX_TOKENS,
                         )
-                        logger.info("[SUCCESS] LLM Initialization (Ollama, model=%s) (%.2fs)", config.LLM_MODEL, time.perf_counter() - t0)
+                        logger.info("[SUCCESS] LLM Initialization (Ollama, model=%s) (%.2fs)",
+                                    config.LLM_MODEL, time.perf_counter() - t0)
                 except Exception as e:
                     elapsed = time.perf_counter() - t0
-                    logger.error("[FAIL] LLM Initialization (%.2fs): %s", elapsed, e, exc_info=True)
+                    logger.error(
+                        "[FAIL] LLM Initialization (%.2fs): %s", elapsed, e, exc_info=True)
                     raise
     return _llm_instance
 
@@ -797,7 +942,8 @@ def _ensure_latency_patches() -> None:
             t0 = time.perf_counter()
             try:
                 out = original_embed_query(*args, **kwargs)
-                logger.info("[SUCCESS] Query Embedded (%.2fs)", time.perf_counter() - t0)
+                logger.info("[SUCCESS] Query Embedded (%.2fs)",
+                            time.perf_counter() - t0)
                 return out
             except Exception as exc:
                 logger.error("Embedding failed: %s", exc, exc_info=True)
@@ -817,10 +963,12 @@ def _ensure_latency_patches() -> None:
             try:
                 docs = original_trim_get_docs(self, *args, **kwargs)
                 elapsed = time.perf_counter() - t0
-                logger.info("[SUCCESS] Retrieved %d chunks (%.2fs)", len(docs), elapsed)
+                logger.info(
+                    "[SUCCESS] Retrieved %d chunks (%.2fs)", len(docs), elapsed)
                 return docs
             except Exception as exc:
-                logger.error("Pinecone Vector Search failed: %s", exc, exc_info=True)
+                logger.error("Pinecone Vector Search failed: %s",
+                             exc, exc_info=True)
                 raise
 
         _TrimRetriever._get_relevant_documents = wrapped_trim_get_docs
@@ -838,7 +986,8 @@ def _ensure_latency_patches() -> None:
             t0 = time.perf_counter()
             try:
                 out = original_llm_invoke(self, *args, **kwargs)
-                logger.info("[SUCCESS] LLM Response Generated (%.2fs)", time.perf_counter() - t0)
+                logger.info(
+                    "[SUCCESS] LLM Response Generated (%.2fs)", time.perf_counter() - t0)
                 return out
             except Exception as exc:
                 logger.error("LLM Inference failed: %s", exc, exc_info=True)
@@ -850,7 +999,11 @@ def _ensure_latency_patches() -> None:
 
     _ensure_latency_patches._done = True
 
-UNIVERSAL_PROMPT_TEMPLATE = """You are a Legal Synthesizer. Based on the verified context {context} and the analyzed user intent {input}, provide a final legal standing. Mention the 'Flip-Point' (what could change the outcome).
+
+UNIVERSAL_PROMPT_TEMPLATE = """You are a Legal Synthesizer. Based on the
+verified context {context} and the analyzed user intent {input}, provide a
+final legal standing. Mention the 'Flip-Point' (what could change the
+outcome).
 
 {chat_history}
 Context:
@@ -892,14 +1045,19 @@ CRIMINAL_PROMPT_TEMPLATE = """Ты — эксперт по Уголовному 
    • название кодекса/закона
    • точную санкцию (если применимо)
    • источник (название файла или кодекса)
-4. Если в вопросе диапазон статей (например, ст. 120–135 УК РК) — перечисляй ВСЕ релевантные статьи из контекста с кратким описанием и санкцией.
-5. Для любой сферы всегда разбирай, если применимо (и только если в контексте):
+4. Если в вопросе диапазон статей (например, ст. 120–135 УК РК) —
+   перечисляй ВСЕ релевантные статьи из контекста с кратким описанием и
+   санкцией.
+5. Для любой сферы всегда разбирай, если применимо (и только если в
+   контексте):
    - Конституционное право: права граждан, принципы, нормы Конституции.
    - Гражданское право (ГК): договоры, имущество, обязательства, ущерб, компенсация.
    - Трудовое право (ТК): принципы, права работников/работодателей, нарушения, компенсации.
    - Налоговое право: налоги, нарушения, штрафы, декларации.
    - Административное право (КоАП): нарушения, штрафы, процедуры.
-   - Уголовное право (УК): состав преступления (объект, объективная сторона, субъект, субъективная сторона), ауырлататын және жеңілдететін мән-жайлар, санкция дословно.
+   - Уголовное право (УК): состав преступления (объект, объективная
+     сторона, субъект, субъективная сторона), ауырлататын және
+     жеңілдететін мән-жайлар, санкция дословно.
    - Процессуальное (УПК/ГПК): процедуры суда, доказательства, сроки.
    - Семейное право: брак, развод, дети, алименты.
    - Здравоохранение: права пациентов, обязанности медработников, нарушения.
@@ -955,7 +1113,8 @@ RANGE_PROMPT_TEMPLATE = """Ты — точный ассистент по УК Р
 
 Правила:
 • Начинай строго с: "Это не официальная юридическая консультация. Информация только из базы."
-• Если в вопросе диапазон статей (например, 120–135) — перечисляй ВСЕ релевантные статьи из контекста с номерами и кратким описанием.
+• Если в вопросе диапазон статей (например, 120–135) — перечисляй ВСЕ
+  релевантные статьи из контекста с номерами и кратким описанием.
 • Цитируй санкции и ключевые части дословно.
 • Указывай источник (название кодекса) и номер статьи.
 
@@ -971,8 +1130,12 @@ RANGE_PROMPT_TEMPLATE = """Ты — точный ассистент по УК Р
 GENERAL_PROMPT_TEMPLATE = "GENERAL_PROMPT_TEMPLATE_PLACEHOLDER"
 CASE_PROMPT_TEMPLATE = "CASE_PROMPT_TEMPLATE_PLACEHOLDER"
 
-GENERAL_PROMPT = PromptTemplate.from_template("Дай краткую справку по теории права РК на основе {context}.")
-CASE_PROMPT = PromptTemplate.from_template("Проведи юридический анализ ситуации. Если не хватает данных для оценки нарушения — уточни их у пользователя. Контекст: {context}")
+GENERAL_PROMPT = PromptTemplate.from_template(
+    "Дай краткую справку по теории права РК на основе {context}.")
+CASE_PROMPT = PromptTemplate.from_template(
+    "Проведи юридический анализ ситуации. Если не хватает данных для "
+    "оценки нарушения — уточни их у пользователя. Контекст: {context}"
+)
 
 UNIVERSAL_PROMPT = PromptTemplate.from_template(UNIVERSAL_PROMPT_TEMPLATE)
 CRIMINAL_PROMPT = PromptTemplate.from_template(CRIMINAL_PROMPT_TEMPLATE)
@@ -1000,16 +1163,15 @@ except ImportError:
     from langchain_classic.chains import create_retrieval_chain
     from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 
-from langchain_core.runnables import RunnablePassthrough
 
 def _fill_missing_metadata(docs):
     # docs is a list of Document objects coming from the retriever
     # We must return the list of docs
     if not isinstance(docs, list):
-         # If for some reason we get a dict (e.g. from a weird chain state), return it to avoid crashing, 
-         # but this shouldn't happen if the chain is correct.
-         return docs
-         
+        # If for some reason we get a dict (e.g. from a weird chain state), return it to avoid crashing,
+        # but this shouldn't happen if the chain is correct.
+        return docs
+
     for d in docs:
         if "article_number" not in d.metadata:
             d.metadata["article_number"] = "Н/Д"
@@ -1019,19 +1181,22 @@ def _fill_missing_metadata(docs):
             d.metadata["source"] = "Неизвестно"
     return docs
 
+
 def _make_qa_chain(prompt: PromptTemplate) -> Any:
     # Define a prompt to format each document including metadata
     document_prompt = PromptTemplate(
-        input_variables=["page_content", "source", "article_number", "code_ru"],
+        input_variables=["page_content", "source",
+                         "article_number", "code_ru"],
         template="Источник: {source}\nКодекс: {code_ru}\nСтатья: {article_number}\nТекст: {page_content}"
     )
 
     # LCEL pipeline: Retriever -> Document Chain -> Retrieval Chain
-    question_answer_chain = create_stuff_documents_chain(get_llm(), prompt, document_prompt=document_prompt)
-    
+    question_answer_chain = create_stuff_documents_chain(
+        get_llm(), prompt, document_prompt=document_prompt)
+
     # Wrap retriever to ensure metadata exists before docs hit the document chain
     retriever_with_safeguard = get_retriever() | _fill_missing_metadata
-    
+
     return create_retrieval_chain(retriever_with_safeguard, question_answer_chain)
 
 
@@ -1072,21 +1237,29 @@ def invoke_qa_with_context(
     docs = _fill_missing_metadata(list(context_docs))
     prompt = _select_prompt(query, intent=intent)
     if prompt is RANGE_PROMPT:
-        chain = _get_qa_chains()["range"]
+        _get_qa_chains()["range"]
     elif prompt is CRIMINAL_PROMPT:
-        chain = _get_qa_chains()["criminal"]
+        _get_qa_chains()["criminal"]
     else:
-        chain = _get_qa_chains()["universal"]
-    # Retrieval chain expects "input", "chat_history", and injects "context" from retriever.
-    # Our chain was built with retriever; we invoke the inner question_answer_chain by passing context directly.
-    # create_retrieval_chain(retriever, question_answer_chain) passes retriever output as "context".
-    # So we need to invoke the part that takes context. The retrieval chain does: context = retriever.invoke(input), then question_answer_chain.invoke({**input, "context": context}).
-    # So we can't easily invoke just the question_answer_chain without the retriever. Alternative: use the same prompt and create_stuff_documents_chain and invoke with context=docs.
+        _get_qa_chains()["universal"]
+    # Retrieval chain expects "input", "chat_history", and injects "context"
+    # from retriever. Our chain was built with retriever; we invoke the
+    # inner question_answer_chain by passing context directly.
+    # create_retrieval_chain(retriever, question_answer_chain) passes
+    # retriever output as "context".
+    # So we need to invoke the part that takes context. The retrieval chain
+    # does: context = retriever.invoke(input), then
+    # question_answer_chain.invoke({**input, "context": context}).
+    # So we can't easily invoke just the question_answer_chain without the
+    # retriever. Alternative: use the same prompt and
+    # create_stuff_documents_chain and invoke with context=docs.
     document_prompt = PromptTemplate(
-        input_variables=["page_content", "source", "article_number", "code_ru"],
+        input_variables=["page_content", "source",
+                         "article_number", "code_ru"],
         template="Источник: {source}\nКодекс: {code_ru}\nСтатья: {article_number}\nТекст: {page_content}",
     )
-    question_answer_chain = create_stuff_documents_chain(get_llm(), prompt, document_prompt=document_prompt)
+    question_answer_chain = create_stuff_documents_chain(
+        get_llm(), prompt, document_prompt=document_prompt)
     res = question_answer_chain.invoke({
         "context": docs,
         "input": query,
@@ -1097,12 +1270,16 @@ def invoke_qa_with_context(
 
 def invoke_qa(query: str, history: Optional[List[dict]] = None, intent: str = None) -> dict:
     _ensure_latency_patches()
-    
+
     if intent == "SOCIAL":
         # No RAG, just LLM with history
         llm = get_llm()
         s_history = _history_str(history)
-        prompt_text = f"Ты — дружелюбный юридический ассистент Legally. Ответь на приветствие или общий вопрос.\n\n{s_history}Вопрос: {query}\nОтвет:"
+        prompt_text = (
+            "Ты — дружелюбный юридический ассистент Legally. "
+            "Ответь на приветствие или общий вопрос.\n\n"
+            f"{s_history}Вопрос: {query}\nОтвет:"
+        )
         res = llm.invoke(prompt_text)
         return {"result": res.content if hasattr(res, 'content') else str(res), "source_documents": []}
 
@@ -1124,11 +1301,17 @@ def invoke_qa(query: str, history: Optional[List[dict]] = None, intent: str = No
 
     if not source_documents:
         # Fallback to internal knowledge
-        logger.warning("[FALLBACK] No documents retrieved, using internal knowledge for query: %s", query)
+        logger.warning(
+            "[FALLBACK] No documents retrieved, using internal knowledge "
+            "for query: %s", query
+        )
         fallback_prompt = PromptTemplate.from_template(
-            "⚠️ ВНИМАНИЕ: Информация не найдена в текущей базе данных. Ниже приведен общий правовой анализ на основе НПА РК:\n\n"
+            "⚠️ ВНИМАНИЕ: Информация не найдена в текущей базе данных. "
+            "Ниже приведен общий правовой анализ на основе НПА РК:\n\n"
             "Вопрос: {input}\n\n"
-            "Ответьте на основе вашего общего знания законодательства Республики Казахстан. Будьте точны и ссылайтесь на релевантные статьи."
+            "Ответьте на основе вашего общего знания законодательства "
+            "Республики Казахстан. Будьте точны и ссылайтесь на "
+            "релевантные статьи."
         )
         fallback_chain = fallback_prompt | get_llm()
         answer = fallback_chain.invoke({"input": query})
@@ -1142,9 +1325,11 @@ def invoke_qa(query: str, history: Optional[List[dict]] = None, intent: str = No
         "retrieval_method": retrieval_method,
     }
 
+
 _KZ_CHARS = set("әғқңөұүһі")
 _KZ_COMMON_WORDS = (
-    "және", "бойынша", "қылмыстық", "құрамы", "қылмысқа", "бап", "заң", "мән-жай", "ауырлататын", "жеңілдететін"
+    "және", "бойынша", "қылмыстық", "құрамы", "қылмысқа", "бап", "заң",
+    "мән-жай", "ауырлататын", "жеңілдететін"
 )
 
 
@@ -1177,42 +1362,38 @@ def _extract_article_numbers_from_text(text: str) -> set[str]:
     return nums
 
 
-
-ANALYSIS_PROMPT_TEMPLATE = """Ты — юридический эксперт по законодательству Казахстана. Твоя задача — проанализировать текст документа (или его часть) и выявить правовые риски, нарушения и дать рекомендации.
-
-В ответе придерживайся следующей структуры:
-
-### Правовые риски
-1. [Название риска]
-   - Описание: [подробное описание]
-   - Нормативный акт: [закон/статья]
-   - Уровень риска: [высокий/средний/низкий]
-   - Рекомендация: [предложение по исправлению]
-
-### Неясные формулировки
-1. [Формулировка]
-   - Проблема: [в чем неясность]
-   - Рекомендация: [как переформулировать]
-   - Уровень важности: [высокий/средний/низкий]
-
-### Возможные нарушения
-1. [Описание нарушения]
-   - Нормативный акт: [закон/статья]
-   - Последствия: [возможные санкции]
-   - Рекомендация: [как избежать]
-
-### Рекомендации
-[Список конкретных рекомендаций по исправлению документа]
-
-### Заключение
-[Общая сводка по документу с выводами]
-
-Документ:
-{text}
-
-Ответ:"""
+ANALYSIS_PROMPT_TEMPLATE = (
+    "Ты — юридический эксперт по законодательству Казахстана. Твоя задача — "
+    "проанализировать текст документа (или его часть) и выявить правовые "
+    "риски, нарушения и дать рекомендации.\n\n"
+    "В ответе придерживайся следующей структуры:\n\n"
+    "### Правовые риски\n"
+    "1. [Название риска]\n"
+    "   - Описание: [подробное описание]\n"
+    "   - Нормативный акт: [закон/статья]\n"
+    "   - Уровень риска: [высокий/средний/низкий]\n"
+    "   - Рекомендация: [предложение по исправлению]\n\n"
+    "### Неясные формулировки\n"
+    "1. [Формулировка]\n"
+    "   - Проблема: [в чем неясность]\n"
+    "   - Рекомендация: [как переформулировать]\n"
+    "   - Уровень важности: [высокий/средний/низкий]\n\n"
+    "### Возможные нарушения\n"
+    "1. [Описание нарушения]\n"
+    "   - Нормативный акт: [закон/статья]\n"
+    "   - Последствия: [возможные санкции]\n"
+    "   - Рекомендация: [как избежать]\n\n"
+    "### Рекомендации\n"
+    "[Список конкретных рекомендаций по исправлению документа]\n\n"
+    "### Заключение\n"
+    "[Общая сводка по документу с выводами]\n\n"
+    "Документ:\n"
+    "{text}\n\n"
+    "Ответ:"
+)
 
 ANALYSIS_PROMPT = PromptTemplate.from_template(ANALYSIS_PROMPT_TEMPLATE)
+
 
 def validate_answer(question: str, response: str, sources: List[Document]) -> str:
     fallback = "Информация не найдена в доступных текстах законов."
@@ -1223,7 +1404,8 @@ def validate_answer(question: str, response: str, sources: List[Document]) -> st
         return fallback
 
     if _is_criminal_query(question):
-        has_uk = any((d.metadata.get("code_ru") or "").strip() in _uk_variants for d in sources)
+        has_uk = any((d.metadata.get("code_ru") or "").strip()
+                     in _uk_variants for d in sources)
         if not has_uk:
             return fallback
 
@@ -1251,6 +1433,7 @@ def validate_answer(question: str, response: str, sources: List[Document]) -> st
 
     return response
 
+
 def analyze_text(text: str) -> str:
     """Analyses the provided text using the configured LLM."""
     _ensure_latency_patches()
@@ -1259,12 +1442,17 @@ def analyze_text(text: str) -> str:
     # Extract content string if it's an AIMessage
     return result.content if hasattr(result, "content") else str(result)
 
+
 if __name__ == "__main__":
     question = "Статья 136 УК РК баланы ауыстыру"
     print(f"\nВопрос: {question}\n")
     docs = get_retriever().invoke(question)
     for i, doc in enumerate(docs[:5], 1):
-        print(f"{i}. {doc.metadata.get('source')} | {doc.metadata.get('code_ru', '')} ст.{doc.metadata.get('article_number', '')}")
-        print(f"   {doc.page_content[:250].replace(chr(10), ' ')}...\n")
+        source = doc.metadata.get('source')
+        code = doc.metadata.get('code_ru', '')
+        art = doc.metadata.get('article_number', '')
+        print(f"{i}. {source} | {code} ст.{art}")
+        content = doc.page_content[:250].replace(chr(10), ' ')
+        print(f"   {content}...\n")
     result = invoke_qa(question)
     print("Ответ:", result["result"][:500])
