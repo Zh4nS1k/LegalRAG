@@ -45,4 +45,3 @@ type VerificationCode struct {
 	CreatedAt time.Time          `bson:"created_at"`
 	ExpiresAt time.Time          `bson:"expires_at"` // TTL index on this field
 }
-

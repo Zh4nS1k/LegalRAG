@@ -24,8 +24,8 @@ func UploadRAGDocument(c *gin.Context) {
 	var req models.RAGUploadRequest
 	if err := c.ShouldBind(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Неверные данные запроса",
-			"code":  "INVALID_REQUEST",
+			"error":  "Неверные данные запроса",
+			"code":   "INVALID_REQUEST",
 			"detail": err.Error(),
 		})
 		return
@@ -35,8 +35,8 @@ func UploadRAGDocument(c *gin.Context) {
 	doc, err := ragService.UploadRAGDocument(c, req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Ошибка загрузки документа",
-			"code":  "UPLOAD_ERROR",
+			"error":  "Ошибка загрузки документа",
+			"code":   "UPLOAD_ERROR",
 			"detail": err.Error(),
 		})
 		return
@@ -46,8 +46,8 @@ func UploadRAGDocument(c *gin.Context) {
 		"success": true,
 		"message": "Документ успешно загружен и поставлен в очередь на обработку",
 		"document": gin.H{
-			"id":      doc.ID.Hex(),
-			"title":   doc.Title,
+			"id":       doc.ID.Hex(),
+			"title":    doc.Title,
 			"category": doc.Category,
 			"status":   doc.Status,
 		},
@@ -61,8 +61,8 @@ func SearchRAGDocuments(c *gin.Context) {
 	var req models.RAGSearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Неверные данные запроса",
-			"code":  "INVALID_REQUEST",
+			"error":  "Неверные данные запроса",
+			"code":   "INVALID_REQUEST",
 			"detail": err.Error(),
 		})
 		return
@@ -76,8 +76,8 @@ func SearchRAGDocuments(c *gin.Context) {
 	results, err := ragService.SearchRAGDocuments(req.Query, req.Limit, req.Category)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Ошибка поиска документов",
-			"code":  "SEARCH_ERROR",
+			"error":  "Ошибка поиска документов",
+			"code":   "SEARCH_ERROR",
 			"detail": err.Error(),
 		})
 		return
@@ -113,19 +113,19 @@ func GetRAGDocuments(c *gin.Context) {
 	documents, err := ragService.GetRAGDocuments(limit, offset, category)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Ошибка получения документов",
-			"code":  "FETCH_ERROR",
+			"error":  "Ошибка получения документов",
+			"code":   "FETCH_ERROR",
 			"detail": err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
+		"success":   true,
 		"documents": documents,
-		"count":    len(documents),
-		"limit":    limit,
-		"offset":   offset,
+		"count":     len(documents),
+		"limit":     limit,
+		"offset":    offset,
 	})
 }
 
@@ -146,8 +146,8 @@ func DeleteRAGDocument(c *gin.Context) {
 	err := ragService.DeleteRAGDocument(docID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Ошибка удаления документа",
-			"code":  "DELETE_ERROR",
+			"error":  "Ошибка удаления документа",
+			"code":   "DELETE_ERROR",
 			"detail": err.Error(),
 		})
 		return
@@ -167,8 +167,8 @@ func GetRAGStats(c *gin.Context) {
 	stats, err := ragService.GetRAGStats()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Ошибка получения статистики",
-			"code":  "STATS_ERROR",
+			"error":  "Ошибка получения статистики",
+			"code":   "STATS_ERROR",
 			"detail": err.Error(),
 		})
 		return
@@ -235,8 +235,8 @@ func ReprocessRAGDocument(c *gin.Context) {
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Ошибка обновления статуса",
-			"code":  "UPDATE_ERROR",
+			"error":  "Ошибка обновления статуса",
+			"code":   "UPDATE_ERROR",
 			"detail": err.Error(),
 		})
 		return
@@ -249,4 +249,4 @@ func ReprocessRAGDocument(c *gin.Context) {
 		"success": true,
 		"message": "Документ поставлен в очередь на переобработку",
 	})
-} 
+}

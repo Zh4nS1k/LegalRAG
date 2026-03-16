@@ -19,15 +19,15 @@ func TimingMiddleware() gin.HandlerFunc {
 		if traceID == "" {
 			traceID = fmt.Sprintf("trace_%d", time.Now().UnixNano())
 		}
-		
+
 		c.Set("X-Trace-ID", traceID)
-		
+
 		timer := &Timer{
 			StartTime: time.Now(),
 			Metrics:   make(map[string]int64),
 		}
 		c.Set("latency_timer", timer)
-		
+
 		c.Next()
 	}
 }

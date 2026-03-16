@@ -55,25 +55,25 @@ type PythonSourceDocument struct {
 }
 
 type PythonChatResponse struct {
-	Result               string                 `json:"result"`
-	SourceDocuments      []PythonSourceDocument `json:"source_documents"`
-	TraceReport          map[string]interface{} `json:"trace_report"`
-	ConfidenceScore      float64                `json:"confidence_score"`
-	MissingFields        []string               `json:"missing_fields"`
-	ClarifyingQuestions  []string               `json:"clarifying_questions"`
+	Result              string                 `json:"result"`
+	SourceDocuments     []PythonSourceDocument `json:"source_documents"`
+	TraceReport         map[string]interface{} `json:"trace_report"`
+	ConfidenceScore     float64                `json:"confidence_score"`
+	MissingFields       []string               `json:"missing_fields"`
+	ClarifyingQuestions []string               `json:"clarifying_questions"`
 }
 
 // Structs for the Frontend response (matching what ChatSection.js expects)
 // Frontend expects: { answer: string, mode: string, sources: []SourceDetail }
 // Detective Mode adds: confidence_score, missing_fields, clarifying_questions
 type ChatResponse struct {
-	Answer               string                `json:"answer"`
-	Mode                 string                `json:"mode"`
-	Sources              []models.SourceDetail `json:"sources"`
-	TraceReport          interface{}           `json:"trace_report,omitempty"`
-	ConfidenceScore      float64               `json:"confidence_score,omitempty"`
-	MissingFields        []string              `json:"missing_fields,omitempty"`
-	ClarifyingQuestions  []string              `json:"clarifying_questions,omitempty"`
+	Answer              string                `json:"answer"`
+	Mode                string                `json:"mode"`
+	Sources             []models.SourceDetail `json:"sources"`
+	TraceReport         interface{}           `json:"trace_report,omitempty"`
+	ConfidenceScore     float64               `json:"confidence_score,omitempty"`
+	MissingFields       []string              `json:"missing_fields,omitempty"`
+	ClarifyingQuestions []string              `json:"clarifying_questions,omitempty"`
 }
 
 func HandleChat(c *gin.Context) {
@@ -167,7 +167,7 @@ func HandleChat(c *gin.Context) {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		errorMsg := string(bodyBytes)
 		utils.LogError(fmt.Sprintf("Python API returned error: %d - %s", resp.StatusCode, errorMsg))
-		
+
 		// Map specific internal errors to user-friendly messages
 		if strings.Contains(errorMsg, "Rate limit reached") {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "Превышен лимит запросов к ИИ. Пожалуйста, попробуйте через несколько минут."})

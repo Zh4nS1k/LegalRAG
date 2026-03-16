@@ -61,7 +61,7 @@ func VerifyEmailCode(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
 		return
 	}
-	
+
 	accessToken, refreshToken, _ := utils.GenerateTokenPair(user.ID.Hex(), user.Role)
 
 	c.JSON(http.StatusOK, gin.H{

@@ -22,14 +22,13 @@ func main() {
 	db.InitMongo()
 	db.EnsureIndexes()
 
-
 	if err := os.MkdirAll("./temp", os.ModePerm); err != nil {
 		log.Fatal("❌ ERROR: Не удалось создать временную папку:", err)
 	}
 
 	router := gin.Default()
 	api.SetupRoutes(router)
-	
+
 	router.Use(func(c *gin.Context) {
 		log.Printf("Incoming request: %s %s", c.Request.Method, c.Request.URL.Path)
 		c.Next()

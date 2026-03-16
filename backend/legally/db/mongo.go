@@ -99,11 +99,10 @@ func EnsureIndexes() {
 
 	// Sparse unique index on google_id (only for OAuth users)
 	_, _ = GetCollection("users").Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys: bson.D{{Key: "google_id", Value: 1}},
+		Keys:    bson.D{{Key: "google_id", Value: 1}},
 		Options: options.Index().SetUnique(true).SetSparse(true).SetBackground(true),
 	})
 }
-
 
 func Ping() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

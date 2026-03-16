@@ -67,7 +67,7 @@ func ExportChatHistory(userID string, chatID string) ([]byte, error) {
 	buf.Write([]byte{0xEF, 0xBB, 0xBF})
 
 	writer := csv.NewWriter(&buf)
-	
+
 	// Create header
 	header := []string{"Дата", "Роль", "Сообщение", "Источники"}
 	if err := writer.Write(header); err != nil {
@@ -83,7 +83,7 @@ func ExportChatHistory(userID string, chatID string) ([]byte, error) {
 			}
 			sourcesStr = strings.Join(titles, "; ")
 		}
-		
+
 		roleName := "Пользователь"
 		if msg.Role == "assistant" {
 			roleName = "AI Ассистент"
@@ -95,12 +95,12 @@ func ExportChatHistory(userID string, chatID string) ([]byte, error) {
 			msg.Content,
 			sourcesStr,
 		}
-		
+
 		if err := writer.Write(record); err != nil {
 			return nil, err
 		}
 	}
-	
+
 	writer.Flush()
 	return buf.Bytes(), nil
 }

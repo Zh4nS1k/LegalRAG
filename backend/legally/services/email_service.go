@@ -88,8 +88,8 @@ func sendSMTPEmail(to, code string) error {
 			"email": fromEmail,
 			"name":  "Legally Support",
 		},
-		"subject": subject,
-		"text":    body,
+		"subject":  subject,
+		"text":     body,
 		"category": "OTP Verification",
 	}
 

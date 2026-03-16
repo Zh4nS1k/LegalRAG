@@ -222,8 +222,8 @@ func GetQuestionsForAI() ([]models.EvaluationTask, error) {
 }
 
 func DeleteQuestionFromAI(taskID primitive.ObjectID) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
-    _, err := db.GetCollection(CollQuestionsForAI).DeleteOne(ctx, bson.M{"_id": taskID})
-    return err
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := db.GetCollection(CollQuestionsForAI).DeleteOne(ctx, bson.M{"_id": taskID})
+	return err
 }

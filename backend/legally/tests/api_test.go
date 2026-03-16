@@ -26,7 +26,7 @@ func MockMiddleware(userID string) gin.HandlerFunc {
 func TestHandleChat_JSONParsing(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.POST("/chat", controllers.HandleChat)
+	r.POST("/chat", MockMiddleware("test-user-id"), controllers.HandleChat)
 
 	t.Run("Empty Message", func(t *testing.T) {
 		body := map[string]interface{}{

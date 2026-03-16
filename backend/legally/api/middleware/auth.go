@@ -71,7 +71,7 @@ func AuthRequired(allowedRoles ...models.UserRole) gin.HandlerFunc {
 		// Сохраняем данные пользователя в контексте
 		c.Set("userId", claims.UserID)
 		c.Set("userRole", claims.Role)
-		
+
 		RecordMetric(c, "auth_middleware", time.Since(start))
 		c.Next()
 	}

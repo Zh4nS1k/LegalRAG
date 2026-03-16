@@ -20,7 +20,7 @@ func SaveRAGDocument(doc *models.RAGDocument) error {
 	if doc.ID.IsZero() {
 		doc.ID = primitive.NewObjectID()
 	}
-	
+
 	doc.CreatedAt = time.Now()
 	doc.UpdatedAt = time.Now()
 
@@ -38,7 +38,7 @@ func UpdateRAGDocument(id primitive.ObjectID, updates bson.M) error {
 	utils.LogAction(fmt.Sprintf("Обновление RAG документа: %s", id.Hex()))
 
 	updates["updated_at"] = time.Now()
-	
+
 	_, err := db.GetCollection("rag_documents").UpdateOne(
 		context.TODO(),
 		bson.M{"_id": id},
@@ -168,7 +168,7 @@ func SearchRAGDocuments(query string, limit int, category string) ([]models.RAGS
 	for _, doc := range documents {
 		// Simple similarity score based on text matching
 		similarity := calculateSimpleSimilarity(query, doc.Title, doc.Content)
-		
+
 		result := models.RAGSearchResult{
 			DocumentID:   doc.ID.Hex(),
 			Title:        doc.Title,
@@ -233,9 +233,9 @@ func GetRAGDocumentStats() (map[string]interface{}, error) {
 	}
 
 	stats := map[string]interface{}{
-		"total":           total,
-		"status_stats":    statusStats,
-		"category_stats":  categoryStats,
+		"total":          total,
+		"status_stats":   statusStats,
+		"category_stats": categoryStats,
 	}
 
 	return stats, nil
@@ -274,7 +274,7 @@ func extractRelevantChunk(query, content string) string {
 
 	queryLower := utils.ToLower(query)
 	contentLower := utils.ToLower(content)
-	
+
 	index := utils.IndexOf(contentLower, queryLower)
 	if index == -1 {
 		// If query not found, return first 200 characters
@@ -292,4 +292,4 @@ func extractRelevantChunk(query, content string) string {
 	}
 
 	return content[start:end]
-} 
+}

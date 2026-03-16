@@ -45,7 +45,7 @@ func ReviewerSubmitEvaluation(c *gin.Context) {
 	}
 
 	userID, _ := c.Get("userId")
-	
+
 	result := models.EvaluationResult{
 		TaskID:          taskID,
 		UserID:          userID.(string),

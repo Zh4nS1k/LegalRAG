@@ -208,14 +208,14 @@ func (s *RAGService) generateSimpleEmbeddings(text string) []float64 {
 	// Simple embedding simulation - in production, use real embeddings
 	// This creates a 384-dimensional vector based on character frequency
 	embedding := make([]float64, 384)
-	
+
 	for i, char := range text {
 		if i >= 384 {
 			break
 		}
 		embedding[i] = float64(char) / 255.0
 	}
-	
+
 	return embedding
 }
 
@@ -321,4 +321,4 @@ func (s *RAGService) GetRAGStats() (map[string]interface{}, error) {
 
 	utils.LogSuccess("Статистика RAG документов получена")
 	return stats, nil
-} 
+}

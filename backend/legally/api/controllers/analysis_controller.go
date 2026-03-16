@@ -171,9 +171,9 @@ func GetSystemStats(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse stats"})
 		return
 	}
-    
-    // Add extra info from Go side if needed
-    stats["conversation_history_length"] = "Last 50 messages" 
+
+	// Add extra info from Go side if needed
+	stats["conversation_history_length"] = "Last 50 messages"
 
 	c.JSON(http.StatusOK, stats)
 }

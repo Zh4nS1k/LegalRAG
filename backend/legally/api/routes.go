@@ -78,11 +78,11 @@ func SetupRoutes(router *gin.Engine) {
 		admin.PUT("/tasks/:id", controllers.AdminUpdateTask)
 		admin.DELETE("/tasks/:id", controllers.AdminDeleteTask)
 		admin.POST("/tasks/assign", controllers.AdminAssignEvaluationTask)
-		
+
 		// Upload Pipelines
 		admin.POST("/tasks/upload/generate", controllers.AdminUploadGenerate)
 		admin.POST("/tasks/upload/ready", controllers.AdminUploadReady)
-		
+
 		// Legacy/Utility
 		admin.GET("/eval/parsed", controllers.AdminGetParsedQuestions)
 		admin.GET("/eval/rated", controllers.AdminGetRatedResults)

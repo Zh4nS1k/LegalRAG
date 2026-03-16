@@ -32,4 +32,4 @@ func Trim(s string) string {
 // Replace replaces all occurrences of old with new
 func Replace(s, old, new string) string {
 	return strings.ReplaceAll(s, old, new)
-} 
+}
