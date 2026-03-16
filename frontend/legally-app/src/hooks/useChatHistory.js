@@ -82,7 +82,7 @@ export const useChatHistory = () => {
 
     const createNewSession = useCallback(() => {
         const newSession = {
-            id: Date.now().toString(),
+            id: crypto.randomUUID(),
             title: 'Новый чат',
             messages: [],
             createdAt: new Date().toISOString(),

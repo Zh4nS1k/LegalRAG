@@ -337,6 +337,7 @@ const ChatSection = ({
         },
         body: JSON.stringify({
           message,
+          chat_id: activeSession.id,
           history: contextWindow
         }),
       });

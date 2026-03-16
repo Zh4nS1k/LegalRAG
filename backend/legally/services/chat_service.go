@@ -25,7 +25,7 @@ var aiHTTPClient = &http.Client{
 	},
 }
 
-func SaveChatMessage(userID, role, content string, sources []models.SourceDetail) error {
+func SaveChatMessage(userID, chatID, role, content string, sources []models.SourceDetail) error {
 	objID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return fmt.Errorf("invalid user id")
@@ -33,6 +33,7 @@ func SaveChatMessage(userID, role, content string, sources []models.SourceDetail
 
 	msg := models.ChatMessage{
 		UserID:    objID,
+		ChatID:    chatID,
 		Role:      role,
 		Content:   content,
 		Sources:   sources,
@@ -42,22 +43,21 @@ func SaveChatMessage(userID, role, content string, sources []models.SourceDetail
 	return repositories.SaveChatMessage(msg)
 }
 
-func GetChatHistory(userID string) ([]models.ChatMessage, error) {
-	return repositories.GetChatHistory(userID)
+func GetChatHistory(userID string, chatID string) ([]models.ChatMessage, error) {
+	return repositories.GetChatHistory(userID, chatID)
 }
 
-// GetRecentChatHistory returns the last `limit` messages for the given user.
-// Used by HandleChat to build server-side history for the Python AI request.
-func GetRecentChatHistory(userID string, limit int) ([]models.ChatMessage, error) {
-	return repositories.GetRecentChatHistory(userID, limit)
+// GetRecentChatHistory returns the last `limit` messages for the given user in specific chat.
+func GetRecentChatHistory(userID string, chatID string, limit int) ([]models.ChatMessage, error) {
+	return repositories.GetRecentChatHistory(userID, chatID, limit)
 }
 
-func ClearChatHistory(userID string) error {
-	return repositories.ClearChatHistory(userID)
+func ClearChatHistory(userID string, chatID string) error {
+	return repositories.ClearChatHistory(userID, chatID)
 }
 
-func ExportChatHistory(userID string) ([]byte, error) {
-	history, err := repositories.GetChatHistory(userID)
+func ExportChatHistory(userID string, chatID string) ([]byte, error) {
+	history, err := repositories.GetChatHistory(userID, chatID)
 	if err != nil {
 		return nil, err
 	}

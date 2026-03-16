@@ -1,0 +1,37 @@
+{
+  "mappings": {
+    "pages": {
+      "source": "frontend/legally-app/src/pages/",
+      "destination": "frontend-next/src/app/",
+      "description": "React pages to Next.js app router pages"
+    },
+    "components": {
+      "source": "frontend/legally-app/src/components/",
+      "destination": "frontend-next/src/components/",
+      "description": "React components to Next.js components"
+    },
+    "services": {
+      "source": "frontend/legally-app/src/services/",
+      "destination": "frontend-next/src/lib/api/",
+      "description": "API services to typed API functions"
+    }
+  },
+  "components_to_migrate": [
+    "AuthPage.js",
+    "ChatSection.js",
+    "ResultSection.js",
+    "Header.js",
+    "Footer.js",
+    "Sidebar.js",
+    "UploadSection.js",
+    "ProfileSection.js",
+    "HistorySection.js",
+    "LoadingSection.js"
+  ],
+  "services_to_migrate": [
+    "evaluationService.js"
+  ],
+  "pages_to_migrate": [
+    "App.js"
+  ]
+}

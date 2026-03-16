@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from ai_service.utils.latency import metrics_ctx
+from ai_service.retrieval import intent_router
 
 logger = logging.getLogger("ai_service.api")
 
@@ -103,20 +104,37 @@ async def chat(request: Request, body: ChatRequest):
     try:
         _query = body.query
         _history = body.history or []
-        logger.info("[SUCCESS] Request Parsed (query_len=%d, history_len=%d)", len(_query), len(_history))
+        intent = intent_router.classify_intent(_query)
+        logger.info("[SUCCESS] Request Parsed (query_len=%d, history_len=%d, intent=%s)", len(_query), len(_history), intent)
     except Exception as e:
         logger.error("Request parsing failed: %s", e, exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        from ai_service.retrieval import detective_mode
+        from ai_service.retrieval import detective_mode, rag_chain
 
-        # Detective Mode: completeness → agentic (HyDE, Censor, Self-RAG, CoVe) → causality/skeptic/flip → confidence
-        response = await detective_mode.invoke_detective_qa(
-            body.query,
-            history=body.history,
-            trace_id=x_trace_id,
-        )
+        if intent == intent_router.SOCIAL:
+            response = rag_chain.invoke_qa(
+                body.query,
+                history=body.history,
+                intent=intent
+            )
+        elif intent == intent_router.GENERAL_LEGAL:
+            # RAG included, but Detective Mode (fact gathering) disabled
+            response = rag_chain.invoke_qa(
+                body.query,
+                history=body.history,
+                intent=intent
+            )
+        else:
+            # CASE_SPECIFIC: Full Detective Mode cycle
+            response = await detective_mode.invoke_detective_qa(
+                body.query,
+                history=body.history,
+                trace_id=x_trace_id,
+                # we could pass intent here too if detective_mode needs it
+            )
+        
         result = response.get("result", "")
         source_docs = []
         for doc in response.get("source_documents", []):

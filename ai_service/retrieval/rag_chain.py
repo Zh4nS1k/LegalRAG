@@ -962,13 +962,23 @@ RANGE_PROMPT_TEMPLATE = """Ты — точный ассистент по УК Р
 
 Ответ (перечисли статьи из диапазона, если они есть, цитируй дословно):"""
 
+GENERAL_PROMPT_TEMPLATE = "GENERAL_PROMPT_TEMPLATE_PLACEHOLDER"
+CASE_PROMPT_TEMPLATE = "CASE_PROMPT_TEMPLATE_PLACEHOLDER"
+
+GENERAL_PROMPT = PromptTemplate.from_template("Дай краткую справку по теории права РК на основе {context}.")
+CASE_PROMPT = PromptTemplate.from_template("Проведи юридический анализ ситуации. Если не хватает данных для оценки нарушения — уточни их у пользователя. Контекст: {context}")
+
 UNIVERSAL_PROMPT = PromptTemplate.from_template(UNIVERSAL_PROMPT_TEMPLATE)
 CRIMINAL_PROMPT = PromptTemplate.from_template(CRIMINAL_PROMPT_TEMPLATE)
 RANGE_PROMPT = PromptTemplate.from_template(RANGE_PROMPT_TEMPLATE)
 
 
 @latency.measure_latency("prompt_template_build")
-def _select_prompt(question: str) -> PromptTemplate:
+def _select_prompt(question: str, intent: str = None) -> PromptTemplate:
+    if intent == "GENERAL_LEGAL":
+        return GENERAL_PROMPT
+    if intent == "CASE_SPECIFIC":
+        return CASE_PROMPT
     if _extract_article_range(question):
         return RANGE_PROMPT
     q = question or ""
@@ -1049,11 +1059,12 @@ def invoke_qa_with_context(
     query: str,
     context_docs: List[Document],
     history: Optional[List[dict]] = None,
+    intent: str = None,
 ) -> dict:
     """Run QA using a pre-retrieved list of documents (no retriever). Used by agentic workflow."""
     _ensure_latency_patches()
     docs = _fill_missing_metadata(list(context_docs))
-    prompt = _select_prompt(query)
+    prompt = _select_prompt(query, intent=intent)
     if prompt is RANGE_PROMPT:
         chain = _get_qa_chains()["range"]
     elif prompt is CRIMINAL_PROMPT:
@@ -1078,9 +1089,18 @@ def invoke_qa_with_context(
     return {"result": res, "source_documents": docs}
 
 
-def invoke_qa(query: str, history: Optional[List[dict]] = None) -> dict:
+def invoke_qa(query: str, history: Optional[List[dict]] = None, intent: str = None) -> dict:
     _ensure_latency_patches()
-    prompt = _select_prompt(query)
+    
+    if intent == "SOCIAL":
+        # No RAG, just LLM with history
+        llm = get_llm()
+        s_history = _history_str(history)
+        prompt_text = f"Ты — дружелюбный юридический ассистент Legally. Ответь на приветствие или общий вопрос.\n\n{s_history}Вопрос: {query}\nОтвет:"
+        res = llm.invoke(prompt_text)
+        return {"result": res.content if hasattr(res, 'content') else str(res), "source_documents": []}
+
+    prompt = _select_prompt(query, intent=intent)
     if prompt is RANGE_PROMPT:
         chain = _get_qa_chains()["range"]
     elif prompt is CRIMINAL_PROMPT:

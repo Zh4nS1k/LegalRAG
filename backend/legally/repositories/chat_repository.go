@@ -23,13 +23,13 @@ func SaveChatMessage(msg models.ChatMessage) error {
 	return nil
 }
 
-func GetChatHistory(userID string) ([]models.ChatMessage, error) {
-	return GetRecentChatHistory(userID, 0) // 0 = no limit (legacy behaviour)
+func GetChatHistory(userID string, chatID string) ([]models.ChatMessage, error) {
+	return GetRecentChatHistory(userID, chatID, 0) // 0 = no limit (legacy behaviour)
 }
 
-// GetRecentChatHistory returns the last `limit` messages for a user.
+// GetRecentChatHistory returns the last `limit` messages for a user in a specific chat session.
 // If limit <= 0, returns all messages (preserved for export/clear use cases).
-func GetRecentChatHistory(userID string, limit int) ([]models.ChatMessage, error) {
+func GetRecentChatHistory(userID string, chatID string, limit int) ([]models.ChatMessage, error) {
 	objID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return nil, fmt.Errorf("неверный ID пользователя")
@@ -49,10 +49,16 @@ func GetRecentChatHistory(userID string, limit int) ([]models.ChatMessage, error
 	}
 
 	// Build a filter that checks for user_id as either an ObjectID (new way) or string (old way)
+	// AND filters by chat_id to ensure session isolation.
 	filter := bson.M{
-		"$or": []bson.M{
-			{"user_id": objID},
-			{"user_id": userID},
+		"$and": []bson.M{
+			{
+				"$or": []bson.M{
+					{"user_id": objID},
+					{"user_id": userID},
+				},
+			},
+			{"chat_id": chatID},
 		},
 	}
 
@@ -77,7 +83,7 @@ func GetRecentChatHistory(userID string, limit int) ([]models.ChatMessage, error
 	return messages, nil
 }
 
-func ClearChatHistory(userID string) error {
+func ClearChatHistory(userID string, chatID string) error {
 	objID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return fmt.Errorf("неверный ID пользователя")
@@ -87,11 +93,16 @@ func ClearChatHistory(userID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Delete both old (string) and new (ObjectID) format messages
+	// Delete messages for user in specific chat session
 	filter := bson.M{
-		"$or": []bson.M{
-			{"user_id": objID},
-			{"user_id": userID},
+		"$and": []bson.M{
+			{
+				"$or": []bson.M{
+					{"user_id": objID},
+					{"user_id": userID},
+				},
+			},
+			{"chat_id": chatID},
 		},
 	}
 	_, err = coll.DeleteMany(ctx, filter)

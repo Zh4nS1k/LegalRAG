@@ -21,5 +21,12 @@ Total processing must not exceed 15s.
 ## Rule 9: Use ujson instead of standard json for faster serialization of large vector lists.
 
 ## Rule 7: Absolute Isolation
-Hooks isolate dependencies; Scripts handle logic; Skills standardize processes.</content>
-<parameter name="filePath">/home/zhanserik/Desktop/LegalRAG/CLAUDE.md
+Hooks isolate dependencies; Scripts handle logic; Skills standardize processes.
+
+## Rule 10: Anti-Bias & Intent Routing
+- Do not request contract data if the question concerns general legal theory or administrative offenses.
+- If the question is general ("what is..."), answer based on RK NPAs without requesting clarifications.
+
+## Rule 11: Chat Session Isolation
+- Each message in a chat belongs to an isolated context (chat_id).
+- Mentioning facts from other sessions is a critical bug. Use only current session history.
