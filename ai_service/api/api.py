@@ -80,6 +80,7 @@ class ChatResponse(BaseModel):
     missing_fields: Optional[List[str]] = None
     clarifying_questions: Optional[List[str]] = None
     deductive_block: Optional[Dict[str, Any]] = None
+    deductive_output: Optional[str] = None
 
 import numpy as np
 
@@ -112,9 +113,10 @@ async def chat(request: Request, body: ChatRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        from ai_service.retrieval import detective_mode, rag_chain, verification_engine
+        from ai_service.retrieval import detective_mode, rag_chain, verification_engine, sherlock_engine
 
         deductive_data = None
+        sherlock_res = None
         if intent == intent_router.SOCIAL:
             response = rag_chain.invoke_qa(
                 body.query,
@@ -131,6 +133,10 @@ async def chat(request: Request, body: ChatRequest):
             # For General Legal, we can still run a light deductive check
             skills = verification_engine.DeductiveReasoningSkill()
             deductive_data = await skills.run_deductive_cycle(body.query)
+            
+            # New Sherlock Mode
+            sherlock = sherlock_engine.SherlockEngine()
+            sherlock_res = await sherlock.run_sherlock_loop(body.query)
         else:
             # CASE_SPECIFIC: Full Detective Mode cycle
             response = await detective_mode.invoke_detective_qa(
@@ -141,6 +147,10 @@ async def chat(request: Request, body: ChatRequest):
             # Sherlock cycle for Case Specific
             skills = verification_engine.DeductiveReasoningSkill()
             deductive_data = await skills.run_deductive_cycle(body.query)
+
+            # New Sherlock Mode
+            sherlock = sherlock_engine.SherlockEngine()
+            sherlock_res = await sherlock.run_sherlock_loop(body.query)
         
         result = response.get("result", "")
         source_docs = []
@@ -168,6 +178,7 @@ async def chat(request: Request, body: ChatRequest):
             missing_fields=response.get("missing_fields") or [],
             clarifying_questions=response.get("clarifying_questions"),
             deductive_block=convert_numpy_types(deductive_data) if deductive_data else None,
+            deductive_output=sherlock_res.get("deductive_output") if sherlock_res else None
         )
     except Exception as e:
         logger.error("Step failed: %s", e, exc_info=True)

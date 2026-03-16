@@ -29,6 +29,10 @@ Hooks isolate dependencies; Scripts handle logic; Skills standardize processes.
 - **Rule 4 (Deductive Priority)**: Первичный ответ дает базу, «Шерлок-цикл» дает глубину. Они не должны противоречить друг другу.
 - **Rule 5 (Validation Loop)**: Запрещено выдавать статью, если она не прошла `semantic_match` с темой запроса.
 - **Rule 6 (Cross-Law)**: При обнаружении противоречий в законах, приоритет отдается Кодексу над Законом, и Конституции над Кодексом.
+- **Rule 12 (Sherlock Constitution)**:
+    - **Isolation**: Данные «Шерлока» не должны смешиваться с основным ответом. Это дополнительный блок `deductive_output`.
+    - **No Hallucinated Codes**: Использовать только официальные названия 19 кодексов РК.
+    - **Conflict Hierarchy**: Всегда указывать, какая норма сильнее (Конституция > Кодекс > Закон).
 
 ## Rule 11: Chat Session Isolation
 - Each message in a chat belongs to an isolated context (chat_id).

@@ -102,7 +102,10 @@ def _make_embeddings() -> PrefixedEmbeddings:
 
     # Smart loader: internet → normal (allow cache updates); no internet → local_files_only
     local_only = config.HF_LOCAL_ONLY or not internet_ok
-    model_kwargs: dict = {"local_files_only": local_only}
+    model_kwargs: dict = {
+        "local_files_only": local_only,
+        "trust_remote_code": True,
+    }
 
     # Device selection: force CPU if GPU disabled or insufficient
     device = "cpu" if os.environ.get("CUDA_VISIBLE_DEVICES") == "" else ("cuda" if torch.cuda.is_available() else "cpu")
@@ -117,6 +120,7 @@ def _make_embeddings() -> PrefixedEmbeddings:
                 encode_kwargs={"normalize_embeddings": True},
                 model_kwargs=model_kwargs,
                 cache_folder=cache_folder,
+                show_progress=False,
             )
         )
         elapsed = time.perf_counter() - t0
@@ -688,6 +692,8 @@ def get_retriever():
                 config.configure_hf_hub()
                 logger.info("[START] Reranker initialization (%s)", config.RERANKER_MODEL)
                 t_rerank = time.perf_counter()
+                # FlagReranker uses trust_remote_code=True by default in some versions, 
+                # but we'll stick to FlagReranker as it is.
                 _reranker_model = FlagReranker(config.RERANKER_MODEL, use_fp16=True)
                 logger.info("[SUCCESS] Reranker initialized (%.2fs)", time.perf_counter() - t_rerank)
 
