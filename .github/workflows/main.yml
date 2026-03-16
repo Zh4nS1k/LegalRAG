@@ -42,7 +42,7 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flake8 pytest pytest-mock
+          pip install flake8 pytest pytest-mock pytest-asyncio
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Lint with flake8
@@ -56,6 +56,9 @@ jobs:
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)
           pytest ai_service/tests
+        env:
+          PINECONE_API_KEY: "dummy-key-for-ci"
+          GROQ_API_KEY: "dummy-key-for-ci"
 
       # --- NODE.JS (Frontend) ---
       - name: Set up Node.js
