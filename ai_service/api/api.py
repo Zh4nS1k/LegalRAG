@@ -79,6 +79,7 @@ class ChatResponse(BaseModel):
     confidence_score: float = 0.0
     missing_fields: Optional[List[str]] = None
     clarifying_questions: Optional[List[str]] = None
+    deductive_block: Optional[Dict[str, Any]] = None
 
 import numpy as np
 
@@ -111,8 +112,9 @@ async def chat(request: Request, body: ChatRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        from ai_service.retrieval import detective_mode, rag_chain
+        from ai_service.retrieval import detective_mode, rag_chain, verification_engine
 
+        deductive_data = None
         if intent == intent_router.SOCIAL:
             response = rag_chain.invoke_qa(
                 body.query,
@@ -126,14 +128,19 @@ async def chat(request: Request, body: ChatRequest):
                 history=body.history,
                 intent=intent
             )
+            # For General Legal, we can still run a light deductive check
+            skills = verification_engine.DeductiveReasoningSkill()
+            deductive_data = await skills.run_deductive_cycle(body.query)
         else:
             # CASE_SPECIFIC: Full Detective Mode cycle
             response = await detective_mode.invoke_detective_qa(
                 body.query,
                 history=body.history,
                 trace_id=x_trace_id,
-                # we could pass intent here too if detective_mode needs it
             )
+            # Sherlock cycle for Case Specific
+            skills = verification_engine.DeductiveReasoningSkill()
+            deductive_data = await skills.run_deductive_cycle(body.query)
         
         result = response.get("result", "")
         source_docs = []
@@ -160,6 +167,7 @@ async def chat(request: Request, body: ChatRequest):
             confidence_score=response.get("confidence_score", 0.0),
             missing_fields=response.get("missing_fields") or [],
             clarifying_questions=response.get("clarifying_questions"),
+            deductive_block=convert_numpy_types(deductive_data) if deductive_data else None,
         )
     except Exception as e:
         logger.error("Step failed: %s", e, exc_info=True)

@@ -26,6 +26,9 @@ Hooks isolate dependencies; Scripts handle logic; Skills standardize processes.
 ## Rule 10: Anti-Bias & Intent Routing
 - Do not request contract data if the question concerns general legal theory or administrative offenses.
 - If the question is general ("what is..."), answer based on RK NPAs without requesting clarifications.
+- **Rule 4 (Deductive Priority)**: Первичный ответ дает базу, «Шерлок-цикл» дает глубину. Они не должны противоречить друг другу.
+- **Rule 5 (Validation Loop)**: Запрещено выдавать статью, если она не прошла `semantic_match` с темой запроса.
+- **Rule 6 (Cross-Law)**: При обнаружении противоречий в законах, приоритет отдается Кодексу над Законом, и Конституции над Кодексом.
 
 ## Rule 11: Chat Session Isolation
 - Each message in a chat belongs to an isolated context (chat_id).
