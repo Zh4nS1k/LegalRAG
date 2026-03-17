@@ -9,6 +9,7 @@ import torch
 
 from ai_service.core import config
 from ai_service.utils import connectivity
+from ai_service.scripts.download_models import main as download_models_main
 
 
 def pre_flight_check():
@@ -25,8 +26,16 @@ def pre_flight_check():
 
     model_files = list(cache_dir.rglob("*.bin")) + list(cache_dir.rglob("*.safetensors"))
     if not model_files:
-        print(f"[FAIL] No model files in cache: {cache_dir}")
-        sys.exit(1)
+        print(f"[INFO] No model files in cache: {cache_dir}, downloading...")
+        result = download_models_main()
+        if result != 0:
+            print("[FAIL] Failed to download models")
+            sys.exit(1)
+        # Check again after download
+        model_files = list(cache_dir.rglob("*.bin")) + list(cache_dir.rglob("*.safetensors"))
+        if not model_files:
+            print("[FAIL] Still no model files after download")
+            sys.exit(1)
 
     print(f"[OK] Local models found: {len(model_files)} files")
 
