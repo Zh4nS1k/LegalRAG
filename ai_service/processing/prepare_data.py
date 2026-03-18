@@ -45,16 +45,16 @@ CODE_NAMES = {
 # Regex patterns for legal hierarchy
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Article header: "Статья 136.", "Статья 136-1.", " Статья 136 " (with leading whitespace from Adilet)
+# Article header: "Статья 136.", "Статья 136-1.", " Статья 136 ", "136-бап." (Kazakh)
 ARTICLE_RE = re.compile(
-    r'(?m)^\s*(Статья|Стаття|Мәтін|Article|Section)\s*(\d+[а-яА-Яa-zA-Z\-]?)\.*\s*(.*?)$',
+    r'(?m)^\s*(?:Статья|Стаття|Мәтін|Article|Section)\s*(\d+[а-яА-Яa-zA-Z\-]?)\.*\s*(.*?)$|(?m)^\s*(\d+[а-яА-Яa-zA-Z\-]?)-бап\.*\s*(.*?)$',
     re.IGNORECASE,
 )
 
 # Chapter/Section heading: "Глава 1.", "ГЛАВА 2 ", "Раздел IV", "Бөлім 3" (Kazakh)
 CHAPTER_RE = re.compile(
     r'(?m)^\s*(?:Глава|ГЛАВА|Раздел|РАЗДЕЛ|Бөлім|Тарау|Chapter|Section)\s+'
-    r'([\dIVXLCDMivxlcdm]+)[\.\s]\s*(.*?)$',
+    r'([\dIVXLCDMivxlcdm]+)[\.\s]\s*(.*?)$|(?m)^\s*([\dIVXLCDMivxlcdm]+)-(?:тарау|бөлім)[\.\s]\s*(.*?)$',
     re.IGNORECASE,
 )
 
@@ -72,10 +72,12 @@ SUBCLAUSE_RE = re.compile(
 
 # Revision date patterns from Adilet file headers:
 # "от 3 июля 2014 года", "от 03.07.2014", "N 226-V ЗРК от 3 июля 2014"
+# "2014 жылғы 3 шілдедегі", "2014 ж. 03.07."
 REVISION_DATE_RE = re.compile(
     r'(?:'
     r'от\s+(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(\d{4})'  # от 3 июля 2014
-    r'|от\s+(\d{2})\.(\d{2})\.(\d{4})'  # от 03.07.2014
+    r'|\b(\d{4})\s+(?:жылғы|ж\.)\s+(\d{1,2})\s+(қаңтардағы|ақпандағы|наурыздағы|сәуірдегі|мамырдағы|маусымдағы|шілдедегі|тамыздағы|қыркүйектегі|қазандағы|қарашадағы|желтоқсандағы)' # 2014 жылғы 3 шілдедегі
+    r'|(?:от|ж\.)\s+(\d{2})\.(\d{2})\.(\d{4})'  # от 03.07.2014
     r')',
     re.IGNORECASE,
 )
@@ -84,6 +86,9 @@ _MONTH_MAP = {
     "января": "01", "февраля": "02", "марта": "03", "апреля": "04",
     "мая": "05", "июня": "06", "июля": "07", "августа": "08",
     "сентября": "09", "октября": "10", "ноября": "11", "декабря": "12",
+    "қаңтардағы": "01", "ақпандағы": "02", "наурыздағы": "03", "сәуірдегі": "04",
+    "мамырдағы": "05", "маусымдағы": "06", "шілдедегі": "07", "тамыздағы": "08",
+    "қыркүйектегі": "09", "қазандағы": "10", "қарашадағы": "11", "желтоқсандағы": "12",
 }
 
 # Minimum chunk length (avoid tiny fragments); no max — hierarchy-only splitting
@@ -101,14 +106,20 @@ def get_code_name(source_path: str) -> tuple[str, str]:
 
 def get_article_number(chunk_text: str) -> str | None:
     m = ARTICLE_RE.match(chunk_text.strip())
-    return m.group(2) if m else None
+    if m:
+        # Check which group matched (Russian vs Kazakh pattern)
+        return m.group(1) if m.group(1) else m.group(3)
+    return None
 
 
 def get_article_title(chunk_text: str) -> str:
-    """Extract article title from first line if it matches Article header (e.g. 'Статья 136. Подмена ребенка')."""
+    """Extract article title from first line if it matches Article header (e.g. 'Статья 136. Подмена ребенка', '136-бап. Баланы ауыстыру')."""
     m = ARTICLE_RE.match(chunk_text.strip())
-    if m and m.lastindex >= 3 and m.group(3):
-        return m.group(3).strip()[:200]
+    if m:
+        # Russian title is in group 2, Kazakh title is in group 4
+        title = m.group(2) if m.group(1) else m.group(4)
+        if title:
+             return title.strip()[:200]
     return ""
 
 
@@ -121,15 +132,21 @@ def _extract_revision_date(text: str) -> str:
     m = REVISION_DATE_RE.search(header)
     if not m:
         return ""
-    # Named word-month form: от DD Month YYYY
+    # Named word-month form: от DD Month YYYY (Russian)
     if m.group(1):
         day = m.group(1).zfill(2)
         month = _MONTH_MAP.get(m.group(2).lower(), "01")
         year = m.group(3)
         return f"{year}-{month}-{day}"
-    # Numeric form: от DD.MM.YYYY
+    # Named word-month form: YYYY жылғы DD Month (Kazakh)
     if m.group(4):
-        day, month, year = m.group(4), m.group(5), m.group(6)
+        year = m.group(4)
+        day = m.group(5).zfill(2)
+        month = _MONTH_MAP.get(m.group(6).lower(), "01")
+        return f"{year}-{month}-{day}"
+    # Numeric form: от DD.MM.YYYY
+    if m.group(7):
+        day, month, year = m.group(7), m.group(8), m.group(9)
         return f"{year}-{month}-{day}"
     return ""
 
@@ -140,8 +157,13 @@ def _detect_chapter(line: str) -> tuple[str, str] | None:
     """
     m = CHAPTER_RE.match(line)
     if m:
-        num = m.group(1).strip()
-        title_part = m.group(2).strip()
+        # Check if Russian or Kazakh pattern matched
+        if m.group(1):
+             num = m.group(1).strip()
+             title_part = m.group(2).strip()
+        else:
+             num = m.group(3).strip()
+             title_part = m.group(4).strip()
         return num, title_part
     return None
 
@@ -226,14 +248,14 @@ def _split_article_by_hierarchy(article_text: str) -> list[str]:
 
 def _split_preamble_by_hierarchy(text: str) -> list[str]:
     """
-    Preamble / intro: split only by Chapter/Раздел/Бөлім boundaries.
+    Preamble / intro: split only by Chapter/Раздел/Бөлім/Тарау boundaries.
     No character-count limits.
     """
     t = text.strip()
     if not t or len(t) < MIN_CHUNK_LEN:
         return []
     section_pattern = re.compile(
-        r'(?m)^(?:Глава|Раздел|ГЛАВА|РАЗДЕЛ|Бөлім|Тақырып)\s+[\dIVXLCDM]+[.\s]\s*(.*?)$',
+        r'(?m)^(?:Глава|Раздел|ГЛАВА|РАЗДЕЛ|Бөлім|Тақырып)\s+[\dIVXLCDM]+[.\s]\s*(.*?)$|(?m)^[\dIVXLCDM]+-(?:тарау|бөлім)[.\s]\s*(.*?)$',
         re.IGNORECASE,
     )
     parts = section_pattern.split(t)

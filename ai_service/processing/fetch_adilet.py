@@ -26,9 +26,9 @@ MAX_RETRIES = 3
 RETRY_DELAY = 2.0
 
 
-def fetch_document(doc_id: str) -> str | None:
+def fetch_document(doc_id: str, lang: str = "rus") -> str | None:
     """Загружает HTML страницы документа с Adilet. Возвращает текст ответа или None."""
-    url = f"{config.ADILET_BASE_URL}/{doc_id}"
+    url = f"https://adilet.zan.kz/{lang}/docs/{doc_id}"
     for attempt in range(MAX_RETRIES):
         try:
             r = requests.get(
@@ -93,29 +93,46 @@ def _normalize_text(s: str) -> str:
 
 def main():
     config.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
-    print("Загрузка кодексов с adilet.zan.kz...")
-    print(f"Источник: {config.ADILET_BASE_URL}")
-    print(f"Документов: {len(config.ADILET_SOURCES)}\n")
+    print("Загрузка кодексов с adilet.zan.kz (русский и казахский)...")
+    print(f"Документов: {len(config.ADILET_SOURCES) * 2}\n")
 
     ok = 0
     total = len(config.ADILET_SOURCES)
     for i, (filename, doc_id) in enumerate(config.ADILET_SOURCES, 1):
-        print(f"  [{i}/{total}] {filename} <- {doc_id} ... ", end="", flush=True)
-        html = fetch_document(doc_id)
-        if html is None:
+        # 1. Fetch Russian
+        print(f"  [{i}/{total}] {filename} <- {doc_id} (RU) ... ", end="", flush=True)
+        html_ru = fetch_document(doc_id, lang="rus")
+        if html_ru is None:
             print("пропуск (ошибка загрузки)")
-            continue
-        text = extract_text_from_html(html)
-        if len(text) < 100:
-            print("пропуск (мало текста)")
-            continue
-        out_path = config.DOCUMENTS_DIR / filename
-        out_path.write_text(text, encoding="utf-8")
-        print(f"OK ({len(text)} символов)")
-        ok += 1
+        else:
+            text_ru = extract_text_from_html(html_ru)
+            if len(text_ru) < 100:
+                print("пропуск (мало текста)")
+            else:
+                out_path = config.DOCUMENTS_DIR / filename
+                out_path.write_text(text_ru, encoding="utf-8")
+                print(f"OK ({len(text_ru)} символов)")
+                ok += 1
         time.sleep(DELAY_BETWEEN_REQUESTS)
 
-    print(f"\nГотово: {ok}/{len(config.ADILET_SOURCES)} документов сохранено в {config.DOCUMENTS_DIR}")
+        # 2. Fetch Kazakh
+        filename_kz = filename.replace(".txt", "_kz.txt")
+        print(f"  [{i}/{total}] {filename_kz} <- {doc_id} (KZ) ... ", end="", flush=True)
+        html_kz = fetch_document(doc_id, lang="kaz")
+        if html_kz is None:
+            print("пропуск (ошибка загрузки)")
+        else:
+            text_kz = extract_text_from_html(html_kz)
+            if len(text_kz) < 100:
+                print("пропуск (мало текста)")
+            else:
+                out_path_kz = config.DOCUMENTS_DIR / filename_kz
+                out_path_kz.write_text(text_kz, encoding="utf-8")
+                print(f"OK ({len(text_kz)} символов)")
+                ok += 1
+        time.sleep(DELAY_BETWEEN_REQUESTS)
+
+    print(f"\nГотово: {ok}/{len(config.ADILET_SOURCES) * 2} документов сохранено в {config.DOCUMENTS_DIR}")
     if ok > 0:
         print("Дальше: python build_vector_db.py  # пересобрать векторную базу")
 

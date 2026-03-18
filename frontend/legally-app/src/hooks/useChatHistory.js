@@ -81,10 +81,16 @@ export const useChatHistory = () => {
     }, [sessions, storageKey]);
 
     const createNewSession = useCallback(() => {
+        const welcomeMessage = {
+            id: crypto.randomUUID(),
+            content: "Сәлеметсіз бе! Мен Legally — Қазақстанның заңнамасы бойынша сіздің виртуалды көмекшіңізбін.\nЗдравствуйте! Я Legally — ваш виртуальный помощник по законодательству Казахстана.\n\nЗадайте любой вопрос, и я постараюсь дать точный ответ на основе официальных документов.",
+            isUser: false,
+            mode: 'system'
+        };
         const newSession = {
             id: crypto.randomUUID(),
             title: 'Новый чат',
-            messages: [],
+            messages: [welcomeMessage],
             createdAt: new Date().toISOString(),
         };
         setSessions(prev => [newSession, ...prev]);

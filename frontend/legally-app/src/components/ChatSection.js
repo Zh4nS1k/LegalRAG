@@ -264,7 +264,7 @@ const ChatSection = ({
     return activeSession?.messages || [];
   }, [activeSession]);
 
-  const isEmpty = messages.length === 0;
+  const isEmpty = messages.length === 0 || (messages.length === 1 && messages[0].mode === 'system');
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
