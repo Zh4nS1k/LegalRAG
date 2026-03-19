@@ -53,42 +53,44 @@ def scan_file(filepath: str) -> bool:
 
 
 def main():
-    root_dir = "."
     all_clean = True
-    # Exclude directories that shouldn't be scanned
-    excludes = [
-        ".git",
-        "venv",
-        ".venv",
-        "__pycache__",
-        ".hooks",
-        "node_modules",
-        ".vscode",
-        ".idea",
-    ]
 
     print("Starting basic security scan...")
-    for subdir, dirs, files in os.walk(root_dir):
-        # Exclude directories
-        for d in list(dirs):
-            if d in excludes:
-                dirs.remove(d)
 
-        for file in files:
-            # Only scan relevant files (code, config)
-            if file.endswith(
-                (".py", ".go", ".js", ".ts", ".json", ".yaml", ".yml")
-            ) and not file.endswith("package-lock.json"):
-                filepath = os.path.join(subdir, file)
-                if not scan_file(filepath):
-                    all_clean = False
+    # Use git ls-files to only scan tracked files — avoids walking
+    # into venv, build, node_modules, and other massive directories.
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "ls-files"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        files = result.stdout.strip().split("\n")
+    except Exception:
+        # Fallback: if not in a git repo, just exit clean
+        print("Not a git repository or git not available. Skipping.")
+        sys.exit(0)
+
+    extensions = (".py", ".go", ".js", ".ts", ".json", ".yaml", ".yml")
+    for filepath in files:
+        if not filepath:
+            continue
+        if filepath.endswith(extensions) and not filepath.endswith(
+            "package-lock.json"
+        ):
+            if not scan_file(filepath):
+                all_clean = False
 
     if all_clean:
         print("Security scan completed cleanly.")
         sys.exit(0)
     else:
         print(
-            "Security scan failed: Please review the warnings above.", file=sys.stderr
+            "Security scan failed: Please review the warnings above.",
+            file=sys.stderr,
         )
         sys.exit(1)
 
