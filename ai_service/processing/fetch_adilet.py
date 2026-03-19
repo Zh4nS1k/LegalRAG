@@ -17,9 +17,7 @@ from ai_service.core import config
 # (промежуточный сертификат в trust store). Для официального сайта verify=False безопасно.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-USER_AGENT = (
-    "Mozilla/5.0 (compatible; LegalRAG/1.0; +https://github.com/legalrag)"
-)
+USER_AGENT = "Mozilla/5.0 (compatible; LegalRAG/1.0; +https://github.com/legalrag)"
 REQUEST_TIMEOUT = 60
 DELAY_BETWEEN_REQUESTS = 1.0  # вежливость к серверу
 MAX_RETRIES = 3
@@ -117,7 +115,9 @@ def main():
 
         # 2. Fetch Kazakh
         filename_kz = filename.replace(".txt", "_kz.txt")
-        print(f"  [{i}/{total}] {filename_kz} <- {doc_id} (KZ) ... ", end="", flush=True)
+        print(
+            f"  [{i}/{total}] {filename_kz} <- {doc_id} (KZ) ... ", end="", flush=True
+        )
         html_kz = fetch_document(doc_id, lang="kaz")
         if html_kz is None:
             print("пропуск (ошибка загрузки)")
@@ -132,7 +132,9 @@ def main():
                 ok += 1
         time.sleep(DELAY_BETWEEN_REQUESTS)
 
-    print(f"\nГотово: {ok}/{len(config.ADILET_SOURCES) * 2} документов сохранено в {config.DOCUMENTS_DIR}")
+    print(
+        f"\nГотово: {ok}/{len(config.ADILET_SOURCES) * 2} документов сохранено в {config.DOCUMENTS_DIR}"
+    )
     if ok > 0:
         print("Дальше: python build_vector_db.py  # пересобрать векторную базу")
 

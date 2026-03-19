@@ -8,18 +8,20 @@ from typing import Dict, Any, Optional
 # Using a dict to store {"embedding": 110, "vector_search": 65, ...}
 metrics_ctx = contextvars.ContextVar("metrics_ctx", default=None)
 
+
 def measure_latency(step_name: str):
     """
     Decorator to measure execution time of a function and store it in contextvars.
     Does not modify return value or original functionality.
     """
+
     def decorator(func):
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
             metrics = metrics_ctx.get()
             if metrics is None:
                 return func(*args, **kwargs)
-                
+
             start = time.perf_counter()
             try:
                 return func(*args, **kwargs)
@@ -36,7 +38,7 @@ def measure_latency(step_name: str):
             metrics = metrics_ctx.get()
             if metrics is None:
                 return await func(*args, **kwargs)
-                
+
             start = time.perf_counter()
             try:
                 return await func(*args, **kwargs)
@@ -48,6 +50,7 @@ def measure_latency(step_name: str):
                     metrics[step_name] = elapsed_ms
 
         import inspect
+
         if inspect.iscoroutinefunction(func):
             return async_wrapper
         else:

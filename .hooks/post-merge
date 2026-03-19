@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# Post-merge hook: Warn if dependencies changed
+echo "[Hook: post-merge] Checking for updated dependencies..."
+
+# Check requirements.txt
+if git diff-tree -r --name-only ORIG_HEAD HEAD | grep -q "requirements.txt"; then
+    echo "⚠️  requirements.txt has changed. Don't forget to run: pip install -r requirements.txt"
+fi
+
+# Check go.mod
+if git diff-tree -r --name-only ORIG_HEAD HEAD | grep -q "go.mod"; then
+    echo "⚠️  go.mod has changed. Don't forget to run: cd backend/legally && go mod download"
+fi
+
+exit 0

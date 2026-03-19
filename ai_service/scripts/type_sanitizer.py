@@ -3,6 +3,7 @@
 
 import json
 
+
 class TypeGuard:
     @staticmethod
     def clean_for_json(obj):
@@ -11,9 +12,9 @@ class TypeGuard:
             return {k: TypeGuard.clean_for_json(v) for k, v in obj.items()}
         elif isinstance(obj, list):
             return [TypeGuard.clean_for_json(item) for item in obj]
-        elif hasattr(obj, 'item'):  # numpy scalar
+        elif hasattr(obj, "item"):  # numpy scalar
             return obj.item()
-        elif hasattr(obj, 'tolist'):  # numpy array
+        elif hasattr(obj, "tolist"):  # numpy array
             return obj.tolist()
         else:
             return obj

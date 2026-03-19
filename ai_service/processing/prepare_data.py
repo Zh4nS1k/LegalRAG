@@ -21,24 +21,63 @@ from langchain_text_splitters import TextSplitter
 # ──────────────────────────────────────────────────────────────────────────────
 CODE_NAMES = {
     "constitution.txt": ("Конституция РК", "ҚР Конституциясы"),
-    "civil_code.txt": ("Гражданский кодекс РК (Общая часть)", "Азаматтық кодекс (Жалпы бөлім)"),
-    "civil_code2.txt": ("Гражданский кодекс РК (Особенная часть)", "Азаматтық кодекс (Ерекше бөлім)"),
+    "civil_code.txt": (
+        "Гражданский кодекс РК (Общая часть)",
+        "Азаматтық кодекс (Жалпы бөлім)",
+    ),
+    "civil_code2.txt": (
+        "Гражданский кодекс РК (Особенная часть)",
+        "Азаматтық кодекс (Ерекше бөлім)",
+    ),
     "labor_code.txt": ("Трудовой кодекс РК", "Еңбек кодексі"),
     "tax_code.txt": ("Налоговый кодекс РК", "Салық кодексі"),
-    "code_of_administrative_offenses.txt": ("Кодекс об административных правонарушениях РК", "Әкімшілік құқық бұзушылық туралы кодекс"),
+    "code_of_administrative_offenses.txt": (
+        "Кодекс об административных правонарушениях РК",
+        "Әкімшілік құқық бұзушылық туралы кодекс",
+    ),
     "criminal_code.txt": ("Уголовный кодекс РК", "Қылмыстық кодекс"),
-    "code_on_marriage_and_family.txt": ("Кодекс о браке и семье РК", "Неке және отбасы туралы кодекс"),
-    "code_on_public_health.txt": ("Кодекс о здоровье народа РК", "Халық денсаулығы туралы кодекс"),
+    "code_on_marriage_and_family.txt": (
+        "Кодекс о браке и семье РК",
+        "Неке және отбасы туралы кодекс",
+    ),
+    "code_on_public_health.txt": (
+        "Кодекс о здоровье народа РК",
+        "Халық денсаулығы туралы кодекс",
+    ),
     "entrepreneurial_code.txt": ("Предпринимательский кодекс РК", "Кәсіпкерлік кодекс"),
-    "code_on_administrative_procedures.txt": ("Кодекс об административных процедурах РК", "Әкімшілік рәсімдер туралы кодекс"),
+    "code_on_administrative_procedures.txt": (
+        "Кодекс об административных процедурах РК",
+        "Әкімшілік рәсімдер туралы кодекс",
+    ),
     "social_code.txt": ("Социальный кодекс РК", "Әлеуметтік кодекс"),
-    "civil_procedure_code.txt": ("Гражданский процессуальный кодекс РК", "Азаматтық іс жүргізу кодексі"),
-    "criminal_procedure_code.txt": ("Уголовно-процессуальный кодекс РК", "Қылмыстық іс жүргізу кодексі"),
-    "law_on_public_procurement.txt": ("Закон о государственных закупках РК", "Мемлекеттік сатып алу туралы заң"),
-    "law_on_anticorruption.txt": ("Закон о противодействии коррупции РК", "Коррупцияға қарсы күрес туралы заң"),
-    "law_on_enforcement.txt": ("Закон об исполнительном производстве РК", "Орындау өндірісі туралы заң"),
-    "law_on_personal_data.txt": ("Закон о персональных данных РК", "Жеке деректер туралы заң"),
-    "law_on_ai.txt": ("Закон об искусственном интеллекте РК", "Жасанды интеллект туралы заң"),
+    "civil_procedure_code.txt": (
+        "Гражданский процессуальный кодекс РК",
+        "Азаматтық іс жүргізу кодексі",
+    ),
+    "criminal_procedure_code.txt": (
+        "Уголовно-процессуальный кодекс РК",
+        "Қылмыстық іс жүргізу кодексі",
+    ),
+    "law_on_public_procurement.txt": (
+        "Закон о государственных закупках РК",
+        "Мемлекеттік сатып алу туралы заң",
+    ),
+    "law_on_anticorruption.txt": (
+        "Закон о противодействии коррупции РК",
+        "Коррупцияға қарсы күрес туралы заң",
+    ),
+    "law_on_enforcement.txt": (
+        "Закон об исполнительном производстве РК",
+        "Орындау өндірісі туралы заң",
+    ),
+    "law_on_personal_data.txt": (
+        "Закон о персональных данных РК",
+        "Жеке деректер туралы заң",
+    ),
+    "law_on_ai.txt": (
+        "Закон об искусственном интеллекте РК",
+        "Жасанды интеллект туралы заң",
+    ),
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -47,26 +86,26 @@ CODE_NAMES = {
 
 # Article header: "Статья 136.", "Статья 136-1.", " Статья 136 ", "136-бап." (Kazakh)
 ARTICLE_RE = re.compile(
-    r'(?m)^\s*(?:Статья|Стаття|Мәтін|Article|Section)\s*(\d+[а-яА-Яa-zA-Z\-]?)\.*\s*(.*?)$|(?m)^\s*(\d+[а-яА-Яa-zA-Z\-]?)-бап\.*\s*(.*?)$',
+    r"(?m)^\s*(?:Статья|Стаття|Мәтін|Article|Section)\s*(\d+[а-яА-Яa-zA-Z\-]?)\.*\s*(.*?)$|(?m)^\s*(\d+[а-яА-Яa-zA-Z\-]?)-бап\.*\s*(.*?)$",
     re.IGNORECASE,
 )
 
 # Chapter/Section heading: "Глава 1.", "ГЛАВА 2 ", "Раздел IV", "Бөлім 3" (Kazakh)
 CHAPTER_RE = re.compile(
-    r'(?m)^\s*(?:Глава|ГЛАВА|Раздел|РАЗДЕЛ|Бөлім|Тарау|Chapter|Section)\s+'
-    r'([\dIVXLCDMivxlcdm]+)[\.\s]\s*(.*?)$|(?m)^\s*([\dIVXLCDMivxlcdm]+)-(?:тарау|бөлім)[\.\s]\s*(.*?)$',
+    r"(?m)^\s*(?:Глава|ГЛАВА|Раздел|РАЗДЕЛ|Бөлім|Тарау|Chapter|Section)\s+"
+    r"([\dIVXLCDMivxlcdm]+)[\.\s]\s*(.*?)$|(?m)^\s*([\dIVXLCDMivxlcdm]+)-(?:тарау|бөлім)[\.\s]\s*(.*?)$",
     re.IGNORECASE,
 )
 
 # Clause (пункт): lines beginning with "1.", "2.", "1) ", "2) "
 CLAUSE_RE = re.compile(
-    r'(?m)^(\d+)[\.\)]\s+',
+    r"(?m)^(\d+)[\.\)]\s+",
     re.IGNORECASE,
 )
 
 # Sub-clause (подпункт): lines beginning with "1)", "2)", "а)", "б)"
 SUBCLAUSE_RE = re.compile(
-    r'(?m)^([а-яёА-ЯЁa-zA-Z\d]+\))\s+',
+    r"(?m)^([а-яёА-ЯЁa-zA-Z\d]+\))\s+",
     re.IGNORECASE,
 )
 
@@ -74,21 +113,39 @@ SUBCLAUSE_RE = re.compile(
 # "от 3 июля 2014 года", "от 03.07.2014", "N 226-V ЗРК от 3 июля 2014"
 # "2014 жылғы 3 шілдедегі", "2014 ж. 03.07."
 REVISION_DATE_RE = re.compile(
-    r'(?:'
-    r'от\s+(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(\d{4})'  # от 3 июля 2014
-    r'|\b(\d{4})\s+(?:жылғы|ж\.)\s+(\d{1,2})\s+(қаңтардағы|ақпандағы|наурыздағы|сәуірдегі|мамырдағы|маусымдағы|шілдедегі|тамыздағы|қыркүйектегі|қазандағы|қарашадағы|желтоқсандағы)' # 2014 жылғы 3 шілдедегі
-    r'|(?:от|ж\.)\s+(\d{2})\.(\d{2})\.(\d{4})'  # от 03.07.2014
-    r')',
+    r"(?:"
+    r"от\s+(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(\d{4})"  # от 3 июля 2014
+    r"|\b(\d{4})\s+(?:жылғы|ж\.)\s+(\d{1,2})\s+(қаңтардағы|ақпандағы|наурыздағы|сәуірдегі|мамырдағы|маусымдағы|шілдедегі|тамыздағы|қыркүйектегі|қазандағы|қарашадағы|желтоқсандағы)"  # 2014 жылғы 3 шілдедегі
+    r"|(?:от|ж\.)\s+(\d{2})\.(\d{2})\.(\d{4})"  # от 03.07.2014
+    r")",
     re.IGNORECASE,
 )
 
 _MONTH_MAP = {
-    "января": "01", "февраля": "02", "марта": "03", "апреля": "04",
-    "мая": "05", "июня": "06", "июля": "07", "августа": "08",
-    "сентября": "09", "октября": "10", "ноября": "11", "декабря": "12",
-    "қаңтардағы": "01", "ақпандағы": "02", "наурыздағы": "03", "сәуірдегі": "04",
-    "мамырдағы": "05", "маусымдағы": "06", "шілдедегі": "07", "тамыздағы": "08",
-    "қыркүйектегі": "09", "қазандағы": "10", "қарашадағы": "11", "желтоқсандағы": "12",
+    "января": "01",
+    "февраля": "02",
+    "марта": "03",
+    "апреля": "04",
+    "мая": "05",
+    "июня": "06",
+    "июля": "07",
+    "августа": "08",
+    "сентября": "09",
+    "октября": "10",
+    "ноября": "11",
+    "декабря": "12",
+    "қаңтардағы": "01",
+    "ақпандағы": "02",
+    "наурыздағы": "03",
+    "сәуірдегі": "04",
+    "мамырдағы": "05",
+    "маусымдағы": "06",
+    "шілдедегі": "07",
+    "тамыздағы": "08",
+    "қыркүйектегі": "09",
+    "қазандағы": "10",
+    "қарашадағы": "11",
+    "желтоқсандағы": "12",
 }
 
 # Minimum chunk length (avoid tiny fragments); no max — hierarchy-only splitting
@@ -98,6 +155,7 @@ MIN_CHUNK_LEN = 30
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def get_code_name(source_path: str) -> tuple[str, str]:
     name = Path(source_path).name
@@ -119,7 +177,7 @@ def get_article_title(chunk_text: str) -> str:
         # Russian title is in group 2, Kazakh title is in group 4
         title = m.group(2) if m.group(1) else m.group(4)
         if title:
-             return title.strip()[:200]
+            return title.strip()[:200]
     return ""
 
 
@@ -159,11 +217,11 @@ def _detect_chapter(line: str) -> tuple[str, str] | None:
     if m:
         # Check if Russian or Kazakh pattern matched
         if m.group(1):
-             num = m.group(1).strip()
-             title_part = m.group(2).strip()
+            num = m.group(1).strip()
+            title_part = m.group(2).strip()
         else:
-             num = m.group(3).strip()
-             title_part = m.group(4).strip()
+            num = m.group(3).strip()
+            title_part = m.group(4).strip()
         return num, title_part
     return None
 
@@ -188,7 +246,11 @@ def _split_article_into_clauses(article_text: str) -> list[str]:
     """
     parts = CLAUSE_RE.split(article_text)
     if len(parts) <= 1:
-        return [article_text] if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN else []
+        return (
+            [article_text]
+            if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN
+            else []
+        )
 
     chunks = []
     intro = parts[0].strip()
@@ -202,7 +264,15 @@ def _split_article_into_clauses(article_text: str) -> list[str]:
             intro = ""
         if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN:
             chunks.append(clause_text)
-    return chunks if chunks else ([article_text] if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN else [])
+    return (
+        chunks
+        if chunks
+        else (
+            [article_text]
+            if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN
+            else []
+        )
+    )
 
 
 def _split_clause_into_subclauses(clause_text: str) -> list[str]:
@@ -212,7 +282,11 @@ def _split_clause_into_subclauses(clause_text: str) -> list[str]:
     """
     parts = SUBCLAUSE_RE.split(clause_text)
     if len(parts) <= 1:
-        return [clause_text] if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN else []
+        return (
+            [clause_text]
+            if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN
+            else []
+        )
 
     chunks = []
     intro = parts[0].strip()
@@ -226,7 +300,15 @@ def _split_clause_into_subclauses(clause_text: str) -> list[str]:
             intro = ""
         if sub_text.strip() and len(sub_text.strip()) >= MIN_CHUNK_LEN:
             chunks.append(sub_text)
-    return chunks if chunks else ([clause_text] if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN else [])
+    return (
+        chunks
+        if chunks
+        else (
+            [clause_text]
+            if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN
+            else []
+        )
+    )
 
 
 def _split_article_by_hierarchy(article_text: str) -> list[str]:
@@ -243,7 +325,15 @@ def _split_article_by_hierarchy(article_text: str) -> list[str]:
         for sub in subclauses:
             if sub.strip() and len(sub.strip()) >= MIN_CHUNK_LEN:
                 result.append(sub)
-    return result if result else ([article_text] if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN else [])
+    return (
+        result
+        if result
+        else (
+            [article_text]
+            if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN
+            else []
+        )
+    )
 
 
 def _split_preamble_by_hierarchy(text: str) -> list[str]:
@@ -255,7 +345,7 @@ def _split_preamble_by_hierarchy(text: str) -> list[str]:
     if not t or len(t) < MIN_CHUNK_LEN:
         return []
     section_pattern = re.compile(
-        r'(?m)^(?:Глава|Раздел|ГЛАВА|РАЗДЕЛ|Бөлім|Тақырып)\s+[\dIVXLCDM]+[.\s]\s*(.*?)$|(?m)^[\dIVXLCDM]+-(?:тарау|бөлім)[.\s]\s*(.*?)$',
+        r"(?m)^(?:Глава|Раздел|ГЛАВА|РАЗДЕЛ|Бөлім|Тақырып)\s+[\dIVXLCDM]+[.\s]\s*(.*?)$|(?m)^[\dIVXLCDM]+-(?:тарау|бөлім)[.\s]\s*(.*?)$",
         re.IGNORECASE,
     )
     parts = section_pattern.split(t)
@@ -275,6 +365,7 @@ def _split_preamble_by_hierarchy(text: str) -> list[str]:
 # Main splitter
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class ArticleTextSplitter(TextSplitter):
     """
     Recursive semantic splitter — no character-count splitting.
@@ -289,7 +380,11 @@ class ArticleTextSplitter(TextSplitter):
         """Return raw text chunks by hierarchy only; chapter/article context set in create_documents()."""
         matches = list(ARTICLE_RE.finditer(text))
         if not matches:
-            return [c for c in _split_preamble_by_hierarchy(text) if c and len(c.strip()) >= MIN_CHUNK_LEN]
+            return [
+                c
+                for c in _split_preamble_by_hierarchy(text)
+                if c and len(c.strip()) >= MIN_CHUNK_LEN
+            ]
 
         chunks = []
         prev_end = 0
@@ -301,7 +396,9 @@ class ArticleTextSplitter(TextSplitter):
                     for c in _split_preamble_by_hierarchy(preamble):
                         if c and len(c.strip()) >= MIN_CHUNK_LEN:
                             chunks.append(c)
-            next_start = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+            next_start = (
+                matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+            )
             article_text = text[start:next_start].strip()
             for c in _split_article_by_hierarchy(article_text):
                 if c and len(c.strip()) >= MIN_CHUNK_LEN:

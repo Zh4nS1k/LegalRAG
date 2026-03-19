@@ -1,2 +1,1 @@
 """LegalRAG AI service package."""
-

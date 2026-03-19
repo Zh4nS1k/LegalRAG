@@ -62,6 +62,7 @@ def _title_from_prompt(prompt: str) -> str:
     words = cleaned.split(" ")
     return " ".join(words[:4]).strip()
 
+
 # Настройки страницы (должно быть первым вызовом Streamlit)
 st.set_page_config(
     page_title="Legal RAG — Помощник по законам РК",
@@ -86,7 +87,10 @@ PLACEHOLDERS = {
     "ru": "Задайте вопрос по законам РК (на русском или казахском)",
     "kz": "ҚР заңдары бойынша сұрақ қойыңыз (орыс немесе қазақ тілінде)",
 }
-SOURCES_LABEL = {"ru": "**Источники (реальные статьи из базы):**", "kz": "**Дереккөздер (базадағы мақалалар):**"}
+SOURCES_LABEL = {
+    "ru": "**Источники (реальные статьи из базы):**",
+    "kz": "**Дереккөздер (базадағы мақалалар):**",
+}
 DOWNLOAD_LABEL = {"ru": "Скачать ответ как TXT", "kz": "Жауапты TXT ретінде жүктеу"}
 CLEAR_CHAT = {"ru": "Очистить чат", "kz": "Чатты тазалау"}
 NEW_CHAT = {"ru": "Новый чат", "kz": "Жаңа чат"}
@@ -233,7 +237,11 @@ button[data-testid="stChatInputSubmitButton"][aria-disabled="true"] {
 # Сайдбар: язык и настройки
 with st.sidebar:
     st.header("Legal RAG")
-    st.markdown("Помощник по законам РК" if st.session_state.lang == "ru" else "ҚР заңдары бойынша көмекші")
+    st.markdown(
+        "Помощник по законам РК"
+        if st.session_state.lang == "ru"
+        else "ҚР заңдары бойынша көмекші"
+    )
     if st.button(f"+ {NEW_CHAT[st.session_state.lang]}", key="new_chat"):
         new_id = _new_chat(st.session_state.chat_store)
         st.session_state.current_chat_id = new_id
@@ -256,9 +264,16 @@ with st.sidebar:
         )
         st.session_state.current_chat_id = selected
 
-    new_title = st.text_input(RENAME_CHAT[st.session_state.lang], value="", key="rename_input")
-    if st.button(RENAME_CHAT[st.session_state.lang] + " ✓", key="rename_btn") and new_title.strip():
-        _rename_chat(st.session_state.chat_store, st.session_state.current_chat_id, new_title)
+    new_title = st.text_input(
+        RENAME_CHAT[st.session_state.lang], value="", key="rename_input"
+    )
+    if (
+        st.button(RENAME_CHAT[st.session_state.lang] + " ✓", key="rename_btn")
+        and new_title.strip()
+    ):
+        _rename_chat(
+            st.session_state.chat_store, st.session_state.current_chat_id, new_title
+        )
         _save_chats(st.session_state.chat_store)
         st.rerun()
 
@@ -273,7 +288,9 @@ with st.sidebar:
         st.rerun()
 
     with st.expander("Настройки", expanded=False):
-        lang_toggle = st.toggle("Қазақша", value=st.session_state.lang == "kz", key="lang_toggle")
+        lang_toggle = st.toggle(
+            "Қазақша", value=st.session_state.lang == "kz", key="lang_toggle"
+        )
         st.session_state.lang = "kz" if lang_toggle else "ru"
 
 # История чата
@@ -308,7 +325,10 @@ else:
         """,
         unsafe_allow_html=True,
     )
-st.markdown(f"<div class=\"disclaimer-pill\">{DISCLAIMERS[st.session_state.lang]}</div>", unsafe_allow_html=True)
+st.markdown(
+    f'<div class="disclaimer-pill">{DISCLAIMERS[st.session_state.lang]}</div>',
+    unsafe_allow_html=True,
+)
 
 # Соответствие закону РК об ИИ (прозрачность)
 st.caption(config.AI_LAW_COMPLIANCE_NOTE)
@@ -329,7 +349,11 @@ if prompt:
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    with st.spinner("Ищу в текстах законов..." if st.session_state.lang == "ru" else "Заң мәтінінде іздеймін..."):
+    with st.spinner(
+        "Ищу в текстах законов..."
+        if st.session_state.lang == "ru"
+        else "Заң мәтінінде іздеймін..."
+    ):
         try:
             result = invoke_qa(prompt)
             response = result["result"]
@@ -344,8 +368,11 @@ if prompt:
     with st.chat_message("assistant", avatar="⚖️"):
         st.markdown(response)
         if sources:
-            st.markdown(f"<div class=\"sources-title\">{SOURCES_LABEL[st.session_state.lang]}</div>", unsafe_allow_html=True)
-            st.markdown("<div class=\"sources-footer\">", unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="sources-title">{SOURCES_LABEL[st.session_state.lang]}</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown('<div class="sources-footer">', unsafe_allow_html=True)
             for i, doc in enumerate(sources, 1):
                 src = doc.metadata.get("source", "неизвестно")
                 filename = src.split("/")[-1] if "/" in src else src
@@ -359,20 +386,22 @@ if prompt:
                     title_bits.append(f"ст.{art}")
                 title_text = " • ".join(title_bits)
                 st.markdown(
-                    f"<div class=\"source-item\">"
-                    f"<div class=\"source-meta\">🔗 {i}. <strong>{filename}</strong>"
+                    f'<div class="source-item">'
+                    f'<div class="source-meta">🔗 {i}. <strong>{filename}</strong>'
                     + (f" — {title_text}" if title_text else "")
                     + "</div>"
-                    + f"<div class=\"source-quote\">{preview}...</div>"
+                    + f'<div class="source-quote">{preview}...</div>'
                     + "</div>",
                     unsafe_allow_html=True,
                 )
             st.markdown("</div>", unsafe_allow_html=True)
     if sources:
-        sources_text = "\n".join([
-            f"{j + 1}. {doc.metadata.get('source', '')} — {doc.metadata.get('code_ru', '')} ст.{doc.metadata.get('article_number', '')} — {doc.page_content[:200].replace(chr(10), ' ')}..."
-            for j, doc in enumerate(sources)
-        ])
+        sources_text = "\n".join(
+            [
+                f"{j + 1}. {doc.metadata.get('source', '')} — {doc.metadata.get('code_ru', '')} ст.{doc.metadata.get('article_number', '')} — {doc.page_content[:200].replace(chr(10), ' ')}..."
+                for j, doc in enumerate(sources)
+            ]
+        )
         full_text = f"{response}\n\nИсточники:\n{sources_text}"
         st.download_button(
             label=DOWNLOAD_LABEL[st.session_state.lang],
@@ -384,7 +413,9 @@ if prompt:
     current_chat["updated_at"] = _now_iso()
     _save_chats(st.session_state.chat_store)
 
-if len(messages) > 2 and st.button(CLEAR_CHAT[st.session_state.lang] + " (тек осы чат)", key="clear_chat"):
+if len(messages) > 2 and st.button(
+    CLEAR_CHAT[st.session_state.lang] + " (тек осы чат)", key="clear_chat"
+):
     current_chat["messages"] = []
     current_chat["updated_at"] = _now_iso()
     _save_chats(st.session_state.chat_store)

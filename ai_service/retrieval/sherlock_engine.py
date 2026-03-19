@@ -27,7 +27,7 @@ RK_CODES_OFFICIAL = {
     "Кодекс о браке и семье": "Кодекс РК о браке (супружестве) и семье",
     "Таможенный кодекс": "Кодекс РК о таможенном регулировании",
     "Кодекс о недрах": "Кодекс РК о недрах и недропользовании",
-    "Социальный кодекс": "Социальный кодекс РК"
+    "Социальный кодекс": "Социальный кодекс РК",
 }
 
 SHERLOCK_CLASSIFIER_PROMPT = """Ты — эксперт по законодательству Республики Казахстан. 
@@ -69,6 +69,7 @@ SHERLOCK_SYSTEM_MESSAGE = """Ты — судебный аудитор систе
 Будь сух, точен и детерминирован.
 """
 
+
 class SherlockEngine:
     def __init__(self):
         self.llm = rag_chain.get_llm()
@@ -83,143 +84,168 @@ class SherlockEngine:
         """Stage 1 & 2: Classify and Validate."""
         codes_text = "\n".join([f"- {k}: {v}" for k, v in RK_CODES_OFFICIAL.items()])
         prompt = SHERLOCK_CLASSIFIER_PROMPT.format(codes_list=codes_text, query=query)
-        
+
         try:
             resp = self.llm.invoke(prompt)
-            content = resp.content if hasattr(resp, 'content') else str(resp)
-            start = content.find('{')
-            end = content.rfind('}') + 1
+            content = resp.content if hasattr(resp, "content") else str(resp)
+            start = content.find("{")
+            end = content.rfind("}") + 1
             data = json.loads(content[start:end])
-            
+
             # Stage 2: Validation Loop (Internal Logic)
             selected = [c.upper() for c in data.get("selected_codes", [])]
             q_lower = query.lower()
-            
+
             # Принудительная корректировка типичных ошибок
             validated_codes = []
             for code in selected:
-                if (code == "ЗК" or code == "ГК") and ("зарплат" in q_lower or "увольн" in q_lower or "работодател" in q_lower):
-                    logger.warning(f"Sherlock Validation: Dropping {code} for labor query, adding ТК")
+                if (code == "ЗК" or code == "ГК") and (
+                    "зарплат" in q_lower
+                    or "увольн" in q_lower
+                    or "работодател" in q_lower
+                ):
+                    logger.warning(
+                        f"Sherlock Validation: Dropping {code} for labor query, adding ТК"
+                    )
                     if "ТК" not in validated_codes:
                         validated_codes.append("ТК")
                 elif code == "ГК" and ("штраф" in q_lower or "полиция" in q_lower):
                     logger.info("Sherlock Validation: Adding КоАП for penalty query")
-                    if "КоАП" not in validated_codes: validated_codes.append("КоАП")
+                    if "КоАП" not in validated_codes:
+                        validated_codes.append("КоАП")
                     validated_codes.append(code)
                 else:
                     validated_codes.append(code)
-            
+
             if not validated_codes:
-                validated_codes = ["ГК"] # Fallback
-                
+                validated_codes = ["ГК"]  # Fallback
+
             data["selected_codes"] = validated_codes[:3]
             return data
         except Exception as e:
             logger.error(f"Sherlock Classification failed: {e}")
             return {"selected_codes": ["ГК"], "reasoning": "fallback", "facts": {}}
 
-    async def stage_3_targeted_fetch(self, codes: List[str], query: str) -> List[Document]:
+    async def stage_3_targeted_fetch(
+        self, codes: List[str], query: str
+    ) -> List[Document]:
         """Stage 3: Targeted Fetch within selected codes."""
         vs = self._get_vs()
         target_names = [RK_CODES_OFFICIAL.get(c, c) for c in codes]
-        
+
         # Pinecone $or filter for codes
         if len(target_names) == 1:
             search_filter = {"code_ru": target_names[0]}
         else:
             search_filter = {"$or": [{"code_ru": name} for name in target_names]}
-            
+
         docs = vs.similarity_search(query, k=15, filter=search_filter)
         return docs
 
-    def stage_4_fact_check(self, docs: List[Document], facts: Dict) -> Tuple[bool, List[Document]]:
+    def stage_4_fact_check(
+        self, docs: List[Document], facts: Dict
+    ) -> Tuple[bool, List[Document]]:
         """Stage 4: Fact Check - matching articles with query facts."""
         if not docs:
             return False, []
-            
+
         important_markers = []
         if facts.get("time"):
             # Если в фактах есть время, ищем статьи про время (например 23:00, ночное время)
             important_markers.extend(["время", "ноч", "23", "22", "8"])
-        
+
         # Если маркеров нет, полагаемся на семантику (True)
         if not important_markers:
             return True, docs
-            
+
         matched = []
         for d in docs:
             text = d.page_content.lower()
             if any(m in text for m in important_markers):
                 matched.append(d)
-                
+
         if not matched:
-            return False, docs[:5] # Return some docs but signal failure
-            
+            return False, docs[:5]  # Return some docs but signal failure
+
         return True, matched
 
     async def run_sherlock_loop(self, query: str) -> Dict[str, Any]:
         """The core Sherlock Retry Loop (Stages 1-4)."""
         t0 = time.perf_counter()
-        
+
         # Stage 1 & 2
         classification = await self.classify_and_validate(query)
         selected_codes = classification["selected_codes"]
         facts = classification.get("facts", {})
-        
+
         # Stage 3 & 4 with Retry
         final_docs = []
         attempt = 0
         current_query = query
-        
+
         while attempt < 2:
             docs = await self.stage_3_targeted_fetch(selected_codes, current_query)
             success, checked_docs = self.stage_4_fact_check(docs, facts)
-            
+
             if success:
                 final_docs = checked_docs
                 break
             else:
                 attempt += 1
-                logger.info(f"Sherlock Stage 4 failed, retry {attempt} with broader query")
+                logger.info(
+                    f"Sherlock Stage 4 failed, retry {attempt} with broader query"
+                )
                 # Расширяем запрос для второй попытки
                 action = facts.get("action", "")
                 current_query = f"{query} {action}" if action else query
-                final_docs = docs # Fallback to original docs if 2nd attempt also 'fails'
-                
+                final_docs = (
+                    docs  # Fallback to original docs if 2nd attempt also 'fails'
+                )
+
         # Skills execution
         skill = SherlockAnalysisSkill(self.llm)
         position_data = skill.identify_position(query)
         conflict_data = skill.detect_conflicts(query, final_docs)
-        
+
         # Generate Final Deduction Output via LLM
-        deduction_report = self._generate_report(query, final_docs, position_data, conflict_data)
-        
+        deduction_report = self._generate_report(
+            query, final_docs, position_data, conflict_data
+        )
+
         return {
             "deductive_output": deduction_report,
             "meta": {
                 "codes": selected_codes,
                 "position": position_data,
                 "conflicts": conflict_data,
-                "time_ms": round((time.perf_counter() - t0) * 1000)
-            }
+                "time_ms": round((time.perf_counter() - t0) * 1000),
+            },
         }
 
-    def _generate_report(self, query: str, docs: List[Document], position: Dict, conflicts: Dict) -> str:
+    def _generate_report(
+        self, query: str, docs: List[Document], position: Dict, conflicts: Dict
+    ) -> str:
         """Generates the final structured text output for Sherlock block."""
-        context_str = "\n".join([f"- {d.metadata.get('code_ru')}, ст.{d.metadata.get('article_number')}: {d.page_content[:200]}..." for d in docs[:3]])
-        
+        context_str = "\n".join(
+            [
+                f"- {d.metadata.get('code_ru')}, ст.{d.metadata.get('article_number')}: {d.page_content[:200]}..."
+                for d in docs[:3]
+            ]
+        )
+
         prompt = f"{SHERLOCK_SYSTEM_MESSAGE}\n\n"
         prompt += f"Ситуация: {query}\n"
         prompt += f"Выявленная позиция: {position}\n"
         prompt += f"Найденные конфликты: {conflicts}\n"
         prompt += f"Релевантные статьи:\n{context_str}\n\n"
         prompt += "Проведи финальный аудит:"
-        
+
         try:
             resp = self.llm.invoke(prompt)
-            return resp.content if hasattr(resp, 'content') else str(resp)
+            return resp.content if hasattr(resp, "content") else str(resp)
         except Exception:
             return "Ошибка генерации отчета Шерлока."
+
 
 class SherlockAnalysisSkill:
     def __init__(self, llm):
@@ -239,19 +265,25 @@ class SherlockAnalysisSkill:
 """
         try:
             resp = self.llm.invoke(prompt)
-            content = resp.content if hasattr(resp, 'content') else str(resp)
-            start = content.find('{')
-            end = content.rfind('}') + 1
+            content = resp.content if hasattr(resp, "content") else str(resp)
+            start = content.find("{")
+            end = content.rfind("}") + 1
             return json.loads(content[start:end])
         except Exception:
             return {"role": "Гражданин", "needs_clarification": False}
 
     def detect_conflicts(self, query: str, docs: List[Document]) -> Dict:
         """Step 7: Conflict Detection."""
-        if not docs: return {"has_conflict": False}
-        
-        context = "\n".join([f"[{d.metadata.get('code_ru')}, ст.{d.metadata.get('article_number')}]: {d.page_content[:300]}" for d in docs[:5]])
-        
+        if not docs:
+            return {"has_conflict": False}
+
+        context = "\n".join(
+            [
+                f"[{d.metadata.get('code_ru')}, ст.{d.metadata.get('article_number')}]: {d.page_content[:300]}"
+                for d in docs[:5]
+            ]
+        )
+
         prompt = f"""Найди противоречия (коллизии) между следующими нормами для ситуации: "{query}"
 Нормы:
 {context}
@@ -267,9 +299,9 @@ class SherlockAnalysisSkill:
 """
         try:
             resp = self.llm.invoke(prompt)
-            content = resp.content if hasattr(resp, 'content') else str(resp)
-            start = content.find('{')
-            end = content.rfind('}') + 1
+            content = resp.content if hasattr(resp, "content") else str(resp)
+            start = content.find("{")
+            end = content.rfind("}") + 1
             return json.loads(content[start:end])
         except Exception:
             return {"has_conflict": False}

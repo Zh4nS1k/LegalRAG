@@ -6,16 +6,9 @@ class LegalCalculator:
     def calculate_penalty(base_amount, violation_type, circumstances):
         """Calculate penalties based on violation type and circumstances."""
         # Mechanical calculation rules
-        multipliers = {
-            "minor": 1.0,
-            "moderate": 2.0,
-            "severe": 5.0,
-            "critical": 10.0
-        }
+        multipliers = {"minor": 1.0, "moderate": 2.0, "severe": 5.0, "critical": 10.0}
 
-        base_multiplier = multipliers.get(
-            circumstances.get("severity", "minor"), 1.0
-        )
+        base_multiplier = multipliers.get(circumstances.get("severity", "minor"), 1.0)
         repeat_offender = circumstances.get("repeat_offender", False)
         if repeat_offender:
             base_multiplier *= 2.0
@@ -25,13 +18,13 @@ class LegalCalculator:
         return {
             "base_amount": base_amount,
             "multiplier": base_multiplier,
-            "total_penalty": total_penalty
+            "total_penalty": total_penalty,
         }
 
     @staticmethod
     def calculate_deadline(start_date, days, business_days=False):
         """Calculate deadline from start date."""
-        start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
         if business_days:
             # Simple business day calculation (exclude weekends)
             current = start

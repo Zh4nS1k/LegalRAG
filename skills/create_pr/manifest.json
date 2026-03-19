@@ -1,0 +1,22 @@
+{
+  "name": "create_pr",
+  "description": "Standardized skill to create a Pull Request with description, code checks, and automated reviewer assignment.",
+  "version": "1.0",
+  "parameters": {
+    "branch_name": {
+      "type": "string",
+      "description": "The name of the branch to create PR from"
+    },
+    "title": {
+      "type": "string",
+      "description": "Title of the PR"
+    },
+    "reviewers": {
+      "type": "array",
+      "description": "List of GitHub usernames to request review from",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

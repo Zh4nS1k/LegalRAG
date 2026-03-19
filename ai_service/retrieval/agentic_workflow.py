@@ -35,11 +35,14 @@ def _get_reranker():
         try:
             config.configure_hf_hub()
             from FlagEmbedding import FlagReranker
+
             _reranker_model = FlagReranker(
                 getattr(config, "RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"),
                 use_fp16=True,
             )
-            logger.info("[SUCCESS] Reranker initialized (%.2fs)", time.perf_counter() - t0)
+            logger.info(
+                "[SUCCESS] Reranker initialized (%.2fs)", time.perf_counter() - t0
+            )
         except Exception as e:
             logger.error("Reranker initialization failed: %s", e, exc_info=True)
             raise
@@ -48,6 +51,7 @@ def _get_reranker():
 
 # ─── 1. Linguist-Analyst: HyDE + Query expansion (RU/KZ) ─────────────────────
 
+
 async def _linguist_hyde(query: str, trace_id: str) -> Tuple[str, dict]:
     """Generate hypothetical legal answer (HyDE) for better retrieval. Returns (hypothetical_doc, metrics)."""
     t0 = time.perf_counter()
@@ -55,13 +59,13 @@ async def _linguist_hyde(query: str, trace_id: str) -> Tuple[str, dict]:
     prompt = (
         "Ты — эксперт по законодательству РК. Дай краткий гипотетический ответ (2–3 предложения), "
         "как могла бы звучать формулировка из закона или судебной практики по вопросу. "
-        "Пиши только JSON: {{\"hypothesis\": \"твой ответ здесь\"}}. Вопрос: {query}"
+        'Пиши только JSON: {{"hypothesis": "твой ответ здесь"}}. Вопрос: {query}'
     )
     try:
         resp = await asyncio.to_thread(llm.invoke, prompt.format(query=query))
         text = resp.content if hasattr(resp, "content") else str(resp)
         # Robust JSON extraction: look for {...} in the text
-        match = re.search(r'\{.*\}', text, re.DOTALL)
+        match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
             json_text = match.group(0)
             try:
@@ -95,7 +99,7 @@ async def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
         resp = await asyncio.to_thread(llm.invoke, prompt.format(query=query))
         text = resp.content if hasattr(resp, "content") else str(resp)
         # Robust JSON extraction
-        match = re.search(r'\{.*\}', text, re.DOTALL)
+        match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
             json_text = match.group(0)
             try:
@@ -103,15 +107,21 @@ async def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
                 lines = data.get("variations", [])
             except json.JSONDecodeError:
                 # If JSON fails, try to split by lines as a secondary fallback
-                lines = [l.strip() for l in text.split('\n') if l.strip() and '{' not in l and '}' not in l]
+                lines = [
+                    l.strip()
+                    for l in text.split("\n")
+                    if l.strip() and "{" not in l and "}" not in l
+                ]
         else:
             # Fallback for plain text variations
-            lines = [l.strip() for l in text.split('\n') if l.strip()]
+            lines = [l.strip() for l in text.split("\n") if l.strip()]
         # Filter and limit
         lines = [l for l in lines if l and l != query][:n]
     except Exception as e:
         lines = []
-        logger.error("[%s] Query expansion (Groq/Ollama) failed: %s", trace_id, e, exc_info=True)
+        logger.error(
+            "[%s] Query expansion (Groq/Ollama) failed: %s", trace_id, e, exc_info=True
+        )
     ms = round((time.perf_counter() - t0) * 1000)
     queries = [query] + lines  # original + variations
     return queries, {"linguist_expand_ms": ms}
@@ -119,7 +129,10 @@ async def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
 
 # ─── 2. Multi-query retrieval (HyDE + variations) → Top-50 ────────────────────
 
-async def _retrieve_candidates(queries: List[str], hyde_doc: str, trace_id: str) -> Tuple[List[Document], dict]:
+
+async def _retrieve_candidates(
+    queries: List[str], hyde_doc: str, trace_id: str
+) -> Tuple[List[Document], dict]:
     """Run vector search for each query (and HyDE doc if present). Merge and dedupe to up to TOP_K_CANDIDATES."""
     t0 = time.perf_counter()
     store = rag_chain.get_vector_store()
@@ -138,11 +151,18 @@ async def _retrieve_candidates(queries: List[str], hyde_doc: str, trace_id: str)
         search_queries.append(hyde_doc)
 
     if search_queries:
-        search_tasks = [asyncio.to_thread(store.similarity_search_with_score, q, **search_kwargs) for q in search_queries]
+        search_tasks = [
+            asyncio.to_thread(store.similarity_search_with_score, q, **search_kwargs)
+            for q in search_queries
+        ]
         search_results = await asyncio.gather(*search_tasks)
         for docs_with_scores in search_results:
             for d, score in docs_with_scores:
-                key = (d.metadata.get("source"), d.metadata.get("article_number"), d.page_content[:100])
+                key = (
+                    d.metadata.get("source"),
+                    d.metadata.get("article_number"),
+                    d.page_content[:100],
+                )
                 if key not in seen_keys:
                     seen_keys.add(key)
                     merged.append(d)
@@ -153,12 +173,22 @@ async def _retrieve_candidates(queries: List[str], hyde_doc: str, trace_id: str)
                 break
 
     ms = round((time.perf_counter() - t0) * 1000)
-    return merged[:TOP_K_CANDIDATES], scores[:TOP_K_CANDIDATES], {"retrieval_candidates_ms": ms, "n_candidates": len(merged)}
+    return (
+        merged[:TOP_K_CANDIDATES],
+        scores[:TOP_K_CANDIDATES],
+        {"retrieval_candidates_ms": ms, "n_candidates": len(merged)},
+    )
 
 
 # ─── 3. The Censor: Rerank with bge-reranker-v2-m3 → Top-5 + scores ──────────
 
-async def _censor_rerank(query: str, candidates: List[Document], candidate_scores: Optional[List[float]], trace_id: str) -> Tuple[List[Document], List[float], dict]:
+
+async def _censor_rerank(
+    query: str,
+    candidates: List[Document],
+    candidate_scores: Optional[List[float]],
+    trace_id: str,
+) -> Tuple[List[Document], List[float], dict]:
     """Rerank candidates with BGE-M3; return top RERANKER_TOP_N docs and their scores."""
     t0 = time.perf_counter()
     if not candidates:
@@ -166,7 +196,9 @@ async def _censor_rerank(query: str, candidates: List[Document], candidate_score
 
     # Early exit: if top Pinecone score > 0.82, skip reranker
     if candidate_scores and max(candidate_scores) > 0.82:
-        sorted_indices = sorted(range(len(candidates)), key=lambda i: candidate_scores[i], reverse=True)
+        sorted_indices = sorted(
+            range(len(candidates)), key=lambda i: candidate_scores[i], reverse=True
+        )
         top_docs = [candidates[i] for i in sorted_indices[:RERANKER_TOP_N]]
         top_scores = [candidate_scores[i] for i in sorted_indices[:RERANKER_TOP_N]]
         return top_docs, top_scores, {"censor_rerank_ms": 0}
@@ -191,6 +223,7 @@ async def _censor_rerank(query: str, candidates: List[Document], candidate_score
 
 # ─── 4. Self-RAG: Reject if confidence below threshold ───────────────────────
 
+
 def _self_rag_gate(top_scores: List[float], trace_id: str) -> bool:
     """Return True if context is accepted (max score >= threshold)."""
     if not top_scores:
@@ -200,6 +233,7 @@ def _self_rag_gate(top_scores: List[float], trace_id: str) -> bool:
 
 
 # ─── 5. CoVe: Chain of Verification ──────────────────────────────────────────
+
 
 def _extract_cited_articles(response: str) -> List[Tuple[str, str]]:
     """Extract (article_number, code_ru) from response text (e.g. 'статья 136 УК', 'ст. 122')."""
@@ -214,7 +248,9 @@ def _extract_cited_articles(response: str) -> List[Tuple[str, str]]:
     return cited[:10]
 
 
-async def _cove_verify(response: str, source_docs: List[Document], trace_id: str) -> Tuple[str, bool, dict]:
+async def _cove_verify(
+    response: str, source_docs: List[Document], trace_id: str
+) -> Tuple[str, bool, dict]:
     """Verify that key statements in the response match the cited articles in context. Returns (verified_response, all_ok, metrics)."""
     t0 = time.perf_counter()
     if not COVE_ENABLED or not source_docs:
@@ -236,7 +272,9 @@ async def _cove_verify(response: str, source_docs: List[Document], trace_id: str
         "Вопрос: Соответствует ли ответ приведённому контексту? Ответь одним словом: ДА или НЕТ."
     )
     try:
-        resp = await asyncio.to_thread(llm.invoke, prompt.format(context=context_str, response=response[:2000]))
+        resp = await asyncio.to_thread(
+            llm.invoke, prompt.format(context=context_str, response=response[:2000])
+        )
         ans = (resp.content if hasattr(resp, "content") else str(resp)).strip().upper()
         all_ok = "НЕТ" not in ans[:10]
         if not all_ok:
@@ -249,6 +287,7 @@ async def _cove_verify(response: str, source_docs: List[Document], trace_id: str
 
 
 # ─── Main pipeline ───────────────────────────────────────────────────────────
+
 
 async def invoke_agentic_qa(
     query: str,
@@ -279,7 +318,9 @@ async def invoke_agentic_qa(
         if hyde_doc:
             additional_queries.append(hyde_doc)
         if additional_queries:
-            additional_candidates, additional_scores, m3_add = await _retrieve_candidates(additional_queries, "", trace_id)
+            additional_candidates, additional_scores, m3_add = (
+                await _retrieve_candidates(additional_queries, "", trace_id)
+            )
             candidates.extend(additional_candidates)
             candidate_scores.extend(additional_scores)
             # Dedupe
@@ -300,7 +341,9 @@ async def invoke_agentic_qa(
             m3["retrieval_candidates_ms"] += m3_add.get("retrieval_candidates_ms", 0)
 
     # 3. The Censor: rerank to top 5 with scores
-    top_docs, top_scores, m4 = await _censor_rerank(query, candidates, candidate_scores, trace_id)
+    top_docs, top_scores, m4 = await _censor_rerank(
+        query, candidates, candidate_scores, trace_id
+    )
     metrics.update(m4)
 
     # 4. Self-RAG: reject if confidence too low
@@ -331,7 +374,9 @@ async def invoke_agentic_qa(
 
     # 5. QA with top 5 context
     t_qa = time.perf_counter()
-    qa_result = await asyncio.to_thread(rag_chain.invoke_qa_with_context, query, top_docs, history=history)
+    qa_result = await asyncio.to_thread(
+        rag_chain.invoke_qa_with_context, query, top_docs, history=history
+    )
     metrics["qa_ms"] = round((time.perf_counter() - t_qa) * 1000)
     result = qa_result.get("result", "")
     source_documents = qa_result.get("source_documents", [])

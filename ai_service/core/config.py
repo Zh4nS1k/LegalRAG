@@ -9,16 +9,19 @@ _THIS_DIR = Path(__file__).resolve().parent
 AI_SERVICE_DIR = _THIS_DIR.parent
 BASE_DIR = AI_SERVICE_DIR.parent  # repo root (LegalRAG)
 
+
 # Load .env from ai_service first, then repo root (python-dotenv always available in this project)
 def _load_dotenv():
     try:
         from dotenv import load_dotenv
+
         for p in (AI_SERVICE_DIR / ".env", BASE_DIR / ".env"):
             if p.exists():
                 load_dotenv(p, override=False)
                 break
     except ImportError:
         pass
+
 
 _load_dotenv()
 
@@ -51,13 +54,19 @@ except Exception as e:
             f"  e.g. source venv/bin/activate  (from LegalRAG) or  .venv/bin/activate  (from ai_service)\n"
             f"Original: {e}\n"
         )
-    env_settings = type("Env", (), {
-        "PINECONE_INDEX_NAME": os.environ.get("PINECONE_INDEX_NAME", "legally-index"),
-        "PINECONE_NAMESPACE": os.environ.get("PINECONE_NAMESPACE", "default"),
-        "PINECONE_API_KEY": _pk,
-        "GROQ_API_KEY": _gk,
-        "HF_TOKEN": os.environ.get("HF_TOKEN"),
-    })()
+    env_settings = type(
+        "Env",
+        (),
+        {
+            "PINECONE_INDEX_NAME": os.environ.get(
+                "PINECONE_INDEX_NAME", "legally-index"
+            ),
+            "PINECONE_NAMESPACE": os.environ.get("PINECONE_NAMESPACE", "default"),
+            "PINECONE_API_KEY": _pk,
+            "GROQ_API_KEY": _gk,
+            "HF_TOKEN": os.environ.get("HF_TOKEN"),
+        },
+    )()
 
 DOCUMENTS_DIR = BASE_DIR / "documents"
 BENCHMARK_DIR = BASE_DIR / "benchmark_results"
@@ -66,25 +75,28 @@ BENCHMARK_DIR = BASE_DIR / "benchmark_results"
 ADILET_BASE_URL = "https://adilet.zan.kz/rus/docs"
 # (имя файла в documents/, ID документа на Adilet)
 ADILET_SOURCES = [
-    ("constitution.txt", "K950001000_"),           # 1. Конституция РК
-    ("civil_code.txt", "K940001000_"),             # 2. ГК РК (Общая часть)
-    ("civil_code2.txt", "K990000409_"),            # 3. ГК РК (Особенная часть)
-    ("labor_code.txt", "K1500000414"),             # 4. Трудовой кодекс РК
-    ("tax_code.txt", "K1700000120"),               # 5. Налоговый кодекс РК
+    ("constitution.txt", "K950001000_"),  # 1. Конституция РК
+    ("civil_code.txt", "K940001000_"),  # 2. ГК РК (Общая часть)
+    ("civil_code2.txt", "K990000409_"),  # 3. ГК РК (Особенная часть)
+    ("labor_code.txt", "K1500000414"),  # 4. Трудовой кодекс РК
+    ("tax_code.txt", "K1700000120"),  # 5. Налоговый кодекс РК
     ("code_of_administrative_offenses.txt", "K1400000235"),  # 6. КоАП РК
-    ("criminal_code.txt", "K1400000226"),         # 7. Уголовный кодекс РК
+    ("criminal_code.txt", "K1400000226"),  # 7. Уголовный кодекс РК
     ("code_on_marriage_and_family.txt", "K1100000518"),  # 8. О браке и семье
     ("code_on_public_health.txt", "K2000000360"),  # 9. О здоровье народа
-    ("entrepreneurial_code.txt", "K1500000375"),   # 10. Предпринимательский кодекс
-    ("code_on_administrative_procedures.txt", "K2000000350"),  # 11. Об административных процедурах
-    ("social_code.txt", "K2300000224"),            # 12. Социальный кодекс РК
-    ("civil_procedure_code.txt", "K1500000377"),   # 13. ГПК РК
+    ("entrepreneurial_code.txt", "K1500000375"),  # 10. Предпринимательский кодекс
+    (
+        "code_on_administrative_procedures.txt",
+        "K2000000350",
+    ),  # 11. Об административных процедурах
+    ("social_code.txt", "K2300000224"),  # 12. Социальный кодекс РК
+    ("civil_procedure_code.txt", "K1500000377"),  # 13. ГПК РК
     ("criminal_procedure_code.txt", "K1400000231"),  # 14. УПК РК
     ("law_on_public_procurement.txt", "Z2400000106"),  # 16. О государственных закупках
     ("law_on_anticorruption.txt", "K1500000410"),  # 17. О противодействии коррупции
-    ("law_on_enforcement.txt", "Z100000261_"),    # 18. Об исполнительном производстве
+    ("law_on_enforcement.txt", "Z100000261_"),  # 18. Об исполнительном производстве
     ("law_on_personal_data.txt", "K130000094_"),  # 19. О персональных данных
-    ("law_on_ai.txt", "Z250000230"),              # 20. Об искусственном интеллекте
+    ("law_on_ai.txt", "Z250000230"),  # 20. Об искусственном интеллекте
 ]
 
 # Pinecone — векторная БД (облако)
@@ -96,11 +108,26 @@ HF_TOKEN = env_settings.HF_TOKEN
 PINECONE_DIMENSION = 1024  # multilingual-e5-large
 
 # Эмбеддинги
-EMBEDDING_MODEL = os.environ.get("LEGAL_RAG_EMBEDDING", "intfloat/multilingual-e5-large")
-HF_READ_TIMEOUT_SEC = int(os.environ.get("LEGAL_RAG_HF_READ_TIMEOUT_SEC", os.environ.get("HF_HUB_READ_TIMEOUT", "60")))
-HF_CONNECT_TIMEOUT_SEC = int(os.environ.get("LEGAL_RAG_HF_CONNECT_TIMEOUT_SEC", os.environ.get("HF_HUB_CONNECT_TIMEOUT", "10")))
-HF_OFFLINE = os.environ.get("LEGAL_RAG_HF_OFFLINE", os.environ.get("HF_HUB_OFFLINE", "0")) == "1"
-HF_LOCAL_ONLY = os.environ.get("LEGAL_RAG_HF_LOCAL_ONLY", "0") == "1"  # 1=offline-only; 0=internet first, local fallback
+EMBEDDING_MODEL = os.environ.get(
+    "LEGAL_RAG_EMBEDDING", "intfloat/multilingual-e5-large"
+)
+HF_READ_TIMEOUT_SEC = int(
+    os.environ.get(
+        "LEGAL_RAG_HF_READ_TIMEOUT_SEC", os.environ.get("HF_HUB_READ_TIMEOUT", "60")
+    )
+)
+HF_CONNECT_TIMEOUT_SEC = int(
+    os.environ.get(
+        "LEGAL_RAG_HF_CONNECT_TIMEOUT_SEC",
+        os.environ.get("HF_HUB_CONNECT_TIMEOUT", "10"),
+    )
+)
+HF_OFFLINE = (
+    os.environ.get("LEGAL_RAG_HF_OFFLINE", os.environ.get("HF_HUB_OFFLINE", "0")) == "1"
+)
+HF_LOCAL_ONLY = (
+    os.environ.get("LEGAL_RAG_HF_LOCAL_ONLY", "0") == "1"
+)  # 1=offline-only; 0=internet first, local fallback
 # Cache dir: deterministic project .models_cache (never system-protected /app root)
 _raw_cache = os.environ.get("LEGAL_RAG_HF_CACHE_DIR", "").strip()
 _default_cache = str(BASE_DIR / ".models_cache")
@@ -127,6 +154,7 @@ def configure_hf_hub() -> None:
     if HF_OFFLINE:
         os.environ["HF_HUB_OFFLINE"] = "1"
 
+
 # LLM (по умолчанию — Groq, можно переключить на Ollama)
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 LLM_MODEL = os.environ.get("LEGAL_RAG_LLM", "llama-3.1-8b-instant")
@@ -134,20 +162,28 @@ LLM_TEMPERATURE = 0.0
 LLM_MAX_TOKENS = int(os.environ.get("LEGAL_RAG_LLM_MAX_TOKENS", "2048"))
 # Контекст (ограничение длины для предотвращения 413/TPM)
 CONTEXT_MAX_DOCS = int(os.environ.get("LEGAL_RAG_CONTEXT_MAX_DOCS", "5"))
-CONTEXT_MAX_CHARS_PER_DOC = int(os.environ.get("LEGAL_RAG_CONTEXT_MAX_CHARS_PER_DOC", "1200"))
+CONTEXT_MAX_CHARS_PER_DOC = int(
+    os.environ.get("LEGAL_RAG_CONTEXT_MAX_CHARS_PER_DOC", "1200")
+)
 
 # Retriever (двухэтапный: широкий отбор + rerank)
 # Tune via env vars — lower = faster Pinecone (free tier). Raise only if recall drops.
 RETRIEVER_WIDE_K = int(os.environ.get("LEGAL_RAG_RETRIEVER_WIDE_K", "10"))
 RETRIEVER_TOP_K = RETRIEVER_WIDE_K  # совместимость со старым кодом
-RETRIEVER_TOP_K_AFTER_RERANK = int(os.environ.get("LEGAL_RAG_RETRIEVER_TOP_K_AFTER_RERANK", "6"))
-RETRIEVER_MIN_K_CRIMINAL = int(os.environ.get("LEGAL_RAG_RETRIEVER_MIN_K_CRIMINAL", "8"))
+RETRIEVER_TOP_K_AFTER_RERANK = int(
+    os.environ.get("LEGAL_RAG_RETRIEVER_TOP_K_AFTER_RERANK", "6")
+)
+RETRIEVER_MIN_K_CRIMINAL = int(
+    os.environ.get("LEGAL_RAG_RETRIEVER_MIN_K_CRIMINAL", "8")
+)
 HYBRID_K = RETRIEVER_WIDE_K
 # Pinecone hard filtering (lineage metadata: code_ru, article_number, revision_date from chunks)
 # Optional env: restrict retrieval to one code and/or article (e.g. for testing).
 # Example (Article 136 only): LEGAL_RAG_FILTER_CODE_RU="Уголовный кодекс РК", LEGAL_RAG_FILTER_ARTICLE_NUMBER="136"
 RETRIEVER_FILTER_CODE_RU = os.environ.get("LEGAL_RAG_FILTER_CODE_RU", None)
-RETRIEVER_FILTER_ARTICLE_NUMBER = os.environ.get("LEGAL_RAG_FILTER_ARTICLE_NUMBER", None)
+RETRIEVER_FILTER_ARTICLE_NUMBER = os.environ.get(
+    "LEGAL_RAG_FILTER_ARTICLE_NUMBER", None
+)
 
 # Hybrid search: BM25 (exact terms e.g. "Article 122") + Dense vectors (semantic). Weights sum to 1.0.
 BM25_WEIGHT = float(os.environ.get("LEGAL_RAG_BM25_WEIGHT", "0.4"))
@@ -159,18 +195,28 @@ USE_RERANKER = os.environ.get("LEGAL_RAG_USE_RERANKER", "1") == "1"
 FLASHRANK_MODEL = "ms-marco-MiniLM-L-12-v2"
 
 # Agentic workflow (Board of Directors): Censor = fetch many, rerank to few
-AGENTIC_TOP_K_CANDIDATES = int(os.environ.get("LEGAL_RAG_AGENTIC_TOP_K_CANDIDATES", "50"))
+AGENTIC_TOP_K_CANDIDATES = int(
+    os.environ.get("LEGAL_RAG_AGENTIC_TOP_K_CANDIDATES", "50")
+)
 AGENTIC_RERANKER_TOP_N = int(os.environ.get("LEGAL_RAG_AGENTIC_RERANKER_TOP_N", "5"))
 # Self-RAG: if best reranker score below this, return "Information not found" (no LLM)
-AGENTIC_RERANKER_CONFIDENCE_THRESHOLD = float(os.environ.get("LEGAL_RAG_AGENTIC_RERANKER_CONFIDENCE_THRESHOLD", "0.35"))
+AGENTIC_RERANKER_CONFIDENCE_THRESHOLD = float(
+    os.environ.get("LEGAL_RAG_AGENTIC_RERANKER_CONFIDENCE_THRESHOLD", "0.35")
+)
 # HyDE + query expansion (Linguist-Analyst): number of query variations per language
-AGENTIC_QUERY_VARIATIONS = int(os.environ.get("LEGAL_RAG_AGENTIC_QUERY_VARIATIONS", "4"))
+AGENTIC_QUERY_VARIATIONS = int(
+    os.environ.get("LEGAL_RAG_AGENTIC_QUERY_VARIATIONS", "4")
+)
 # CoVe: enable post-response verification against cited articles
 AGENTIC_COVE_ENABLED = os.environ.get("LEGAL_RAG_AGENTIC_COVE_ENABLED", "1") == "1"
 
 # Detective Mode exit strategy: stop asking after threshold or after one round
-DETECTIVE_CONFIDENCE_THRESHOLD = float(os.environ.get("LEGAL_RAG_DETECTIVE_CONFIDENCE_THRESHOLD", "0.7"))
-DETECTIVE_MAX_CLARIFYING_QUESTIONS = int(os.environ.get("LEGAL_RAG_DETECTIVE_MAX_CLARIFYING_QUESTIONS", "2"))
+DETECTIVE_CONFIDENCE_THRESHOLD = float(
+    os.environ.get("LEGAL_RAG_DETECTIVE_CONFIDENCE_THRESHOLD", "0.7")
+)
+DETECTIVE_MAX_CLARIFYING_QUESTIONS = int(
+    os.environ.get("LEGAL_RAG_DETECTIVE_MAX_CLARIFYING_QUESTIONS", "2")
+)
 
 # Бенчмарк
 BENCHMARK_TIMEOUT_SEC = 300

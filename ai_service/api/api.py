@@ -36,6 +36,7 @@ async def _warmup_rag():
     try:
         # Level 1: Hooks - Absolute Guarantee
         from ai_service.lifecycle_hooks import pre_flight_check
+
         pre_flight_check()
 
         from ai_service.retrieval import rag_chain
@@ -48,7 +49,9 @@ async def _warmup_rag():
         logger.info("[SUCCESS] Model Initialization (%.2fs)", elapsed)
     except Exception as e:
         elapsed = time.perf_counter() - t0
-        logger.error("[FAIL] Model Initialization (%.2fs): %s", elapsed, e, exc_info=True)
+        logger.error(
+            "[FAIL] Model Initialization (%.2fs): %s", elapsed, e, exc_info=True
+        )
         raise
 
 
@@ -62,15 +65,19 @@ class ChatRequest(BaseModel):
     query: str
     history: Optional[List[dict]] = []
 
+
 class SourceDocument(BaseModel):
     page_content: str
     metadata: dict
 
+
 class AnalysisRequest(BaseModel):
     text: str
 
+
 class AnalysisResponse(BaseModel):
     result: str
+
 
 class ChatResponse(BaseModel):
     result: str
@@ -82,7 +89,9 @@ class ChatResponse(BaseModel):
     deductive_block: Optional[Dict[str, Any]] = None
     deductive_output: Optional[str] = None
 
+
 import numpy as np
+
 
 def convert_numpy_types(obj):
     if isinstance(obj, np.integer):
@@ -97,6 +106,7 @@ def convert_numpy_types(obj):
         return [convert_numpy_types(i) for i in obj]
     return obj
 
+
 @app.post("/api/v1/internal-chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest):
     logger.info("[START] Incoming Request Parsing")
@@ -107,33 +117,39 @@ async def chat(request: Request, body: ChatRequest):
         _query = body.query
         _history = body.history or []
         intent = intent_router.classify_intent(_query)
-        logger.info("[SUCCESS] Request Parsed (query_len=%d, history_len=%d, intent=%s)", len(_query), len(_history), intent)
+        logger.info(
+            "[SUCCESS] Request Parsed (query_len=%d, history_len=%d, intent=%s)",
+            len(_query),
+            len(_history),
+            intent,
+        )
     except Exception as e:
         logger.error("Request parsing failed: %s", e, exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        from ai_service.retrieval import detective_mode, rag_chain, verification_engine, sherlock_engine
+        from ai_service.retrieval import (
+            detective_mode,
+            rag_chain,
+            verification_engine,
+            sherlock_engine,
+        )
 
         deductive_data = None
         sherlock_res = None
         if intent == intent_router.SOCIAL:
             response = rag_chain.invoke_qa(
-                body.query,
-                history=body.history,
-                intent=intent
+                body.query, history=body.history, intent=intent
             )
         elif intent == intent_router.GENERAL_LEGAL:
             # RAG included, but Detective Mode (fact gathering) disabled
             response = rag_chain.invoke_qa(
-                body.query,
-                history=body.history,
-                intent=intent
+                body.query, history=body.history, intent=intent
             )
             # For General Legal, we can still run a light deductive check
             skills = verification_engine.DeductiveReasoningSkill()
             deductive_data = await skills.run_deductive_cycle(body.query)
-            
+
             # New Sherlock Mode
             sherlock = sherlock_engine.SherlockEngine()
             sherlock_res = await sherlock.run_sherlock_loop(body.query)
@@ -151,13 +167,15 @@ async def chat(request: Request, body: ChatRequest):
             # New Sherlock Mode
             sherlock = sherlock_engine.SherlockEngine()
             sherlock_res = await sherlock.run_sherlock_loop(body.query)
-        
+
         result = response.get("result", "")
         source_docs = []
         for doc in response.get("source_documents", []):
             if hasattr(doc, "metadata"):
                 metadata = convert_numpy_types(doc.metadata)
-                source_docs.append({"page_content": doc.page_content, "metadata": metadata})
+                source_docs.append(
+                    {"page_content": doc.page_content, "metadata": metadata}
+                )
             else:
                 source_docs.append(convert_numpy_types(doc))
 
@@ -177,12 +195,17 @@ async def chat(request: Request, body: ChatRequest):
             confidence_score=response.get("confidence_score", 0.0),
             missing_fields=response.get("missing_fields") or [],
             clarifying_questions=response.get("clarifying_questions"),
-            deductive_block=convert_numpy_types(deductive_data) if deductive_data else None,
-            deductive_output=sherlock_res.get("deductive_output") if sherlock_res else None
+            deductive_block=(
+                convert_numpy_types(deductive_data) if deductive_data else None
+            ),
+            deductive_output=(
+                sherlock_res.get("deductive_output") if sherlock_res else None
+            ),
         )
     except Exception as e:
         logger.error("Step failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/v1/analyze", response_model=AnalysisResponse)
 async def analyze(request: AnalysisRequest):
@@ -195,10 +218,12 @@ async def analyze(request: AnalysisRequest):
         logger.error("Analysis step failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/v1/stats")
 async def get_stats():
     try:
         from ai_service.retrieval import rag_chain
+
         # Get stats from Pinecone index via LangChain vectorstore
         # Note: This depends on the specific vectorstore implementation
         # For Pinecone, we can access the index directly
@@ -207,10 +232,14 @@ async def get_stats():
             "index_dimension": 0,
             "models": {
                 "embedding": "multilingual-e5-large",
-                "reranker": "BAAI/bge-reranker-v2-m3" if rag_chain.config.USE_RERANKER else "None"
-            }
+                "reranker": (
+                    "BAAI/bge-reranker-v2-m3"
+                    if rag_chain.config.USE_RERANKER
+                    else "None"
+                ),
+            },
         }
-        
+
         try:
             vs = rag_chain.get_vector_store()
             if hasattr(vs, "_index"):
@@ -225,13 +254,15 @@ async def get_stats():
         logger.error("Stats fetch failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/v1/generate-eval-data")
 async def generate_eval_data(request: ChatRequest):
     try:
         from ai_service.retrieval import rag_chain
+
         # We reuse ChatRequest (query: str) for simpler reuse
         response = rag_chain.invoke_qa(request.query)
-        
+
         result = response.get("result", "")
         chunks = [doc.page_content for doc in response.get("source_documents", [])]
         articles = []
@@ -240,14 +271,11 @@ async def generate_eval_data(request: ChatRequest):
             article = doc.metadata.get("article_number", "")
             articles.append(f"{code} ст.{article}" if article else code)
 
-        return {
-            "answer": result,
-            "chunks": chunks,
-            "articles": articles
-        }
+        return {"answer": result, "chunks": chunks, "articles": articles}
     except Exception as e:
         logger.error("Generate eval data failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

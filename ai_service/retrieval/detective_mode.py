@@ -63,6 +63,7 @@ def _linguist_query_expansion(query: str, trace_id: str) -> Tuple[dict, dict]:
     ms = round((time.perf_counter() - t0) * 1000)
     return expanded_terms, search_variants, {"linguist_expansion_ms": ms}
 
+
 MISSING_INFO_PROMPT = """Ты — юридический аналитик по НПА РК. Проанализируй запрос пользователя и диалог.
 
 Иерархия права РК: Конституция → кодексы и законы РК. Все выводы только по ним.
@@ -153,12 +154,37 @@ def _check_missing_info(
                 questions = [str(questions)]
             questions = questions[:MAX_CLARIFYING_QUESTIONS]
         else:
-            confidence, critical, contextual, blind_spots, assumptions, questions, proceed = 0.7, [], [], [], [], [], True
+            (
+                confidence,
+                critical,
+                contextual,
+                blind_spots,
+                assumptions,
+                questions,
+                proceed,
+            ) = (0.7, [], [], [], [], [], True)
     except Exception as e:
         print(f"[{trace_id}] missing-info check failed: {e}")
-        confidence, critical, contextual, blind_spots, assumptions, questions, proceed = 0.7, [], [], [], [], [], True
+        (
+            confidence,
+            critical,
+            contextual,
+            blind_spots,
+            assumptions,
+            questions,
+            proceed,
+        ) = (0.7, [], [], [], [], [], True)
     ms = round((time.perf_counter() - t0) * 1000)
-    return confidence, critical, contextual, blind_spots, assumptions, questions, proceed, {"detective_completeness_ms": ms}
+    return (
+        confidence,
+        critical,
+        contextual,
+        blind_spots,
+        assumptions,
+        questions,
+        proceed,
+        {"detective_completeness_ms": ms},
+    )
 
 
 def _is_first_interaction(history: Optional[List[dict]]) -> bool:
@@ -169,6 +195,7 @@ def _is_first_interaction(history: Optional[List[dict]]) -> bool:
 
 
 # ─── Exit strategy: ask only once, then partial analysis ────────────────────
+
 
 def _should_ask_questions(
     confidence: float,
@@ -205,13 +232,16 @@ def _internal_knowledge_fallback(query: str, trace_id: str) -> Tuple[str, dict]:
     t0 = time.perf_counter()
     llm = rag_chain.get_llm()
     try:
-        resp = llm.invoke(INTERNAL_KNOWLEDGE_FALLBACK_PROMPT.format(query=query.strip()))
+        resp = llm.invoke(
+            INTERNAL_KNOWLEDGE_FALLBACK_PROMPT.format(query=query.strip())
+        )
         answer = resp.content if hasattr(resp, "content") else str(resp)
     except Exception as e:
         print(f"[{trace_id}] internal fallback failed: {e}")
         answer = "⚠️ ВНИМАНИЕ: Информация не найдена в текущей базе данных. Рекомендуется консультация юриста."
     ms = round((time.perf_counter() - t0) * 1000)
     return answer.strip(), {"internal_fallback_ms": ms}
+
 
 CAUSALITY_SYNTHESIS_PROMPT = """На основе приведённого ответа и контекста НПА РК оформи итог в виде строгой правовой логики.
 
@@ -242,7 +272,9 @@ def _synthesis_causality_skeptic_flip(
     llm = rag_chain.get_llm()
     try:
         resp = llm.invoke(
-            CAUSALITY_SYNTHESIS_PROMPT.format(answer=answer[:3000], context=context_str[:4000])
+            CAUSALITY_SYNTHESIS_PROMPT.format(
+                answer=answer[:3000], context=context_str[:4000]
+            )
         )
         enriched = resp.content if hasattr(resp, "content") else str(resp)
     except Exception as e:
@@ -307,6 +339,7 @@ def _synthesis_partial_analysis(
 
 # ─── Confidence score (final) ──────────────────────────────────────────────
 
+
 def _compute_confidence(
     best_reranker_score: float,
     cove_passed: bool,
@@ -324,6 +357,7 @@ def _compute_confidence(
 
 
 # ─── Main entry ─────────────────────────────────────────────────────────────
+
 
 async def invoke_detective_qa(
     query: str,
@@ -347,9 +381,16 @@ async def invoke_detective_qa(
     expanded_query = search_variants.get("semantic", query)
 
     # STAGE 2: THE DETECTIVE (Missing Data Check)
-    confidence_est, critical_missing, contextual_missing, blind_spots, assumptions, questions, proceed_to_search, m_comp = _check_missing_info(
-        expanded_query, history, trace_id
-    )
+    (
+        confidence_est,
+        critical_missing,
+        contextual_missing,
+        blind_spots,
+        assumptions,
+        questions,
+        proceed_to_search,
+        m_comp,
+    ) = _check_missing_info(expanded_query, history, trace_id)
     metrics.update(m_comp)
     is_first = _is_first_interaction(history)
     should_ask = _should_ask_questions(
@@ -379,7 +420,9 @@ async def invoke_detective_qa(
         }
 
     # STAGE 3: THE REASONER (Hybrid Synthesis)
-    agentic_out = await agentic_workflow.invoke_agentic_qa(expanded_query, history=history, trace_id=trace_id)
+    agentic_out = await agentic_workflow.invoke_agentic_qa(
+        expanded_query, history=history, trace_id=trace_id
+    )
     result = agentic_out.get("result", "")
     source_documents = agentic_out.get("source_documents", [])
     trace_report = agentic_out.get("trace_report") or {}
@@ -396,13 +439,18 @@ async def invoke_detective_qa(
 
     # Synthesis: full or partial
     if confidence_est >= CONFIDENCE_THRESHOLD and source_documents:
-        result, m_syn = _synthesis_causality_skeptic_flip(result, source_documents, trace_id)
+        result, m_syn = _synthesis_causality_skeptic_flip(
+            result, source_documents, trace_id
+        )
     else:
         data_pct = int(confidence_est * 100) if confidence_est else 40
         result, m_syn = _synthesis_partial_analysis(
-            result, source_documents,
-            critical_missing, contextual_missing,
-            data_pct, trace_id,
+            result,
+            source_documents,
+            critical_missing,
+            contextual_missing,
+            data_pct,
+            trace_id,
         )
     metrics.update(m_syn)
 
@@ -419,7 +467,9 @@ async def invoke_detective_qa(
     trace_report["metadata"]["id"] = trace_id
     trace_report.setdefault("detective", {})["completeness_rejected"] = False
     trace_report["detective"]["exit"] = "synthesis"
-    trace_report["detective"]["partial_analysis"] = confidence_est < CONFIDENCE_THRESHOLD
+    trace_report["detective"]["partial_analysis"] = (
+        confidence_est < CONFIDENCE_THRESHOLD
+    )
 
     return {
         "result": result,

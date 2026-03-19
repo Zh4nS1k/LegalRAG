@@ -24,7 +24,9 @@ def pre_flight_check():
         print(f"[FAIL] Models cache not found: {cache_dir}")
         sys.exit(1)
 
-    model_files = list(cache_dir.rglob("*.bin")) + list(cache_dir.rglob("*.safetensors"))
+    model_files = list(cache_dir.rglob("*.bin")) + list(
+        cache_dir.rglob("*.safetensors")
+    )
     if not model_files:
         print(f"[INFO] No model files in cache: {cache_dir}, downloading...")
         result = download_models_main()
@@ -32,7 +34,9 @@ def pre_flight_check():
             print("[FAIL] Failed to download models")
             sys.exit(1)
         # Check again after download
-        model_files = list(cache_dir.rglob("*.bin")) + list(cache_dir.rglob("*.safetensors"))
+        model_files = list(cache_dir.rglob("*.bin")) + list(
+            cache_dir.rglob("*.safetensors")
+        )
         if not model_files:
             print("[FAIL] Still no model files after download")
             sys.exit(1)
@@ -44,7 +48,9 @@ def pre_flight_check():
         total_memory = torch.cuda.get_device_properties(0).total_memory
         memory_gb = total_memory / (1024**3)
         if total_memory < 4 * 1024**3:  # 4GB threshold
-            print(f"[HOOK] GPU memory insufficient ({memory_gb:.2f}GB < 4GB) — forcing CPU mode")
+            print(
+                f"[HOOK] GPU memory insufficient ({memory_gb:.2f}GB < 4GB) — forcing CPU mode"
+            )
             os.environ["CUDA_VISIBLE_DEVICES"] = ""
         else:
             print(f"[OK] GPU memory: {memory_gb:.2f}GB")
@@ -52,6 +58,7 @@ def pre_flight_check():
     # 2. Check Pinecone connectivity (no hangs)
     try:
         from pinecone import Pinecone
+
         pc = Pinecone(api_key=config.PINECONE_API_KEY)
         if config.PINECONE_INDEX_NAME not in pc.list_indexes().names():
             print(f"[FAIL] Pinecone index '{config.PINECONE_INDEX_NAME}' not found")
@@ -72,6 +79,7 @@ def network_sensor(func):
     If >2s timeout — force offline_mode (local models only).
     If GPU <4GB — force CPU mode.
     """
+
     def wrapper(*args, **kwargs):
         # Check internet connectivity with 2s timeout
         if not connectivity.is_internet_available(timeout=2.0):
@@ -91,4 +99,5 @@ def network_sensor(func):
                 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
         return func(*args, **kwargs)
+
     return wrapper

@@ -15,6 +15,7 @@ GENERAL_LEGAL_CONTEXT = """
 Если конкретные статьи не найдены, рекомендуется обратиться к соответствующему кодексу или закону.
 """
 
+
 class LegalRetrievalSkill:
     def __init__(self):
         self.confidence_calc = ConfidenceCalculator()
@@ -32,11 +33,17 @@ class LegalRetrievalSkill:
             confidence = self.confidence_calc.calculate_confidence(docs)
             if confidence < 0.6:
                 from langchain_core.documents import Document
-                general_doc = Document(page_content=GENERAL_LEGAL_CONTEXT, metadata={"source": "general_context", "score": 0.5})
+
+                general_doc = Document(
+                    page_content=GENERAL_LEGAL_CONTEXT,
+                    metadata={"source": "general_context", "score": 0.5},
+                )
                 docs.append(general_doc)
 
             # Step 4: Detective - Match facts with sources
-            matched_facts = self._detective_matching(query, docs, similarity_scores, trace_id)
+            matched_facts = self._detective_matching(
+                query, docs, similarity_scores, trace_id
+            )
 
             return {
                 "success": True,
@@ -44,14 +51,10 @@ class LegalRetrievalSkill:
                 "documents": docs,
                 "confidence": confidence,
                 "matched_facts": matched_facts,
-                "trace_id": trace_id
+                "trace_id": trace_id,
             }
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "trace_id": trace_id
-            }
+            return {"success": False, "error": str(e), "trace_id": trace_id}
 
     def _linguist_expansion(self, query, trace_id):
         """Step 1: Expand query with legal terminology."""
@@ -61,7 +64,7 @@ class LegalRetrievalSkill:
             "студент": "обучающийся в образовательном учреждении",
             "ночная смена": "работа в ночное время",
             "штраф": "административная ответственность",
-            "преступление": "уголовное правонарушение"
+            "преступление": "уголовное правонарушение",
         }
 
         expanded = query
@@ -71,7 +74,7 @@ class LegalRetrievalSkill:
         search_variants = {
             "semantic": expanded,
             "keyword": f"{expanded} статья кодекс",
-            "broad": f"{expanded} законодательство РК"
+            "broad": f"{expanded} законодательство РК",
         }
 
         return expanded, search_variants
@@ -98,7 +101,9 @@ class LegalRetrievalSkill:
             content = doc.page_content.lower()
             # Simple keyword matching (mechanical)
             if any(word in content for word in query.lower().split()):
-                matched_facts.append(f"Matched in {doc.metadata.get('code_ru', 'Unknown')}")
+                matched_facts.append(
+                    f"Matched in {doc.metadata.get('code_ru', 'Unknown')}"
+                )
             if len(matched_facts) >= 3:  # Limit matches
                 break
 

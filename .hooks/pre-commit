@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# Pre-commit hook to enforce code formatting and security scans
+echo "[Hook: pre-commit] Running linters and formatters..."
+./scripts/format_code.sh
+FORMAT_EXIT=$?
+
+if [ $FORMAT_EXIT -ne 0 ]; then
+  echo "[Hook: pre-commit] Formatting failed. Commit aborted."
+  exit 1
+fi
+
+echo "[Hook: pre-commit] Running basic security scan..."
+./scripts/security_scan.py
+SEC_EXIT=$?
+
+if [ $SEC_EXIT -ne 0 ]; then
+  echo "[Hook: pre-commit] Security scan failed. Commit aborted."
+  exit 1
+fi
+
+echo "[Hook: pre-commit] All checks passed."
+exit 0

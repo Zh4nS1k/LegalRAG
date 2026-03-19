@@ -3,6 +3,7 @@
 
 import math
 
+
 class ConfidenceCalculator:
     @staticmethod
     def calculate_confidence(similarity_scores, threshold=0.5):

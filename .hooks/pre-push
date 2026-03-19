@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# Pre-push hook: Run critical tests before pushing
+echo "[Hook: pre-push] Running critical tests..."
+
+make test
+TEST_EXIT=$?
+
+if [ $TEST_EXIT -ne 0 ]; then
+  echo "[Hook: pre-push] Tests failed! Push aborted."
+  exit 1
+fi
+
+echo "[Hook: pre-push] All tests passed."
+exit 0

@@ -23,7 +23,9 @@ from pathlib import Path
 
 # Resolve paths before any HF import
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_CACHE_DIR = os.environ.get("LEGAL_RAG_HF_CACHE_DIR", "").strip() or str(_REPO_ROOT / ".models_cache")
+_CACHE_DIR = os.environ.get("LEGAL_RAG_HF_CACHE_DIR", "").strip() or str(
+    _REPO_ROOT / ".models_cache"
+)
 
 
 def _setup_cache_env() -> None:
@@ -40,10 +42,13 @@ def main() -> int:
     print(f"[download_models] Cache directory: {_CACHE_DIR}")
 
     # 1. Embedding model (intfloat/multilingual-e5-large)
-    embedding_model = os.environ.get("LEGAL_RAG_EMBEDDING", "intfloat/multilingual-e5-large")
+    embedding_model = os.environ.get(
+        "LEGAL_RAG_EMBEDDING", "intfloat/multilingual-e5-large"
+    )
     print(f"[download_models] Downloading embedding model: {embedding_model}")
     try:
         from sentence_transformers import SentenceTransformer
+
         SentenceTransformer(embedding_model)
         print(f"[download_models] OK: {embedding_model}")
     except Exception as e:
@@ -51,19 +56,26 @@ def main() -> int:
         return 1
 
     # 2. Reranker (BAAI/bge-reranker-v2-m3) — used by agentic workflow
-    reranker_model = os.environ.get("LEGAL_RAG_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+    reranker_model = os.environ.get(
+        "LEGAL_RAG_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"
+    )
     print(f"[download_models] Downloading reranker model: {reranker_model}")
     try:
         from FlagEmbedding import FlagReranker
+
         FlagReranker(reranker_model, use_fp16=True)
         print(f"[download_models] OK: {reranker_model}")
     except ImportError:
-        print(f"[download_models] SKIP: FlagEmbedding not installed, reranker not cached")
+        print(
+            f"[download_models] SKIP: FlagEmbedding not installed, reranker not cached"
+        )
     except Exception as e:
         print(f"[download_models] FAILED: {reranker_model}: {e}", file=sys.stderr)
         return 1
 
-    print("[download_models] All models cached. Start server with LEGAL_RAG_HF_LOCAL_ONLY=1 for offline mode.")
+    print(
+        "[download_models] All models cached. Start server with LEGAL_RAG_HF_LOCAL_ONLY=1 for offline mode."
+    )
     return 0
 
 

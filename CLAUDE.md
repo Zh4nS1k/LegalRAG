@@ -37,3 +37,11 @@ Hooks isolate dependencies; Scripts handle logic; Skills standardize processes.
 ## Rule 11: Chat Session Isolation
 - Each message in a chat belongs to an isolated context (chat_id).
 - Mentioning facts from other sessions is a critical bug. Use only current session history.
+
+## Rule 12: AI-Engineering Architecture Compliance
+- **Hooks**: Always use `.hooks/` (pre-commit, post-merge, pre-push) to ensure automated checks run instantly and cannot be bypassed.
+- **Scripts**: Delegate complex/deterministic logic to testing scripts in `scripts/` (e.g. `validate_data.py`). Never use LLM reasoning for fixed validations.
+- **Skills**: When initiating complex tasks (like creating a PR), use standardized instruction sets stored in `skills/` (e.g. `skills/create_pr/steps.yaml`).
+- **Prompts**: Store template prompts in `prompts/`. Prefer executing scripts over generating new instructions.
+- **Style Rules**: Always use type hints in Python. Use `camelCase` for JS function names.
+- **Security Check**: Never store secrets in code. `scripts/security_scan.py` must pass on every commit.

@@ -20,10 +20,18 @@ from langchain_core.documents import Document
 from ai_service.processing.prepare_data import chunks, raw_docs
 
 # Проверка до очистки: есть ли ст. 136 УК в распарсенных чанках
-uk_136_chunks = [c for c in chunks if "criminal_code" in c.metadata.get("source", "") and "136" in c.page_content]
+uk_136_chunks = [
+    c
+    for c in chunks
+    if "criminal_code" in c.metadata.get("source", "") and "136" in c.page_content
+]
 print(f"[Проверка] Чанков со ст. 136 УК (до очистки): {len(uk_136_chunks)}")
 if uk_136_chunks:
-    print("Пример ст. 136 УК:", uk_136_chunks[0].page_content[:300].replace("\n", " "), "...")
+    print(
+        "Пример ст. 136 УК:",
+        uk_136_chunks[0].page_content[:300].replace("\n", " "),
+        "...",
+    )
 else:
     print("Ст. 136 УК не найдена в чанках — проверьте criminal_code.txt и чанкинг.")
 
@@ -78,6 +86,7 @@ if not api_key:
 
 
 from pinecone import Pinecone, ServerlessSpec
+
 pc = Pinecone(api_key=api_key)
 
 index_name = config.PINECONE_INDEX_NAME
@@ -91,7 +100,7 @@ if index_name not in existing:
             name=index_name,
             dimension=config.PINECONE_DIMENSION,
             metric="cosine",
-            spec=ServerlessSpec(cloud="aws", region="us-east-1")
+            spec=ServerlessSpec(cloud="aws", region="us-east-1"),
         )
         print("Индекс создан. Ожидание готовности...")
         while not pc.describe_index(index_name).status.get("ready"):
@@ -123,6 +132,7 @@ MAX_TEXT_IN_METADATA_BYTES = 30000
 # Макс. символов для "text" (кириллица 2 байта/символ, JSON экранирование может увеличить размер)
 MAX_PAGE_CONTENT_CHARS = 4000
 
+
 # Whitelist + blacklist: только короткие поля, длинные — удалить или обрезать
 def clean_metadata(meta: dict) -> dict:
     """
@@ -130,16 +140,35 @@ def clean_metadata(meta: dict) -> dict:
     Гарантирует размер < 2 KB (лимит Pinecone: 40 KB).
     """
     blacklist = [
-        'text', 'content', 'full_text', 'raw', 'body', 'snippet', 'notes',
-        'chapter_text', 'page_content', 'raw_text', 'chapter_content',
-        'article_text', 'snippets', 'full_article', 'raw_content'
+        "text",
+        "content",
+        "full_text",
+        "raw",
+        "body",
+        "snippet",
+        "notes",
+        "chapter_text",
+        "page_content",
+        "raw_text",
+        "chapter_content",
+        "article_text",
+        "snippets",
+        "full_article",
+        "raw_content",
     ]
     allowed = [
-        'source', 'code_ru', 'code_kz', 'article_number',
+        "source",
+        "code_ru",
+        "code_kz",
+        "article_number",
         # Legal hierarchy fields (NEW)
-        'chapter_title', 'chapter_number', 'clause_level', 'revision_date',
+        "chapter_title",
+        "chapter_number",
+        "clause_level",
+        "revision_date",
         # Legacy fields
-        'chapter', 'section',
+        "chapter",
+        "section",
     ]
 
     clean = {}
@@ -148,17 +177,18 @@ def clean_metadata(meta: dict) -> dict:
             continue  # не добавляем длинные поля вообще
         if k in allowed:
             v_str = str(v)
-            clean[k] = v_str[:200] + '...' if len(v_str) > 200 else v_str
+            clean[k] = v_str[:200] + "..." if len(v_str) > 200 else v_str
         else:
             # неизвестное поле — добавляем только если короткое, иначе обрезаем
             v_str = str(v)
-            size_bytes = len(v_str.encode('utf-8'))
+            size_bytes = len(v_str.encode("utf-8"))
             if size_bytes < 1000:
                 clean[k] = v_str
             else:
                 print(f"Предупреждение: поле '{k}' обрезано (было {size_bytes} байт)")
-                clean[k] = v_str[:200] + '...'
+                clean[k] = v_str[:200] + "..."
     return clean
+
 
 print("Очистка метаданных (Pinecone limit: 40 KB)...")
 print("Отладка метаданных (ищем превышение):")
@@ -172,29 +202,32 @@ for idx, chunk in enumerate(chunks):
     clean_meta = clean_metadata(chunk.metadata)
     # Проверяем размер метаданных в байтах (UTF-8) после сериализации в JSON
     meta_json = json.dumps(clean_meta, ensure_ascii=False)
-    meta_size = len(meta_json.encode('utf-8'))
-    
+    meta_size = len(meta_json.encode("utf-8"))
+
     if meta_size > max_meta_size:
         max_meta_size = meta_size
         bad_chunk_idx = idx
-    
+
     # Находим все чанки с метаданными > 38 KB (чуть ниже лимита для отладки)
     if meta_size > 38000:
         bad_chunks_found.append((idx, meta_size, clean_meta, chunk.page_content[:200]))
         print(f"!!! Чанк {idx} — размер метаданных (JSON): {meta_size} байт")
         print(f"   Метаданные: {clean_meta}")
         print(f"   Текст чанка (первые 200): {chunk.page_content[:200]}...\n")
-    
+
     # Обрезаем page_content: библиотека положит его в metadata["text"], лимит 40 KB
     content = chunk.page_content
     # Проверяем размер контента в UTF-8
-    if len(content.encode('utf-8')) > MAX_TEXT_IN_METADATA_BYTES:
+    if len(content.encode("utf-8")) > MAX_TEXT_IN_METADATA_BYTES:
         # Обрезаем по символам и проверяем байты снова
         content = content[:MAX_PAGE_CONTENT_CHARS]
-        while len(content.encode('utf-8')) > MAX_TEXT_IN_METADATA_BYTES and len(content) > 0:
+        while (
+            len(content.encode("utf-8")) > MAX_TEXT_IN_METADATA_BYTES
+            and len(content) > 0
+        ):
             content = content[:-100]
         content += "\n[... текст обрезан из-за лимита Pinecone 40 KB ...]"
-    
+
     clean_chunk = Document(page_content=content, metadata=clean_meta)
     clean_chunks.append(clean_chunk)
 
@@ -225,29 +258,35 @@ for idx, chunk in enumerate(clean_chunks):
     # Симулируем что сделает langchain_pinecone
     simulated_meta = chunk.metadata.copy()
     simulated_meta["text"] = chunk.page_content
-    
+
     meta_json = json.dumps(simulated_meta, ensure_ascii=False)
-    total_est = len(meta_json.encode('utf-8'))
-    
-    meta_only_size = len(json.dumps(chunk.metadata, ensure_ascii=False).encode('utf-8'))
+    total_est = len(meta_json.encode("utf-8"))
+
+    meta_only_size = len(json.dumps(chunk.metadata, ensure_ascii=False).encode("utf-8"))
     max_meta_only = max(max_meta_only, meta_only_size)
-    
+
     if total_est > max_total_est:
         max_total_est = total_est
         bad_idx = idx
     if total_est > 38000:
-        print(f"!!! Чанк №{idx} — оценка итога (JSON): {total_est} байт (meta_only: {meta_only_size})")
+        print(
+            f"!!! Чанк №{idx} — оценка итога (JSON): {total_est} байт (meta_only: {meta_only_size})"
+        )
         print(f"   Метаданные: {chunk.metadata}")
         print(f"   Первые 200 символов текста: {chunk.page_content[:200]}...\n")
 
 print(f"Метаданные (без text): макс. {max_meta_only} байт")
 print(f"Оценка макс. итога (JSON meta + text): {max_total_est} байт (лимит: 40960)")
 if bad_idx >= 0 and max_total_est > 40960:
-    print(f"Проблемный чанк №{bad_idx} — page_content обрезан до {MAX_PAGE_CONTENT_CHARS} символов")
+    print(
+        f"Проблемный чанк №{bad_idx} — page_content обрезан до {MAX_PAGE_CONTENT_CHARS} символов"
+    )
 
 if max_total_est > 40960:
     print(f"\n⚠️  СТОП: оценка размера > 40 KB. Уменьшите MAX_PAGE_CONTENT_CHARS.")
-    raise SystemExit("См. константы MAX_PAGE_CONTENT_CHARS / MAX_TEXT_IN_METADATA_BYTES выше.")
+    raise SystemExit(
+        "См. константы MAX_PAGE_CONTENT_CHARS / MAX_TEXT_IN_METADATA_BYTES выше."
+    )
 
 import time as _time
 
@@ -259,16 +298,19 @@ total_batches = (total_chunks + BATCH_SIZE - 1) // BATCH_SIZE
 
 # Set SKIP_BATCHES=143 to resume from batch 144 (0-indexed skip)
 import os as _os
+
 skip_n = int(_os.environ.get("SKIP_BATCHES", "0"))
 if skip_n > 0:
-    print(f"⏭  Пропускаем первые {skip_n} батчей (резюме с позиции {skip_n * BATCH_SIZE})")
+    print(
+        f"⏭  Пропускаем первые {skip_n} батчей (резюме с позиции {skip_n * BATCH_SIZE})"
+    )
 
 for i in range(0, total_chunks, BATCH_SIZE):
     batch_num = i // BATCH_SIZE + 1
     if batch_num <= skip_n:
         continue
 
-    batch = clean_chunks[i: i + BATCH_SIZE]
+    batch = clean_chunks[i : i + BATCH_SIZE]
     print(f"   Бач {batch_num}/{total_batches}: документы {i} - {i + len(batch)}")
 
     # Retry with exponential backoff (3 attempts: 5s, 10s, 20s)
@@ -277,7 +319,7 @@ for i in range(0, total_chunks, BATCH_SIZE):
             vector_store.add_documents(batch, batch_size=32)
             break  # success
         except Exception as e:
-            wait = 5 * (2 ** attempt)
+            wait = 5 * (2**attempt)
             print(f"   ⚠️  Попытка {attempt + 1}/3 не удалась: {e}")
             if attempt < 2:
                 print(f"   ⏳ Ждём {wait}с перед повтором...")
@@ -298,8 +340,14 @@ print(f"Документов: {len(raw_docs)}")
 print(f"Чанков: {len(chunks)}")
 
 # Проверка после очистки: есть ли ст. 136 УК РК (баланы ауыстыру) в загружаемых чанках
-uk_136 = [c for c in clean_chunks if "criminal_code" in c.metadata.get("source", "") and "136" in c.page_content]
-print(f"[Проверка] Чанков со ст. 136 УК РК (после очистки, в загруженных): {len(uk_136)}")
+uk_136 = [
+    c
+    for c in clean_chunks
+    if "criminal_code" in c.metadata.get("source", "") and "136" in c.page_content
+]
+print(
+    f"[Проверка] Чанков со ст. 136 УК РК (после очистки, в загруженных): {len(uk_136)}"
+)
 if uk_136:
     print("Пример ст. 136 УК:", uk_136[0].page_content[:250].replace("\n", " "), "...")
 else:
@@ -311,9 +359,9 @@ print(f"\nТестовый поиск: '{test_query}'")
 test_results = vector_store.similarity_search(test_query, k=3)
 
 for i, doc in enumerate(test_results, 1):
-    source = doc.metadata.get('source', 'неизвестно')
-    article = doc.metadata.get('article_number', '-')
-    code_ru = doc.metadata.get('code_ru', '-')
-    content = doc.page_content[:150].replace('\n', ' ')
+    source = doc.metadata.get("source", "неизвестно")
+    article = doc.metadata.get("article_number", "-")
+    code_ru = doc.metadata.get("code_ru", "-")
+    content = doc.page_content[:150].replace("\n", " ")
     print(f"{i}. {code_ru} ст. {article} | {source}")
     print(f"   {content}...\n")

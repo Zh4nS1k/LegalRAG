@@ -683,4 +683,17 @@ Sources are always cited. The system **refuses to fabricate** article numbers, s
 
 ---
 
+## 🛠 AI-Engineering Architecture
+
+This project strictly adheres to **deterministic AI engineering principles**. AI responsibility is shifted as low down the stack as possible to maximize reliability.
+
+**Key Components:**
+- `.hooks/`: Strict git hooks (`pre-commit`, `post-merge`, `pre-push`) guaranteeing code style, test success, and security before integration. Enable via `make install-hooks`.
+- `scripts/`: Rigid helper scripts (`format_code.sh`, `validate_data.py`, `security_scan.py`) that the AI agent calls instead of self-generating logic.
+- `skills/`: Declarative JSON/YAML instructions mapping out precise multi-step goals for the AI (e.g., automated PR creation).
+- `prompts/`: Standardized markdown templates for defining new features.
+- `Makefile`: Single source of truth for automation. Use `make lint`, `make test`, or `make security-scan`.
+
+---
+
 *Legally is an AI assistant. Always verify legal conclusions with a qualified lawyer.*

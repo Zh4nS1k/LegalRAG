@@ -1,6 +1,7 @@
 # iteration_manager.py — Level 2: Scripts (Hard Logic)
 # Counts clarification iterations. If counter >= 2, force synthesis=True.
 
+
 class IterationController:
     def __init__(self, max_iterations=2):
         self.max_iterations = max_iterations

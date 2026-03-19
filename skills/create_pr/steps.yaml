@@ -1,0 +1,22 @@
+steps:
+  - name: Verify Branch
+    action: shell
+    command: git checkout {{ branch_name }}
+    
+  - name: Run Linters Before Committing Action
+    action: run_script
+    script: scripts/format_code.sh
+    halt_on_failure: true
+
+  - name: Push Branch
+    action: shell
+    command: git push -u origin {{ branch_name }}
+
+  - name: Create PR via GitHub CLI
+    action: shell
+    # This invokes gh cli
+    command: >
+      gh pr create 
+      --title "{{ title }}" 
+      --body "Auto-generated PR by Legally AI.\n\n### Changes:\n- Formatting and linting checks passed.\n- Ready for review."
+      --reviewer "{{ reviewers | join(',') }}"
