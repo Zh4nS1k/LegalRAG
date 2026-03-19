@@ -1,0 +1,3 @@
+From https://github.com/zloo00/LegalRAG
+ * branch            main       -> FETCH_HEAD
+fatal: unable to read tree (9498479096368225e1c1bc58710db785dd828632)

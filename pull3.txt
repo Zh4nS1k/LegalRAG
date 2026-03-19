@@ -1,0 +1,17 @@
+From https://github.com/zloo00/LegalRAG
+ * branch            main       -> FETCH_HEAD
+Rebasing (1/1)Auto-merging ai_service/processing/fetch_adilet.py
+CONFLICT (content): Merge conflict in ai_service/processing/fetch_adilet.py
+Auto-merging ai_service/processing/prepare_data.py
+CONFLICT (content): Merge conflict in ai_service/processing/prepare_data.py
+Auto-merging ai_service/retrieval/intent_router.py
+CONFLICT (content): Merge conflict in ai_service/retrieval/intent_router.py
+Auto-merging ai_service/retrieval/rag_chain.py
+CONFLICT (content): Merge conflict in ai_service/retrieval/rag_chain.py
+error: could not apply 964da73... Makefile, Scripts, Hooks
+hint: Resolve all conflicts manually, mark them as resolved with
+hint: "git add/rm <conflicted_files>", then run "git rebase --continue".
+hint: You can instead skip this commit: run "git rebase --skip".
+hint: To abort and get back to the state before "git rebase", run "git rebase --abort".
+hint: Disable this message with "git config set advice.mergeConflict false"
+Could not apply 964da73... # Makefile, Scripts, Hooks

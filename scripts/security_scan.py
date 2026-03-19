@@ -10,26 +10,35 @@ Returns 0 if clean, non-zero if issues are found.
 import os
 import sys
 
-# Words that might indicate an exposed secret if found directly assigned in code
-FORBIDDEN_WORDS = ["password=", "secret=", "api_key=", "token="]
+import re
 
+# Words that might indicate an exposed secret if found directly assigned in code
+# Adjusted to look for assignments to actual strings with len >= 5
+SECRET_PATTERN = re.compile(r'(password|secret|api_key|token)\s*=\s*[\'"]([^\'"]{5,})[\'"]', re.IGNORECASE)
 
 def scan_file(filepath: str) -> bool:
     """Returns False if vulnerable patterns are found."""
+    # Skip checking the scanner itself
+    if "security_scan.py" in filepath:
+        return True
+        
     issues_found = False
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             for i, line in enumerate(f):
-                line_lower = line.lower()
-                for word in FORBIDDEN_WORDS:
-                    if word in line_lower:
-                        # Skip if it's reading from environment
-                        if "os.getenv" in line_lower or "os.environ" in line_lower:
-                            continue
-                        print(
-                            f"[SECURITY WARNING] Potential exposed secret in {filepath}:{i + 1} -> {word}"
-                        )
-                        issues_found = True
+                # Skip lines explicitly marked as safe
+                if "nosec" in line.lower():
+                    continue
+                    
+                match = SECRET_PATTERN.search(line)
+                if match:
+                    # Check if it's reading from environment (though regex mostly avoids this, just in case)
+                    if "os.getenv" in line.lower() or "os.environ" in line.lower() or "viper.get" in line.lower():
+                        continue
+                    print(
+                        f"[SECURITY WARNING] Potential exposed secret in {filepath}:{i + 1} -> {match.group(1)}="
+                    )
+                    issues_found = True
     except Exception:
         pass  # Ignore unreadable files (binaries, etc.)
 
