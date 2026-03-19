@@ -1,2 +1,0 @@
-To https://github.com/zloo00/LegalRAG.git
-   360c9fb..c983b9e  main -> main

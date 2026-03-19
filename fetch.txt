@@ -1,2 +1,0 @@
-From https://github.com/zloo00/LegalRAG
- * branch            main       -> FETCH_HEAD
