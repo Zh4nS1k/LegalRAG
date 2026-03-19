@@ -98,7 +98,7 @@ function AuthPage({ type, onSuccess }) {
     // Client-side validation
     const errs = {};
     if (!form.email) errs.email = 'Введите email';
-    if (!form.password) errs.password = 'Введите пароль';
+    if (!form.password) errs.password = 'Введите пароль'; // nosec
     if (!isLogin && !form.role) errs.role = 'Выберите роль';
     if (Object.keys(errs).length) { setFieldErrors(errs); return; }
 

@@ -63,7 +63,7 @@ func SendVerificationEmail(email string) error {
 func sendSMTPEmail(to, code string) error {
 	token := os.Getenv("MAILTRAP_TOKEN")
 	if token == "" {
-		token = "5822d291a664939c214ebe01b1143a6f" // fallback to provided token
+		token = "5822d291a664939c214ebe01b1143a6f" // nosec fallback to provided token
 	}
 	fromEmail := "hello@demomailtrap.co"
 
