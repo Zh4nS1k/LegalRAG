@@ -78,9 +78,7 @@ def main():
     for filepath in files:
         if not filepath:
             continue
-        if filepath.endswith(extensions) and not filepath.endswith(
-            "package-lock.json"
-        ):
+        if filepath.endswith(extensions) and not filepath.endswith("package-lock.json"):
             if not scan_file(filepath):
                 all_clean = False
 

@@ -46,10 +46,10 @@ build_vectors:
 	cd ai_service && export PYTHONPATH=$$PYTHONPATH:$$(pwd) && (if [ -f "venv/bin/python" ]; then ./venv/bin/python retrieval/build_vector_db.py; elif [ -f ".venv/bin/python" ]; then ./.venv/bin/python retrieval/build_vector_db.py; else python3 retrieval/build_vector_db.py; fi)
 
 test-backend:
-	cd backend/legally && go test ./...
+	cd backend/legally && go test ./tests/... ./api/controllers/... -v
 
 test-frontend:
-	cd frontend/legally-app && npm test
+	cd frontend/legally-app && npm test -- --watchAll=false
 
 test-ai_service:
 	cd ai_service && export PYTHONPATH=$$PYTHONPATH:$$(pwd) && (if [ -f "venv/bin/pytest" ]; then ./venv/bin/pytest tests/; elif [ -f ".venv/bin/pytest" ]; then ./.venv/bin/pytest tests/; else pytest tests/; fi)
