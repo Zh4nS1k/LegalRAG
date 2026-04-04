@@ -472,6 +472,19 @@ def _split_preamble_by_hierarchy(text: str) -> list[str]:
     return [t]
 
 
+def _is_bad_chunk_text(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", (text or "").strip().lower())
+    if not normalized:
+        return True
+    bad_markers = (
+        "оглавление",
+        "вниманию пользователей",
+        "для удобства пользования",
+        "сноска.",
+    )
+    return any(marker in normalized[:300] for marker in bad_markers)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Main splitter
 # ──────────────────────────────────────────────────────────────────────────────
@@ -544,6 +557,8 @@ class ArticleTextSplitter(TextSplitter):
 
             for chunk in self.split_text(text):
                 if not chunk or len(chunk.strip()) < MIN_CHUNK_LEN:
+                    continue
+                if _is_bad_chunk_text(chunk):
                     continue
 
                 # Update chapter context from lines at the start of this chunk

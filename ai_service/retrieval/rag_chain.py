@@ -825,6 +825,14 @@ def _detect_target_codes(query: str) -> list[str]:
     return detected
 
 
+def _extract_query_article_number(query: str) -> str | None:
+    q = query or ""
+    match = re.search(r"(?:статья|ст\.|ст|бап)\s*(\d+[а-яА-Яa-zA-Z\-]?)", q, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
 def _filter_docs_by_codes(docs: List[Document], code_names: list[str]) -> List[Document]:
     if not code_names:
         return docs
@@ -1604,14 +1612,36 @@ def get_retriever():
                     ) -> Sequence[Document]:
                         if not documents:
                             return []
+                        target_codes = _detect_target_codes(query)
+                        target_articles: set[str] = set()
+                        article_number = _extract_query_article_number(query)
+                        if article_number:
+                            target_articles.add(article_number)
+                        range_match = _extract_article_range(query)
+                        if range_match:
+                            start, end = range_match
+                            target_articles.update(str(n) for n in range(start, end + 1))
                         pairs = [[query, d.page_content] for d in documents]
                         scores = _reranker_model.compute_score(pairs)
                         if isinstance(scores, float):
                             scores = [scores]
                         scored_docs = []
                         for i, doc in enumerate(documents):
-                            doc.metadata["relevance_score"] = scores[i]
-                            scored_docs.append((doc, scores[i]))
+                            final_score = float(scores[i])
+                            doc_code = (doc.metadata.get("code_ru") or "").strip()
+                            doc_article = (doc.metadata.get("article_number") or "").strip()
+
+                            if target_codes:
+                                if doc_code in target_codes:
+                                    final_score += 0.25
+                                else:
+                                    final_score -= 0.15
+
+                            if target_articles and doc_article in target_articles:
+                                final_score += 0.30
+
+                            doc.metadata["relevance_score"] = final_score
+                            scored_docs.append((doc, final_score))
                         scored_docs.sort(key=lambda x: x[1], reverse=True)
                         return [d for d, _ in scored_docs[: self.top_n]]
 
