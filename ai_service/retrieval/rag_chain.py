@@ -1429,6 +1429,29 @@ class _TrimRetriever(BaseRetriever):
         return _enrich_with_parent_context(trimmed)
 
 
+class _DedupRetriever(BaseRetriever):
+    """Удаляет дубликаты чанков до rerank/trim, чтобы не тратить top-k на повторения."""
+
+    base_retriever: Any
+
+    def _get_relevant_documents(
+        self,
+        query: str | dict,
+        *,
+        run_manager: CallbackManagerForRetrieverRun | None = None,
+    ) -> List[Document]:
+        docs = self.base_retriever.invoke(query)
+        unique_docs: list[Document] = []
+        seen: set[tuple[str, str]] = set()
+        for doc in docs:
+            key = _doc_key(doc)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_docs.append(doc)
+        return unique_docs
+
+
 def _load_bm25_chunks() -> list[Document] | None:
     """Load BM25 chunks lazily from pickle (preferred) or prepare_data."""
     try:
@@ -1535,6 +1558,10 @@ def get_retriever():
         )
         retr: Any = law_aware_retriever
 
+        if getattr(config, "EXPERIMENTAL_DEDUP_RETRIEVAL", False):
+            retr = _DedupRetriever(base_retriever=retr)
+            print("Включён experimental dedup retrieval layer.")
+
         # Optional reranker (very heavy) — build lazily on first request.
         if config.USE_RERANKER:
             try:
@@ -1593,7 +1620,7 @@ def get_retriever():
                 )
                 retr = ContextualCompressionRetriever(
                     base_compressor=compressor,
-                    base_retriever=law_aware_retriever,
+                    base_retriever=retr,
                 )
             except Exception as e:
                 logger.error(

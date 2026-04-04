@@ -215,6 +215,9 @@ VECTOR_WEIGHT = float(os.environ.get("LEGAL_RAG_VECTOR_WEIGHT", "0.6"))
 CHUNKS_PICKLE_PATH = BASE_DIR / "chunks_for_bm25.pkl"
 # Reranker
 USE_RERANKER = os.environ.get("LEGAL_RAG_USE_RERANKER", "1") == "1"
+EXPERIMENTAL_DEDUP_RETRIEVAL = (
+    os.environ.get("LEGAL_RAG_EXPERIMENTAL_DEDUP_RETRIEVAL", "0") == "1"
+)
 FLASHRANK_MODEL = "ms-marco-MiniLM-L-12-v2"
 
 # Agentic workflow (Board of Directors): Censor = fetch many, rerank to few
