@@ -3,6 +3,7 @@
 # УК РК (в т.ч. ст. 120–135 — преступления против несовершеннолетних): K1400000226
 # URL: https://adilet.zan.kz/rus/docs/K1400000226
 
+import os
 import re
 import time
 from pathlib import Path
@@ -22,6 +23,13 @@ REQUEST_TIMEOUT = 60
 DELAY_BETWEEN_REQUESTS = 1.0  # вежливость к серверу
 MAX_RETRIES = 3
 RETRY_DELAY = 2.0
+
+
+def _parse_source_allowlist() -> set[str]:
+    raw = (os.environ.get("SOURCE_ALLOWLIST") or "").strip()
+    if not raw:
+        return set()
+    return {part.strip() for part in raw.split(",") if part.strip()}
 
 
 def fetch_document(doc_id: str, lang: str = "rus") -> str | None:
@@ -91,12 +99,17 @@ def _normalize_text(s: str) -> str:
 
 def main():
     config.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    selected = _parse_source_allowlist()
+    sources = config.ADILET_SOURCES
+    if selected:
+        sources = [item for item in sources if item[0] in selected]
+        print("SOURCE_ALLOWLIST активен:", ", ".join(sorted(selected)))
     print("Загрузка кодексов с adilet.zan.kz (русский и казахский)...")
-    print(f"Документов: {len(config.ADILET_SOURCES) * 2}\n")
+    print(f"Документов: {len(sources) * 2}\n")
 
     ok = 0
-    total = len(config.ADILET_SOURCES)
-    for i, (filename, doc_id) in enumerate(config.ADILET_SOURCES, 1):
+    total = len(sources)
+    for i, (filename, doc_id) in enumerate(sources, 1):
         # 1. Fetch Russian
         print(f"  [{i}/{total}] {filename} <- {doc_id} (RU) ... ", end="", flush=True)
         html_ru = fetch_document(doc_id, lang="rus")
@@ -133,7 +146,7 @@ def main():
         time.sleep(DELAY_BETWEEN_REQUESTS)
 
     print(
-        f"\nГотово: {ok}/{len(config.ADILET_SOURCES) * 2} документов сохранено в {config.DOCUMENTS_DIR}"
+        f"\nГотово: {ok}/{len(sources) * 2} документов сохранено в {config.DOCUMENTS_DIR}"
     )
     if ok > 0:
         print("Дальше: python build_vector_db.py  # пересобрать векторную базу")

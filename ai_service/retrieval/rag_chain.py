@@ -212,6 +212,225 @@ _uk_variants = [
     "Қылмыстық кодекс",
     "УК РК",
 ]
+_gk_general_variants = [
+    "Гражданский кодекс РК (Общая часть)",
+    "Азаматтық кодекс (Жалпы бөлім)",
+]
+_gk_special_variants = [
+    "Гражданский кодекс РК (Особенная часть)",
+    "Азаматтық кодекс (Ерекше бөлім)",
+]
+_gk_variants = _gk_general_variants + _gk_special_variants
+_koap_variants = [
+    "Кодекс об административных правонарушениях РК",
+    "Әкімшілік құқық бұзушылық туралы кодекс",
+]
+_gpk_variants = [
+    "Гражданский процессуальный кодекс РК",
+    "Азаматтық іс жүргізу кодексі",
+]
+_upk_variants = [
+    "Уголовно-процессуальный кодекс РК",
+    "Қылмыстық іс жүргізу кодексі",
+]
+_tk_variants = [
+    "Трудовой кодекс РК",
+    "Еңбек кодексі",
+]
+_nk_variants = [
+    "Налоговый кодекс РК",
+    "Салық кодексі",
+]
+_pk_variants = [
+    "Предпринимательский кодекс РК",
+    "Кәсіпкерлік кодекс",
+]
+_family_variants = [
+    "Кодекс о браке и семье РК",
+    "Неке және отбасы туралы кодекс",
+]
+_admin_proc_variants = [
+    "Кодекс об административных процедурах РК",
+    "Әкімшілік рәсімдер туралы кодекс",
+]
+_social_variants = [
+    "Социальный кодекс РК",
+    "Әлеуметтік кодекс",
+]
+_procurement_variants = [
+    "Закон о государственных закупках РК",
+    "Мемлекеттік сатып алу туралы заң",
+]
+_anti_corruption_variants = [
+    "Закон о противодействии коррупции РК",
+    "Коррупцияға қарсы күрес туралы заң",
+]
+_enforcement_variants = [
+    "Закон об исполнительном производстве РК",
+    "Орындау өндірісі туралы заң",
+]
+_personal_data_variants = [
+    "Закон о персональных данных РК",
+    "Жеке деректер туралы заң",
+]
+_ai_variants = [
+    "Закон об искусственном интеллекте РК",
+    "Жасанды интеллект туралы заң",
+]
+
+_LAW_ALIAS_GROUPS: list[tuple[tuple[str, ...], list[str]]] = [
+    (
+        (
+            "уголовный кодекс",
+            "ук рк",
+            "ук республики казахстан",
+            "қылмыстық кодекс",
+            "қр қк",
+        ),
+        _uk_variants,
+    ),
+    (
+        (
+            "гражданский кодекс",
+            "гк рк",
+            "азаматтық кодекс",
+        ),
+        _gk_variants,
+    ),
+    (
+        (
+            "гражданский кодекс общая часть",
+            "гк общая часть",
+            "общая часть гк",
+            "жалпы бөлім",
+        ),
+        _gk_general_variants,
+    ),
+    (
+        (
+            "гражданский кодекс особенная часть",
+            "гк особенная часть",
+            "особенная часть гк",
+            "ерекше бөлім",
+        ),
+        _gk_special_variants,
+    ),
+    (
+        (
+            "кодекс об административных правонарушениях",
+            "коап рк",
+            "коап",
+            "әкімшілік құқық бұзушылық туралы кодекс",
+        ),
+        _koap_variants,
+    ),
+    (
+        (
+            "гражданский процессуальный кодекс",
+            "гпк рк",
+            "гпк",
+            "азаматтық іс жүргізу кодексі",
+        ),
+        _gpk_variants,
+    ),
+    (
+        (
+            "уголовно-процессуальный кодекс",
+            "упк рк",
+            "упк",
+            "қылмыстық іс жүргізу кодексі",
+        ),
+        _upk_variants,
+    ),
+    (
+        (
+            "трудовой кодекс",
+            "тк рк",
+            "тк",
+            "еңбек кодексі",
+        ),
+        _tk_variants,
+    ),
+    (
+        (
+            "налоговый кодекс",
+            "нк рк",
+            "нк",
+            "салық кодексі",
+        ),
+        _nk_variants,
+    ),
+    (
+        (
+            "предпринимательский кодекс",
+            "пк рк",
+            "кәсіпкерлік кодекс",
+        ),
+        _pk_variants,
+    ),
+    (
+        (
+            "о браке",
+            "о семье",
+            "кодекс о браке",
+            "кодекс о браке (супружестве) и семье",
+            "неке және отбасы туралы кодекс",
+        ),
+        _family_variants,
+    ),
+    (
+        (
+            "административного процедурно-процессуального кодекса",
+            "административных процедурах",
+            "аппк",
+            "аппк рк",
+            "әкімшілік рәсімдер туралы кодекс",
+        ),
+        _admin_proc_variants,
+    ),
+    (
+        (
+            "социальный кодекс",
+            "әлеуметтік кодекс",
+        ),
+        _social_variants,
+    ),
+    (
+        (
+            "государственных закуп",
+            "мемлекеттік сатып алу",
+        ),
+        _procurement_variants,
+    ),
+    (
+        (
+            "противодействии коррупции",
+            "коррупцияға қарсы",
+        ),
+        _anti_corruption_variants,
+    ),
+    (
+        (
+            "исполнительном производстве",
+            "орындау өндірісі",
+        ),
+        _enforcement_variants,
+    ),
+    (
+        (
+            "персональных данных",
+            "жеке деректер",
+        ),
+        _personal_data_variants,
+    ),
+    (
+        (
+            "искусственном интеллекте",
+            "жасанды интеллект",
+        ),
+        _ai_variants,
+    ),
+]
 _allowed_code_ru_for_filter = None
 _filter_clauses: list[dict] = []
 
@@ -315,9 +534,62 @@ def _extract_article_range(query: str) -> tuple[int, int] | None:
     return (start, end) if start <= end else (end, start)
 
 
+def _normalized_query(query: str) -> str:
+    q = (query or "").lower().replace("ё", "е")
+    q = re.sub(r"\s+", " ", q)
+    return q
+
+
+def _has_alias(query: str, alias: str) -> bool:
+    pattern = r"(?<!\w)" + re.escape(alias) + r"(?!\w)"
+    return re.search(pattern, query) is not None
+
+
+def _detect_target_codes(query: str) -> list[str]:
+    q = _normalized_query(query)
+    detected: list[str] = []
+    for aliases, code_names in _LAW_ALIAS_GROUPS:
+        if any(_has_alias(q, alias) for alias in aliases):
+            for code_name in code_names:
+                if code_name not in detected:
+                    detected.append(code_name)
+    return detected
+
+
+def _filter_docs_by_codes(docs: List[Document], code_names: list[str]) -> List[Document]:
+    if not code_names:
+        return docs
+    allowed = set(code_names)
+    return [d for d in docs if (d.metadata.get("code_ru") or "").strip() in allowed]
+
+
+def _search_with_code_filters(
+    query: str,
+    code_names: list[str],
+    *,
+    k: int,
+    article_number: str | None = None,
+) -> List[Document]:
+    if not code_names:
+        return []
+    store = get_vector_store()
+    docs: list[Document] = []
+    for code_name in code_names:
+        search_filter: dict[str, Any] = {"code_ru": code_name}
+        if article_number:
+            search_filter["article_number"] = article_number
+        try:
+            docs.extend(store.similarity_search(query, k=k, filter=search_filter))
+        except Exception:
+            continue
+    return docs
+
+
 def _augment_retrieval_query(query: str) -> str:
     q = (query or "").lower()
     extras: list[str] = []
+    target_codes = _detect_target_codes(query)
+    is_criminal = any(code in set(_uk_variants) for code in target_codes) or _is_criminal_query(query)
 
     # Check language
     is_kz = _is_kz_query(query)
@@ -362,7 +634,7 @@ def _augment_retrieval_query(query: str) -> str:
             "қаржы",
             "ақша",
         )
-    ):
+    ) and is_criminal:
         if is_kz:
             extras.append("алаяқтық 190-бап ҚР ҚК")
             extras.append("қылмыстық жолмен алынған ақшаны заңдастыру 218-бап ҚР ҚК")
@@ -385,7 +657,7 @@ def _augment_retrieval_query(query: str) -> str:
             "налог",
             "уклонен",
         )
-    ):
+    ) and is_criminal:
         if is_kz:
             extras.append("заңсыз кәсіпкерлік 214-бап ҚР ҚК")
             extras.append("салық төлеуден жалтару 245-бап ҚР ҚК")
@@ -403,7 +675,7 @@ def _augment_retrieval_query(query: str) -> str:
             "жоғары пайда",
             "30-50%",
         )
-    ):
+    ) and is_criminal:
         if is_kz:
             extras.append("қаржылық пирамида құру және басқару 217-бап ҚР ҚК")
             extras.append("қаржылық пирамиданы жарнамалау 217-1-бап ҚР ҚК")
@@ -425,8 +697,10 @@ def _augment_retrieval_query(query: str) -> str:
 
 
 def _is_criminal_query(query: str) -> bool:
-    q = (query or "").lower()
-    return any(token in q for token in ("қылмыстық", "уголов", "преступ", "ук рк"))
+    q = _normalized_query(query)
+    if any(token in q for token in ("қылмыстық", "уголов", "преступ", "ук рк", "квалификация преступ", "состав преступ")):
+        return True
+    return False
 
 
 def _focus_articles_from_query(query: str) -> set[str]:
@@ -452,7 +726,7 @@ def _focus_articles_from_query(query: str) -> set[str]:
             "қаржы",
             "ақша",
         )
-    ):
+    ) and _is_criminal_query(query):
         focus.update({"190", "218"})
     if any(
         token in q
@@ -468,7 +742,7 @@ def _focus_articles_from_query(query: str) -> set[str]:
             "налог",
             "уклонен",
         )
-    ):
+    ) and _is_criminal_query(query):
         focus.update({"214", "245"})
     if any(
         token in q
@@ -481,7 +755,7 @@ def _focus_articles_from_query(query: str) -> set[str]:
             "жоғары пайда",
             "30-50%",
         )
-    ):
+    ) and _is_criminal_query(query):
         focus.update({"217", "190"})
     if any(
         token in q
@@ -612,26 +886,29 @@ class _HeuristicRetriever(BaseRetriever):
     ) -> List[Document]:
         search_query = _augment_retrieval_query(query)
         docs = self.base_retriever.invoke(search_query)
-        if _is_criminal_query(query):
-            allowed = set(_uk_variants)
-            filtered = [
-                d for d in docs if (d.metadata.get("code_ru") or "").strip() in allowed
-            ]
+        target_codes = _detect_target_codes(query)
+        if target_codes:
+            filtered = _filter_docs_by_codes(docs, target_codes)
             if filtered:
                 docs = filtered
             else:
-                fallback_docs: list[Document] = []
-                for code_ru in _uk_variants:
-                    try:
-                        fallback_docs.extend(
-                            get_vector_store().similarity_search(
-                                search_query,
-                                k=6,
-                                filter={"code_ru": code_ru},
-                            )
-                        )
-                    except Exception:
-                        continue
+                fallback_docs = _search_with_code_filters(
+                    search_query,
+                    target_codes,
+                    k=6,
+                )
+                if fallback_docs:
+                    docs = fallback_docs
+        elif _is_criminal_query(query):
+            filtered = _filter_docs_by_codes(docs, _uk_variants)
+            if filtered:
+                docs = filtered
+            else:
+                fallback_docs = _search_with_code_filters(
+                    search_query,
+                    _uk_variants,
+                    k=6,
+                )
                 if fallback_docs:
                     docs = fallback_docs
         range_match = _extract_article_range(query)
@@ -667,26 +944,27 @@ class _LawAwareRetriever(BaseRetriever):
     ) -> List[Document]:
         search_query = _augment_retrieval_query(query)
         docs = self.base_retriever.invoke(search_query)
-
-        if _is_criminal_query(query):
-            allowed = set(_uk_variants)
-            filtered = [
-                d for d in docs if (d.metadata.get("code_ru") or "").strip() in allowed
-            ]
+        target_codes = _detect_target_codes(query)
+        if target_codes:
+            filtered = _filter_docs_by_codes(docs, target_codes)
+            docs = filtered if filtered else docs
+            if len(docs) < min(_hybrid_k, 6):
+                extra = _search_with_code_filters(
+                    search_query,
+                    target_codes,
+                    k=max(_hybrid_k, 8),
+                )
+                if extra:
+                    docs = _merge_unique(docs, extra)
+        elif _is_criminal_query(query):
+            filtered = _filter_docs_by_codes(docs, _uk_variants)
             docs = filtered if filtered else docs
             if len(docs) < self.min_k_criminal:
-                extra: list[Document] = []
-                for code_ru in _uk_variants:
-                    try:
-                        extra.extend(
-                            get_vector_store().similarity_search(
-                                search_query,
-                                k=self.min_k_criminal,
-                                filter={"code_ru": code_ru},
-                            )
-                        )
-                    except Exception:
-                        continue
+                extra = _search_with_code_filters(
+                    search_query,
+                    _uk_variants,
+                    k=self.min_k_criminal,
+                )
                 if extra:
                     docs = _merge_unique(docs, extra)
 

@@ -3,6 +3,7 @@
 # Document -> Chapter (Глава) -> Article (Статья) -> Clause (Пункт) -> Sub-clause (Подпункт).
 # Lineage metadata on every chunk: code_ru, revision_date, article_number (for Pinecone hard filtering).
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -78,7 +79,74 @@ CODE_NAMES = {
         "Закон об искусственном интеллекте РК",
         "Жасанды интеллект туралы заң",
     ),
+    "law_on_consumer_protection.txt": (
+        "Закон о защите прав потребителей РК",
+        "Тұтынушылардың құқықтарын қорғау туралы заң",
+    ),
+    "law_on_housing_relations.txt": (
+        "Закон о жилищных отношениях РК",
+        "Тұрғын үй қатынастары туралы заң",
+    ),
+    "law_on_banks.txt": (
+        "Закон о банках и банковской деятельности РК",
+        "Банктер және банк қызметі туралы заң",
+    ),
+    "land_code.txt": (
+        "Земельный кодекс РК",
+        "Жер кодексі",
+    ),
+    "law_on_military_service.txt": (
+        "Закон о воинской службе и статусе военнослужащих РК",
+        "Әскери қызмет және әскери қызметшілердің мәртебесі туралы заң",
+    ),
+    "law_on_llp.txt": (
+        "Закон о товариществах с ограниченной и дополнительной ответственностью РК",
+        "Жауапкершілігі шектеулі және қосымша жауапкершілігі бар серіктестіктер туралы заң",
+    ),
+    "law_on_notariat.txt": (
+        "Закон о нотариате РК",
+        "Нотариат туралы заң",
+    ),
+    "law_on_real_estate_registration.txt": (
+        "Закон о государственной регистрации прав на недвижимое имущество РК",
+        "Жылжымайтын мүлікке құқықтарды мемлекеттік тіркеу туралы заң",
+    ),
+    "law_on_vehicle_liability_insurance.txt": (
+        "Закон об обязательном страховании гражданско-правовой ответственности владельцев транспортных средств РК",
+        "Көлік құралдары иелерінің азаматтық-құқықтық жауапкершілігін міндетті сақтандыру туралы заң",
+    ),
+    "law_on_education.txt": (
+        "Закон об образовании РК",
+        "Білім туралы заң",
+    ),
+    "law_on_public_service.txt": (
+        "Закон о государственной службе Республики Казахстан",
+        "Қазақстан Республикасының мемлекеттік қызметі туралы заң",
+    ),
+    "law_on_child_rights.txt": (
+        "Закон о правах ребенка РК",
+        "Баланың құқықтары туралы заң",
+    ),
+    "law_on_advertising.txt": (
+        "Закон о рекламе РК",
+        "Жарнама туралы заң",
+    ),
+    "law_on_collection_activity.txt": (
+        "Закон о коллекторской деятельности РК",
+        "Коллекторлық қызмет туралы заң",
+    ),
+    "law_on_road_traffic.txt": (
+        "Закон о дорожном движении РК",
+        "Жол жүрісі туралы заң",
+    ),
 }
+
+
+def _parse_source_allowlist() -> set[str]:
+    raw = os.environ.get("SOURCE_ALLOWLIST", "").strip()
+    if not raw:
+        return set()
+    return {part.strip() for part in raw.split(",") if part.strip()}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Regex patterns for legal hierarchy
@@ -86,27 +154,29 @@ CODE_NAMES = {
 
 # Article header: "Статья 136.", "Статья 136-1.", " Статья 136 ", "136-бап." (Kazakh)
 ARTICLE_RE = re.compile(
-    r"(?m)^\s*(?:Статья|Стаття|Мәтін|Article|Section)\s*(\d+[а-яА-Яa-zA-Z\-]?)\.*\s*(.*?)$|(?m)^\s*(\d+[а-яА-Яa-zA-Z\-]?)-бап\.*\s*(.*?)$",
-    re.IGNORECASE,
+    r"^\s*(?:Статья|Стаття|Мәтін|Article|Section)\s*(\d+[а-яА-Яa-zA-Z\-]?)\.*\s*(.*?)$"
+    r"|^\s*(\d+[а-яА-Яa-zA-Z\-]?)-бап\.*\s*(.*?)$",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 # Chapter/Section heading: "Глава 1.", "ГЛАВА 2 ", "Раздел IV", "Бөлім 3" (Kazakh)
 CHAPTER_RE = re.compile(
-    r"(?m)^\s*(?:Глава|ГЛАВА|Раздел|РАЗДЕЛ|Бөлім|Тарау|Chapter|Section)\s+"
-    r"([\dIVXLCDMivxlcdm]+)[\.\s]\s*(.*?)$|(?m)^\s*([\dIVXLCDMivxlcdm]+)-(?:тарау|бөлім)[\.\s]\s*(.*?)$",
-    re.IGNORECASE,
+    r"^\s*(?:Глава|ГЛАВА|Раздел|РАЗДЕЛ|Бөлім|Тарау|Chapter|Section)\s+"
+    r"([\dIVXLCDMivxlcdm]+)[\.\s]\s*(.*?)$"
+    r"|^\s*([\dIVXLCDMivxlcdm]+)-(?:тарау|бөлім)[\.\s]\s*(.*?)$",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 # Clause (пункт): lines beginning with "1.", "2.", "1) ", "2) "
 CLAUSE_RE = re.compile(
-    r"(?m)^(\d+)[\.\)]\s+",
-    re.IGNORECASE,
+    r"^(\d+)[\.\)]\s+",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 # Sub-clause (подпункт): lines beginning with "1)", "2)", "а)", "б)"
 SUBCLAUSE_RE = re.compile(
-    r"(?m)^([а-яёА-ЯЁa-zA-Z\d]+\))\s+",
-    re.IGNORECASE,
+    r"^([а-яёА-ЯЁa-zA-Z\d]+\))\s+",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 # Revision date patterns from Adilet file headers:
@@ -345,15 +415,20 @@ def _split_preamble_by_hierarchy(text: str) -> list[str]:
     if not t or len(t) < MIN_CHUNK_LEN:
         return []
     section_pattern = re.compile(
-        r"(?m)^(?:Глава|Раздел|ГЛАВА|РАЗДЕЛ|Бөлім|Тақырып)\s+[\dIVXLCDM]+[.\s]\s*(.*?)$|(?m)^[\dIVXLCDM]+-(?:тарау|бөлім)[.\s]\s*(.*?)$",
-        re.IGNORECASE,
+        r"^(?:Глава|Раздел|ГЛАВА|РАЗДЕЛ|Бөлім|Тақырып)\s+[\dIVXLCDM]+[.\s]\s*(.*?)$"
+        r"|^[\dIVXLCDM]+-(?:тарау|бөлім)[.\s]\s*(.*?)$",
+        re.IGNORECASE | re.MULTILINE,
     )
     parts = section_pattern.split(t)
     if len(parts) > 1:
         result = []
         for i in range(1, len(parts), 2):
-            header = parts[i] if i < len(parts) else ""
-            body = parts[i + 1] if i + 1 < len(parts) else ""
+            header = parts[i] if i < len(parts) and parts[i] is not None else ""
+            body = (
+                parts[i + 1]
+                if i + 1 < len(parts) and parts[i + 1] is not None
+                else ""
+            )
             chunk = (header + body).strip()
             if len(chunk) >= MIN_CHUNK_LEN:
                 result.append(chunk)
@@ -483,6 +558,16 @@ loader = DirectoryLoader(
     loader_kwargs={"encoding": "utf-8"},
 )
 raw_docs = loader.load()
+source_allowlist = _parse_source_allowlist()
+if source_allowlist:
+    raw_docs = [
+        doc
+        for doc in raw_docs
+        if Path(doc.metadata.get("source", "")).name in source_allowlist
+    ]
+    print(
+        f"SOURCE_ALLOWLIST активен: {len(source_allowlist)} файлов, загружено {len(raw_docs)} документов"
+    )
 if not raw_docs:
     raise SystemExit(
         f"В {config.DOCUMENTS_DIR} нет .txt файлов. Запустите: python fetch_adilet.py"

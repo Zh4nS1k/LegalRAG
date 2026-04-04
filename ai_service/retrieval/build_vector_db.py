@@ -19,6 +19,16 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 from ai_service.processing.prepare_data import chunks, raw_docs
 
+source_allowlist = {
+    part.strip() for part in os.environ.get("SOURCE_ALLOWLIST", "").split(",") if part.strip()
+}
+append_only_mode = bool(source_allowlist)
+if append_only_mode:
+    print(
+        "Append-only режим: будут загружены только файлы из SOURCE_ALLOWLIST = "
+        + ", ".join(sorted(source_allowlist))
+    )
+
 # Проверка до очистки: есть ли ст. 136 УК в распарсенных чанках
 uk_136_chunks = [
     c
@@ -331,9 +341,18 @@ for i in range(0, total_chunks, BATCH_SIZE):
     _time.sleep(0.3)
 
 
-# Сохраняем очищенные чанки для BM25
-with open(config.CHUNKS_PICKLE_PATH, "wb") as f:
-    pickle.dump(clean_chunks, f)
+if append_only_mode:
+    append_pickle = config.BASE_DIR / "chunks_for_bm25_append_only.pkl"
+    with open(append_pickle, "wb") as f:
+        pickle.dump(clean_chunks, f)
+    print(
+        "Основной BM25 pickle не перезаписан. Append-only чанки сохранены в "
+        f"{append_pickle}"
+    )
+else:
+    with open(config.CHUNKS_PICKLE_PATH, "wb") as f:
+        pickle.dump(clean_chunks, f)
+    print(f"BM25 pickle обновлён: {config.CHUNKS_PICKLE_PATH}")
 
 print("База Pinecone создана!")
 print(f"Документов: {len(raw_docs)}")
