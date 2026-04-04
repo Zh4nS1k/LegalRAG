@@ -112,6 +112,15 @@ ADILET_SOURCES = [
     ("law_on_advertising.txt", "Z030000461_"),  # О рекламе
     ("law_on_collection_activity.txt", "Z1700000062"),  # О коллекторской деятельности
     ("law_on_road_traffic.txt", "Z1400000194"),  # О дорожном движении
+    ("law_on_valuation_activity.txt", "Z1800000133"),  # Об оценочной деятельности
+    ("law_on_legal_entities_registration.txt", "Z950002198_"),  # О госрегистрации юрлиц и филиалов
+    ("law_on_currency_regulation.txt", "Z1800000167"),  # О валютном регулировании и валютном контроле
+    ("law_on_digital_assets.txt", "Z2300000193"),  # О цифровых активах
+    ("law_on_personal_data_protection.txt", "Z1300000094"),  # О персональных данных и их защите
+    ("law_on_credit_bureaus.txt", "Z040000573_"),  # О кредитных бюро и формировании кредитных историй
+    ("law_on_microfinance.txt", "Z1200000056"),  # О микрофинансовой деятельности
+    ("law_on_citizen_bankruptcy.txt", "Z2200000178"),  # О восстановлении платежеспособности и банкротстве граждан
+    ("law_on_rehabilitation_bankruptcy.txt", "Z1400000176"),  # О реабилитации и банкротстве
 ]
 
 # Pinecone — векторная БД (облако)
@@ -204,7 +213,6 @@ RETRIEVER_FILTER_ARTICLE_NUMBER = os.environ.get(
 BM25_WEIGHT = float(os.environ.get("LEGAL_RAG_BM25_WEIGHT", "0.4"))
 VECTOR_WEIGHT = float(os.environ.get("LEGAL_RAG_VECTOR_WEIGHT", "0.6"))
 CHUNKS_PICKLE_PATH = BASE_DIR / "chunks_for_bm25.pkl"
-
 # Reranker
 USE_RERANKER = os.environ.get("LEGAL_RAG_USE_RERANKER", "1") == "1"
 FLASHRANK_MODEL = "ms-marco-MiniLM-L-12-v2"
