@@ -345,20 +345,42 @@ def _detect_clause_level(chunk_text: str) -> str:
     return "article"
 
 
-def _split_article_into_clauses(article_text: str) -> list[str]:
+def _build_chunk_path(
+    article_number: str | None,
+    clause_number: str = "",
+    subclause_number: str = "",
+) -> str:
+    parts: list[str] = []
+    if article_number:
+        parts.append(f"ст. {article_number}")
+    if clause_number:
+        parts.append(f"п. {clause_number}")
+    if subclause_number:
+        parts.append(f"подп. {subclause_number}")
+    return " ".join(parts)
+
+
+def _split_article_into_clauses(article_text: str) -> list[dict[str, str]]:
     """
     Recursive semantic split: Article → Clauses (1. 2. 3. or 1) 2)).
     Each returned string is one clause (no character-count splitting).
     """
+    article_number = get_article_number(article_text) or ""
     parts = CLAUSE_RE.split(article_text)
     if len(parts) <= 1:
-        return (
-            [article_text]
-            if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN
-            else []
-        )
+        if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN:
+            return [
+                {
+                    "text": article_text,
+                    "clause_level": "article",
+                    "clause_number": "",
+                    "subclause_number": "",
+                    "path": _build_chunk_path(article_number),
+                }
+            ]
+        return []
 
-    chunks = []
+    chunks: list[dict[str, str]] = []
     intro = parts[0].strip()
     for i in range(1, len(parts), 2):
         if i + 1 >= len(parts):
@@ -369,32 +391,43 @@ def _split_article_into_clauses(article_text: str) -> list[str]:
             clause_text = intro + "\n" + clause_text
             intro = ""
         if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN:
-            chunks.append(clause_text)
-    return (
-        chunks
-        if chunks
-        else (
-            [article_text]
-            if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN
-            else []
-        )
-    )
+            chunks.append(
+                {
+                    "text": clause_text,
+                    "clause_level": "clause",
+                    "clause_number": num.strip(),
+                    "subclause_number": "",
+                    "path": _build_chunk_path(article_number, num.strip()),
+                }
+            )
+    if chunks:
+        return chunks
+    if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN:
+        return [
+            {
+                "text": article_text,
+                "clause_level": "article",
+                "clause_number": "",
+                "subclause_number": "",
+                "path": _build_chunk_path(article_number),
+            }
+        ]
+    return []
 
 
-def _split_clause_into_subclauses(clause_text: str) -> list[str]:
+def _split_clause_into_subclauses(clause_chunk: dict[str, str]) -> list[dict[str, str]]:
     """
     Recursive semantic split: Clause → Sub-clauses (а) б) в) or 1) 2)).
     SUBCLAUSE_RE captures marker including parenthesis (e.g. "а)"); split gives [intro, "а)", content, ...].
     """
+    clause_text = clause_chunk["text"]
+    article_number = get_article_number(clause_text) or ""
+    clause_number = clause_chunk.get("clause_number", "").strip()
     parts = SUBCLAUSE_RE.split(clause_text)
     if len(parts) <= 1:
-        return (
-            [clause_text]
-            if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN
-            else []
-        )
+        return [clause_chunk] if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN else []
 
-    chunks = []
+    chunks: list[dict[str, str]] = []
     intro = parts[0].strip()
     for i in range(1, len(parts), 2):
         if i + 1 >= len(parts):
@@ -405,19 +438,24 @@ def _split_clause_into_subclauses(clause_text: str) -> list[str]:
             sub_text = intro + "\n" + sub_text
             intro = ""
         if sub_text.strip() and len(sub_text.strip()) >= MIN_CHUNK_LEN:
-            chunks.append(sub_text)
-    return (
-        chunks
-        if chunks
-        else (
-            [clause_text]
-            if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN
-            else []
-        )
-    )
+            sub_marker = marker.rstrip(")").strip()
+            chunks.append(
+                {
+                    "text": sub_text,
+                    "clause_level": "subclause",
+                    "clause_number": clause_number,
+                    "subclause_number": sub_marker,
+                    "path": _build_chunk_path(
+                        article_number,
+                        clause_number,
+                        sub_marker,
+                    ),
+                }
+            )
+    return chunks if chunks else [clause_chunk]
 
 
-def _split_article_by_hierarchy(article_text: str) -> list[str]:
+def _split_article_by_hierarchy(article_text: str) -> list[dict[str, str]]:
     """
     Strict legal hierarchy: Article → Clause → Sub-clause.
     No character-count splitting. Each chunk is one semantic unit.
@@ -426,20 +464,25 @@ def _split_article_by_hierarchy(article_text: str) -> list[str]:
     if not clauses:
         return []
     result = []
-    for clause in clauses:
-        subclauses = _split_clause_into_subclauses(clause)
+    for clause_chunk in clauses:
+        subclauses = _split_clause_into_subclauses(clause_chunk)
         for sub in subclauses:
-            if sub.strip() and len(sub.strip()) >= MIN_CHUNK_LEN:
+            if sub["text"].strip() and len(sub["text"].strip()) >= MIN_CHUNK_LEN:
                 result.append(sub)
-    return (
-        result
-        if result
-        else (
-            [article_text]
-            if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN
-            else []
-        )
-    )
+    if result:
+        return result
+    if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN:
+        article_number = get_article_number(article_text) or ""
+        return [
+            {
+                "text": article_text,
+                "clause_level": "article",
+                "clause_number": "",
+                "subclause_number": "",
+                "path": _build_chunk_path(article_number),
+            }
+        ]
+    return []
 
 
 def _split_preamble_by_hierarchy(text: str) -> list[str]:
@@ -502,15 +545,25 @@ class ArticleTextSplitter(TextSplitter):
 
     def split_text(self, text: str) -> list[str]:
         """Return raw text chunks by hierarchy only; chapter/article context set in create_documents()."""
+        return [chunk["text"] for chunk in self.split_with_metadata(text)]
+
+    def split_with_metadata(self, text: str) -> list[dict[str, str]]:
+        """Return hierarchy chunks with explicit clause/subclause metadata."""
         matches = list(ARTICLE_RE.finditer(text))
         if not matches:
             return [
-                c
+                {
+                    "text": c,
+                    "clause_level": "article",
+                    "clause_number": "",
+                    "subclause_number": "",
+                    "path": "",
+                }
                 for c in _split_preamble_by_hierarchy(text)
                 if c and len(c.strip()) >= MIN_CHUNK_LEN
             ]
 
-        chunks = []
+        chunks: list[dict[str, str]] = []
         prev_end = 0
         for idx, match in enumerate(matches):
             start = match.start()
@@ -519,13 +572,21 @@ class ArticleTextSplitter(TextSplitter):
                 if preamble:
                     for c in _split_preamble_by_hierarchy(preamble):
                         if c and len(c.strip()) >= MIN_CHUNK_LEN:
-                            chunks.append(c)
+                            chunks.append(
+                                {
+                                    "text": c,
+                                    "clause_level": "article",
+                                    "clause_number": "",
+                                    "subclause_number": "",
+                                    "path": "",
+                                }
+                            )
             next_start = (
                 matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
             )
             article_text = text[start:next_start].strip()
             for c in _split_article_by_hierarchy(article_text):
-                if c and len(c.strip()) >= MIN_CHUNK_LEN:
+                if c["text"] and len(c["text"].strip()) >= MIN_CHUNK_LEN:
                     chunks.append(c)
             prev_end = next_start
 
@@ -555,7 +616,8 @@ class ArticleTextSplitter(TextSplitter):
             current_chapter_number: str = ""
             current_chapter_title: str = ""
 
-            for chunk in self.split_text(text):
+            for chunk_info in self.split_with_metadata(text):
+                chunk = chunk_info["text"]
                 if not chunk or len(chunk.strip()) < MIN_CHUNK_LEN:
                     continue
                 if _is_bad_chunk_text(chunk):
@@ -569,7 +631,7 @@ class ArticleTextSplitter(TextSplitter):
                         break
 
                 art_num = get_article_number(chunk)
-                clause_level = _detect_clause_level(chunk)
+                clause_level = chunk_info.get("clause_level") or _detect_clause_level(chunk)
                 article_title = get_article_title(chunk)
 
                 # Mandatory lineage metadata for Pinecone hard filtering (code_ru, revision_date, article_number)
@@ -581,6 +643,12 @@ class ArticleTextSplitter(TextSplitter):
                     "revision_date": revision_date,
                     "clause_level": clause_level,
                 }
+                if chunk_info.get("clause_number"):
+                    meta["clause_number"] = chunk_info["clause_number"]
+                if chunk_info.get("subclause_number"):
+                    meta["subclause_number"] = chunk_info["subclause_number"]
+                if chunk_info.get("path"):
+                    meta["path"] = chunk_info["path"]
                 if current_chapter_title:
                     meta["chapter_title"] = current_chapter_title[:150]
                 if current_chapter_number:
@@ -637,9 +705,11 @@ print(f"Всего чанков (статей): {len(chunks)}")
 chapter_chunks = [c for c in chunks if c.metadata.get("chapter_title")]
 dated_chunks = [c for c in chunks if c.metadata.get("revision_date")]
 clause_chunks = [c for c in chunks if c.metadata.get("clause_level") == "clause"]
+subclause_chunks = [c for c in chunks if c.metadata.get("clause_level") == "subclause"]
 print(f"  └─ С chapter_title: {len(chapter_chunks)}")
 print(f"  └─ С revision_date: {len(dated_chunks)}")
 print(f"  └─ clause-level чанков: {len(clause_chunks)}")
+print(f"  └─ subclause-level чанков: {len(subclause_chunks)}")
 
 if chunks:
     print("\nПример чанка:")

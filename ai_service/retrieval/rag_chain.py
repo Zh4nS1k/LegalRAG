@@ -389,6 +389,7 @@ _LAW_ALIAS_GROUPS: list[tuple[tuple[str, ...], list[str]]] = [
         (
             "гражданский кодекс",
             "гк рк",
+            "гк",
             "азаматтық кодекс",
         ),
         _gk_variants,
@@ -516,6 +517,7 @@ _LAW_ALIAS_GROUPS: list[tuple[tuple[str, ...], list[str]]] = [
         (
             "защите прав потребителей",
             "правах потребителей",
+            "зпп",
             "тұтынушылардың құқықтарын қорғау",
         ),
         _consumer_variants,
@@ -531,6 +533,7 @@ _LAW_ALIAS_GROUPS: list[tuple[tuple[str, ...], list[str]]] = [
     (
         (
             "банках и банковской деятельности",
+            "банковской деятельности",
             "банк қызметі",
         ),
         _banks_variants,
@@ -553,6 +556,8 @@ _LAW_ALIAS_GROUPS: list[tuple[tuple[str, ...], list[str]]] = [
     (
         (
             "товариществах с ограниченной и дополнительной ответственностью",
+            "тоо",
+            "т о о",
             "жауапкершілігі шектеулі",
         ),
         _llp_variants,
@@ -638,6 +643,7 @@ _LAW_ALIAS_GROUPS: list[tuple[tuple[str, ...], list[str]]] = [
     (
         (
             "валютном регулировании",
+            "валютном контроле",
             "валюталық реттеу",
         ),
         _currency_variants,
@@ -1613,6 +1619,11 @@ def get_retriever():
                         if not documents:
                             return []
                         target_codes = _detect_target_codes(query)
+                        rerank_docs = list(documents)
+                        if target_codes:
+                            filtered_docs = _filter_docs_by_codes(rerank_docs, target_codes)
+                            if filtered_docs:
+                                rerank_docs = filtered_docs
                         target_articles: set[str] = set()
                         article_number = _extract_query_article_number(query)
                         if article_number:
@@ -1621,12 +1632,12 @@ def get_retriever():
                         if range_match:
                             start, end = range_match
                             target_articles.update(str(n) for n in range(start, end + 1))
-                        pairs = [[query, d.page_content] for d in documents]
+                        pairs = [[query, d.page_content] for d in rerank_docs]
                         scores = _reranker_model.compute_score(pairs)
                         if isinstance(scores, float):
                             scores = [scores]
                         scored_docs = []
-                        for i, doc in enumerate(documents):
+                        for i, doc in enumerate(rerank_docs):
                             final_score = float(scores[i])
                             doc_code = (doc.metadata.get("code_ru") or "").strip()
                             doc_article = (doc.metadata.get("article_number") or "").strip()
