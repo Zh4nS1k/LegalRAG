@@ -209,9 +209,10 @@ CLAUSE_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-# Sub-clause (подпункт): lines beginning with "1)", "2)", "а)", "б)"
+# Sub-clause (подпункт): lettered items like "а)", "б)", "a)", "b)".
+# Numeric items "1)" / "2)" are treated as clauses at the article level.
 SUBCLAUSE_RE = re.compile(
-    r"^([а-яёА-ЯЁa-zA-Z\d]+\))\s+",
+    r"^([а-яёА-ЯЁa-zA-Z]+\))\s+",
     re.IGNORECASE | re.MULTILINE,
 )
 
