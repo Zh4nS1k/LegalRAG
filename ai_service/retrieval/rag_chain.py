@@ -6,6 +6,7 @@ import re
 import sys
 import threading
 import time
+import json
 from typing import Any, List, Optional, Sequence
 
 import torch
@@ -1170,6 +1171,106 @@ def _merge_unique(base: List[Document], extra: List[Document]) -> List[Document]
     return merged
 
 
+def _truncate_for_llm_rerank(text: str, limit: int = 1400) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n[...обрезано...]"
+
+
+def _parse_llm_rerank_selection(raw: str, total_docs: int) -> list[int]:
+    text = (raw or "").strip()
+    if not text:
+        return []
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            candidates = payload.get("selected") or payload.get("indices") or []
+            if isinstance(candidates, list):
+                result = []
+                for item in candidates:
+                    try:
+                        idx = int(item)
+                    except Exception:
+                        continue
+                    if 1 <= idx <= total_docs and idx not in result:
+                        result.append(idx)
+                return result
+    except Exception:
+        pass
+
+    result = []
+    for match in re.findall(r"\d+", text):
+        idx = int(match)
+        if 1 <= idx <= total_docs and idx not in result:
+            result.append(idx)
+    return result
+
+
+def _llm_rerank_documents(
+    query: str, documents: Sequence[Document], top_n: int
+) -> Sequence[Document]:
+    if not documents:
+        return []
+    candidates = list(documents)[: max(top_n, config.LLM_RERANK_CANDIDATES)]
+    llm = get_llm()
+
+    candidate_blocks: list[str] = []
+    for i, doc in enumerate(candidates, start=1):
+        meta = doc.metadata or {}
+        code_ru = (meta.get("code_ru") or "").strip()
+        article_number = (meta.get("article_number") or "").strip()
+        path = (meta.get("path") or "").strip()
+        article_title = (meta.get("article_title") or "").strip()
+        header_parts = [f"{i})"]
+        if code_ru:
+            header_parts.append(code_ru)
+        if article_number:
+            header_parts.append(f"ст. {article_number}")
+        if path and path != f"ст. {article_number}":
+            header_parts.append(path)
+        if article_title:
+            header_parts.append(article_title)
+        snippet = _truncate_for_llm_rerank(doc.page_content)
+        candidate_blocks.append(" | ".join(header_parts) + "\n" + snippet)
+
+    prompt = (
+        "Ты ранжируешь нормы права для юридического поиска.\n"
+        "Выбери самые релевантные документы для вопроса.\n"
+        "Критерии по приоритету:\n"
+        "1. Правильный закон/кодекс.\n"
+        "2. Правильная статья.\n"
+        "3. Если есть пункты статьи, предпочитай самый точный пункт.\n"
+        "4. Не выбирай дубликаты одной и той же нормы без необходимости.\n\n"
+        f"Нужно выбрать {top_n} лучших кандидатов.\n"
+        'Верни только JSON вида {"selected":[1,2,3]} без пояснений.\n\n'
+        f"Вопрос:\n{query}\n\n"
+        "Кандидаты:\n"
+        + "\n\n".join(candidate_blocks)
+    )
+
+    try:
+        response = llm.invoke(prompt)
+        raw = getattr(response, "content", response)
+        selected = _parse_llm_rerank_selection(str(raw), len(candidates))
+        chosen = [candidates[i - 1] for i in selected[:top_n]]
+        if chosen:
+            seen = {_doc_key(d) for d in chosen}
+            for doc in candidates:
+                if len(chosen) >= top_n:
+                    break
+                key = _doc_key(doc)
+                if key in seen:
+                    continue
+                chosen.append(doc)
+                seen.add(key)
+            return chosen
+    except Exception as e:
+        logger.error("LLM reranker failed: %s", e, exc_info=True)
+
+    return candidates[:top_n]
+
+
 class _HeuristicRetriever(BaseRetriever):
     """Лёгкий эвристический слой: расширяет запрос и мягко фильтрует диапазоны статей."""
 
@@ -1666,7 +1767,18 @@ def get_retriever():
                             doc.metadata["relevance_score"] = final_score
                             scored_docs.append((doc, final_score))
                         scored_docs.sort(key=lambda x: x[1], reverse=True)
-                        return [d for d, _ in scored_docs[: self.top_n]]
+                        ranked_docs = [d for d, _ in scored_docs]
+                        llm_candidate_n = max(
+                            self.top_n,
+                            getattr(config, "LLM_RERANK_CANDIDATES", self.top_n),
+                        )
+                        if getattr(config, "USE_LLM_RERANKER", False):
+                            return _llm_rerank_documents(
+                                query,
+                                ranked_docs[:llm_candidate_n],
+                                getattr(config, "LLM_RERANK_TOP_N", self.top_n),
+                            )
+                        return ranked_docs[: self.top_n]
 
                 compressor = BGEReranker(
                     top_n=getattr(config, "RETRIEVER_TOP_K_AFTER_RERANK", 8)
