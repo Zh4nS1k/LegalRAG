@@ -1970,6 +1970,32 @@ def get_llm():
                             config.LLM_MODEL,
                             time.perf_counter() - t0,
                         )
+                    elif _llm_backend == "ollama_cloud":
+                        try:
+                            from langchain_openai import ChatOpenAI
+                        except Exception as e:  # pragma: no cover
+                            raise SystemExit(
+                                "Для использования Ollama Cloud установите пакет 'langchain-openai':\n"
+                                "  pip install langchain-openai openai\n"
+                                f"Текущая ошибка импорта: {e}"
+                            )
+                        ollama_api_key = os.environ.get("OLLAMA_API_KEY")
+                        if not ollama_api_key:
+                            raise SystemExit(
+                                "Задайте OLLAMA_API_KEY для Ollama Cloud: export OLLAMA_API_KEY=..."
+                            )
+                        _llm_instance = ChatOpenAI(
+                            api_key=ollama_api_key,
+                            base_url="https://ollama.com/v1",
+                            model=config.LLM_MODEL,
+                            temperature=config.LLM_TEMPERATURE,
+                            max_tokens=config.LLM_MAX_TOKENS,
+                        )
+                        logger.info(
+                            "[SUCCESS] LLM Initialization (Ollama Cloud, model=%s) (%.2fs)",
+                            config.LLM_MODEL,
+                            time.perf_counter() - t0,
+                        )
                     else:
                         from langchain_ollama import OllamaLLM
 
