@@ -1141,10 +1141,22 @@ def _needs_circumstances_query(query: str) -> bool:
 
 
 def _doc_key(doc: Document) -> tuple[str, str]:
-    return (
-        str(doc.metadata.get("source", "")).strip(),
-        str(doc.metadata.get("article_number", "")).strip(),
-    )
+    source = str(doc.metadata.get("source", "")).strip()
+    article = str(doc.metadata.get("article_number", "")).strip()
+    path = str(doc.metadata.get("path", "")).strip()
+    clause_level = str(doc.metadata.get("clause_level", "")).strip()
+    clause_number = str(doc.metadata.get("clause_number", "")).strip()
+    subclause_number = str(doc.metadata.get("subclause_number", "")).strip()
+    if path:
+        return (source, path)
+    if clause_level or clause_number or subclause_number:
+        return (
+            source,
+            "::".join(
+                [article, clause_level, clause_number, subclause_number]
+            ).strip(":"),
+        )
+    return (source, article)
 
 
 def _merge_unique(base: List[Document], extra: List[Document]) -> List[Document]:

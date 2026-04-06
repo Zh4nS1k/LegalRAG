@@ -361,12 +361,33 @@ def _build_chunk_path(
     return " ".join(parts)
 
 
+def _extract_article_header(article_text: str) -> str:
+    """Keep the legal unit anchored: every clause/subclause should carry the article header."""
+    lines = [line.rstrip() for line in article_text.splitlines()]
+    header_lines: list[str] = []
+    seen_non_empty = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if header_lines:
+                header_lines.append("")
+            continue
+        if CLAUSE_RE.match(stripped):
+            break
+        header_lines.append(line)
+        seen_non_empty = True
+    if not seen_non_empty:
+        return ""
+    return "\n".join(header_lines).strip()
+
+
 def _split_article_into_clauses(article_text: str) -> list[dict[str, str]]:
     """
     Recursive semantic split: Article → Clauses (1. 2. 3. or 1) 2)).
     Each returned string is one clause (no character-count splitting).
     """
     article_number = get_article_number(article_text) or ""
+    article_header = _extract_article_header(article_text)
     parts = CLAUSE_RE.split(article_text)
     if len(parts) <= 1:
         if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN:
@@ -388,8 +409,11 @@ def _split_article_into_clauses(article_text: str) -> list[dict[str, str]]:
             break
         num, content = parts[i], parts[i + 1]
         clause_text = f"{num}) " + content.strip()
-        if intro and i == 1:
+        if article_header:
+            clause_text = article_header + "\n" + clause_text
+        elif intro and i == 1:
             clause_text = intro + "\n" + clause_text
+        if i == 1:
             intro = ""
         if clause_text.strip() and len(clause_text.strip()) >= MIN_CHUNK_LEN:
             chunks.append(
