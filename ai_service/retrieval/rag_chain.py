@@ -1171,7 +1171,9 @@ def _merge_unique(base: List[Document], extra: List[Document]) -> List[Document]
     return merged
 
 
-def _truncate_for_llm_rerank(text: str, limit: int = 1400) -> str:
+def _truncate_for_llm_rerank(text: str, limit: int | None = None) -> str:
+    if limit is None:
+        limit = getattr(config, "LLM_RERANK_MAX_DOC_CHARS", 700)
     text = (text or "").strip()
     if len(text) <= limit:
         return text
@@ -1214,8 +1216,23 @@ def _llm_rerank_documents(
         return []
     candidates = list(documents)[: max(top_n, config.LLM_RERANK_CANDIDATES)]
     llm = get_llm()
-
+    query_text = _truncate_for_llm_rerank(query, limit=1200)
+    prompt_prefix = (
+        "Ты ранжируешь нормы права для юридического поиска.\n"
+        "Выбери самые релевантные документы для вопроса.\n"
+        "Критерии по приоритету:\n"
+        "1. Правильный закон/кодекс.\n"
+        "2. Правильная статья.\n"
+        "3. Если есть пункты статьи, предпочитай самый точный пункт.\n"
+        "4. Не выбирай дубликаты одной и той же нормы без необходимости.\n\n"
+        f"Нужно выбрать {top_n} лучших кандидатов.\n"
+        'Верни только JSON вида {"selected":[1,2,3]} без пояснений.\n\n'
+        f"Вопрос:\n{query_text}\n\n"
+        "Кандидаты:\n"
+    )
+    max_prompt_chars = getattr(config, "LLM_RERANK_MAX_PROMPT_CHARS", 9000)
     candidate_blocks: list[str] = []
+    current_len = len(prompt_prefix)
     for i, doc in enumerate(candidates, start=1):
         meta = doc.metadata or {}
         code_ru = (meta.get("code_ru") or "").strip()
@@ -1232,31 +1249,27 @@ def _llm_rerank_documents(
         if article_title:
             header_parts.append(article_title)
         snippet = _truncate_for_llm_rerank(doc.page_content)
-        candidate_blocks.append(" | ".join(header_parts) + "\n" + snippet)
+        block = " | ".join(header_parts) + "\n" + snippet
+        projected_len = current_len + len(block) + 2
+        if candidate_blocks and projected_len > max_prompt_chars:
+            break
+        candidate_blocks.append(block)
+        current_len = projected_len
 
-    prompt = (
-        "Ты ранжируешь нормы права для юридического поиска.\n"
-        "Выбери самые релевантные документы для вопроса.\n"
-        "Критерии по приоритету:\n"
-        "1. Правильный закон/кодекс.\n"
-        "2. Правильная статья.\n"
-        "3. Если есть пункты статьи, предпочитай самый точный пункт.\n"
-        "4. Не выбирай дубликаты одной и той же нормы без необходимости.\n\n"
-        f"Нужно выбрать {top_n} лучших кандидатов.\n"
-        'Верни только JSON вида {"selected":[1,2,3]} без пояснений.\n\n'
-        f"Вопрос:\n{query}\n\n"
-        "Кандидаты:\n"
-        + "\n\n".join(candidate_blocks)
-    )
+    if not candidate_blocks:
+        return candidates[:top_n]
+
+    prompt = prompt_prefix + "\n\n".join(candidate_blocks)
 
     try:
         response = llm.invoke(prompt)
         raw = getattr(response, "content", response)
-        selected = _parse_llm_rerank_selection(str(raw), len(candidates))
-        chosen = [candidates[i - 1] for i in selected[:top_n]]
+        selected = _parse_llm_rerank_selection(str(raw), len(candidate_blocks))
+        visible_candidates = candidates[: len(candidate_blocks)]
+        chosen = [visible_candidates[i - 1] for i in selected[:top_n]]
         if chosen:
             seen = {_doc_key(d) for d in chosen}
-            for doc in candidates:
+            for doc in visible_candidates:
                 if len(chosen) >= top_n:
                     break
                 key = _doc_key(doc)

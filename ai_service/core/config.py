@@ -220,9 +220,15 @@ EXPERIMENTAL_DEDUP_RETRIEVAL = (
 )
 USE_LLM_RERANKER = os.environ.get("LEGAL_RAG_USE_LLM_RERANKER", "0") == "1"
 LLM_RERANK_CANDIDATES = int(
-    os.environ.get("LEGAL_RAG_LLM_RERANK_CANDIDATES", "10")
+    os.environ.get("LEGAL_RAG_LLM_RERANK_CANDIDATES", "6")
 )
 LLM_RERANK_TOP_N = int(os.environ.get("LEGAL_RAG_LLM_RERANK_TOP_N", "5"))
+LLM_RERANK_MAX_DOC_CHARS = int(
+    os.environ.get("LEGAL_RAG_LLM_RERANK_MAX_DOC_CHARS", "700")
+)
+LLM_RERANK_MAX_PROMPT_CHARS = int(
+    os.environ.get("LEGAL_RAG_LLM_RERANK_MAX_PROMPT_CHARS", "9000")
+)
 FLASHRANK_MODEL = "ms-marco-MiniLM-L-12-v2"
 
 # Agentic workflow (Board of Directors): Censor = fetch many, rerank to few
