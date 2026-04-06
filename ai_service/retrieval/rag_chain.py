@@ -821,14 +821,125 @@ def _has_alias(query: str, alias: str) -> bool:
     return re.search(pattern, query) is not None
 
 
-def _detect_target_codes(query: str) -> list[str]:
+_LAW_ROUTE_HINTS: list[tuple[tuple[str, ...], list[str], float]] = [
+    (
+        (
+            "валютном регулировании",
+            "валютном контроле",
+            "валюталық реттеу",
+            "валюталық бақылау",
+            "нерезидент",
+            "резидент",
+            "импорт",
+            "экспорт",
+            "внешнеэконом",
+            "дубай",
+            "дубае",
+            "иностранн",
+            "за рубежом",
+            "наличными деньгами",
+            "наличные деньги",
+            "оплата наличными",
+            "оплата товара наличными",
+        ),
+        _currency_variants,
+        1.2,
+    ),
+    (
+        (
+            "товариществах с ограниченной и дополнительной ответственностью",
+            "жауапкершілігі шектеулі",
+        ),
+        _llp_variants,
+        1.2,
+    ),
+    (
+        (
+            "тоо",
+            "т о о",
+            "ип",
+        ),
+        _llp_variants,
+        0.35,
+    ),
+    (
+        (
+            "зпп",
+            "защите прав потребителей",
+            "правах потребителей",
+            "возврат товара",
+            "продавец отказал",
+            "некачественный товар",
+            "недостаток товара",
+        ),
+        _consumer_variants,
+        1.1,
+    ),
+    (
+        (
+            "банковской деятельности",
+            "банковский счет",
+            "банковский заем",
+            "банк",
+            "счет",
+            "перевод денег",
+        ),
+        _banks_variants,
+        0.8,
+    ),
+]
+
+
+def _score_target_codes(query: str) -> list[tuple[str, float]]:
     q = _normalized_query(query)
-    detected: list[str] = []
+    scores: dict[str, float] = {}
+
     for aliases, code_names in _LAW_ALIAS_GROUPS:
-        if any(_has_alias(q, alias) for alias in aliases):
-            for code_name in code_names:
-                if code_name not in detected:
-                    detected.append(code_name)
+        matched = False
+        for alias in aliases:
+            if _has_alias(q, alias):
+                matched = True
+                break
+        if not matched:
+            continue
+        for code_name in code_names:
+            scores[code_name] = scores.get(code_name, 0.0) + 1.0
+
+    for aliases, code_names, weight in _LAW_ROUTE_HINTS:
+        matched_count = 0
+        for alias in aliases:
+            if _has_alias(q, alias):
+                matched_count += 1
+        if not matched_count:
+            continue
+        boost = min(weight * matched_count, weight * 3)
+        for code_name in code_names:
+            scores[code_name] = scores.get(code_name, 0.0) + boost
+
+    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    if not ranked:
+        return []
+    return ranked
+
+
+def _detect_target_codes(query: str) -> list[str]:
+    ranked = _score_target_codes(query)
+    if not ranked:
+        return []
+
+    top_score = ranked[0][1]
+    second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+
+    if top_score >= 1.5 and top_score >= second_score + 1.0:
+        return [code for code, score in ranked if score >= top_score - 0.4]
+
+    cutoff = max(1.0, top_score - 0.5)
+    detected: list[str] = []
+    for code, score in ranked:
+        if score < cutoff:
+            continue
+        if code not in detected:
+            detected.append(code)
     return detected
 
 
