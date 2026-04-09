@@ -183,13 +183,13 @@ def _compute_metrics(gold_pairs: list[tuple[str, str]], pred_pairs: list[tuple[s
 
 def main() -> None:
     args = _parse_args()
-    from ai_service.retrieval.rag_chain import get_retriever
+    from ai_service.retrieval.rag_chain import get_retriever_for_coverage
 
     xlsx_path = Path(args.xlsx)
     if not xlsx_path.exists():
         raise FileNotFoundError(f"Benchmark XLSX not found: {xlsx_path}")
 
-    retriever = get_retriever()
+    retriever = get_retriever_for_coverage(args.top_k)
     df = pd.read_excel(xlsx_path)
     df = df.iloc[args.start_from : args.start_from + args.limit].copy()
 

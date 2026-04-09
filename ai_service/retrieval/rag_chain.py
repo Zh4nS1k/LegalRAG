@@ -963,6 +963,40 @@ def _extract_query_article_number(query: str) -> str | None:
     return None
 
 
+def _extract_query_article_numbers(query: str) -> list[str]:
+    q = query or ""
+    articles: list[str] = []
+
+    def _add(article: str) -> None:
+        normalized = _normalize_article_number(article)
+        if normalized and normalized not in articles:
+            articles.append(normalized)
+
+    primary = _extract_query_article_number(q)
+    if primary:
+        _add(primary)
+
+    for match in re.finditer(
+        r"(?:статьи|статья|ст\.|ст|баптары|баптар|бап)\s*([0-9,\-\sandи]+)",
+        q,
+        re.IGNORECASE,
+    ):
+        raw_tail = match.group(1)
+        for token in re.findall(r"\d+(?:-\d+)?", raw_tail):
+            _add(token)
+
+    range_match = _extract_article_range(q)
+    if range_match:
+        start, end = range_match
+        for number in range(start, end + 1):
+            _add(str(number))
+
+    for article in sorted(_focus_articles_from_query(q)):
+        _add(article)
+
+    return articles
+
+
 def _filter_docs_by_codes(docs: List[Document], code_names: list[str]) -> List[Document]:
     if not code_names:
         return docs
@@ -976,19 +1010,35 @@ def _search_with_code_filters(
     *,
     k: int,
     article_number: str | None = None,
+    article_numbers: list[str] | None = None,
 ) -> List[Document]:
     if not code_names:
         return []
     store = get_vector_store()
     docs: list[Document] = []
+    target_articles = list(article_numbers or [])
+    if article_number:
+        normalized = _normalize_article_number(article_number)
+        if normalized and normalized not in target_articles:
+            target_articles.append(normalized)
+
     for code_name in code_names:
-        search_filter: dict[str, Any] = {"code_ru": code_name}
-        if article_number:
-            search_filter["article_number"] = article_number
-        try:
-            docs.extend(store.similarity_search(query, k=k, filter=search_filter))
-        except Exception:
-            continue
+        filters: list[dict[str, Any]] = []
+        if target_articles:
+            filters.extend(
+                {"code_ru": code_name, "article_number": target_article}
+                for target_article in target_articles
+            )
+        filters.append({"code_ru": code_name})
+
+        for search_filter in filters:
+            try:
+                docs = _merge_unique(
+                    docs,
+                    store.similarity_search(query, k=k, filter=search_filter),
+                )
+            except Exception:
+                continue
     return docs
 
 
@@ -1072,6 +1122,7 @@ def _multi_query_search_with_code_filters(
     *,
     k: int,
     article_number: str | None = None,
+    article_numbers: list[str] | None = None,
 ) -> List[Document]:
     docs: list[Document] = []
     for candidate in _build_retrieval_queries(query):
@@ -1082,9 +1133,41 @@ def _multi_query_search_with_code_filters(
                 code_names,
                 k=k,
                 article_number=article_number,
+                article_numbers=article_numbers,
             ),
         )
     return docs
+
+
+def _sort_docs_for_coverage(
+    docs: List[Document],
+    *,
+    target_codes: list[str] | None = None,
+    target_articles: list[str] | None = None,
+) -> List[Document]:
+    if not docs:
+        return []
+
+    target_code_set = set(target_codes or [])
+    target_article_set = {_normalize_article_number(a) for a in (target_articles or []) if a}
+    scored: list[tuple[float, int, Document]] = []
+    for idx, doc in enumerate(docs):
+        meta = doc.metadata or {}
+        score = 0.0
+        doc_code = (meta.get("code_ru") or "").strip()
+        doc_article = _normalize_article_number(meta.get("article_number"))
+
+        if target_code_set and doc_code in target_code_set:
+            score += 2.0
+        if target_article_set and doc_article in target_article_set:
+            score += 3.0
+        if target_code_set and target_article_set and doc_code in target_code_set and doc_article in target_article_set:
+            score += 1.0
+
+        scored.append((score, idx, doc))
+
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [doc for _, _, doc in scored]
 
 
 def _augment_retrieval_query(query: str) -> str:
@@ -1513,34 +1596,35 @@ class _HeuristicRetriever(BaseRetriever):
     ) -> List[Document]:
         docs = _multi_query_retrieve(self.base_retriever, query)
         target_codes = _detect_target_codes(query)
+        target_articles = _extract_query_article_numbers(query)
         if target_codes:
             filtered = _filter_docs_by_codes(docs, target_codes)
             if filtered:
-                docs = filtered
-            else:
-                fallback_docs = _multi_query_search_with_code_filters(
-                    query,
-                    target_codes,
-                    k=6,
-                )
-                if fallback_docs:
-                    docs = fallback_docs
+                docs = _merge_unique(filtered, docs)
+            fallback_docs = _multi_query_search_with_code_filters(
+                query,
+                target_codes,
+                k=6,
+                article_numbers=target_articles,
+            )
+            if fallback_docs:
+                docs = _merge_unique(docs, fallback_docs)
         elif _is_criminal_query(query):
             filtered = _filter_docs_by_codes(docs, _uk_variants)
             if filtered:
-                docs = filtered
-            else:
-                fallback_docs = _multi_query_search_with_code_filters(
-                    query,
-                    _uk_variants,
-                    k=6,
-                )
-                if fallback_docs:
-                    docs = fallback_docs
+                docs = _merge_unique(filtered, docs)
+            fallback_docs = _multi_query_search_with_code_filters(
+                query,
+                _uk_variants,
+                k=6,
+                article_numbers=target_articles,
+            )
+            if fallback_docs:
+                docs = _merge_unique(docs, fallback_docs)
         range_match = _extract_article_range(query)
         if range_match:
             start, end = range_match
-            filtered = [
+            focused = [
                 d
                 for d in docs
                 if _normalize_article_number(d.metadata.get("article_number")).isdigit()
@@ -1548,7 +1632,8 @@ class _HeuristicRetriever(BaseRetriever):
                 <= int(_normalize_article_number(d.metadata.get("article_number")))
                 <= end
             ]
-            return filtered if filtered else docs
+            if focused:
+                docs = _merge_unique(focused, docs)
         focus = _focus_articles_from_query(query)
         if focus:
             focused = [
@@ -1556,8 +1641,13 @@ class _HeuristicRetriever(BaseRetriever):
                 for d in docs
                 if _normalize_article_number(d.metadata.get("article_number")) in focus
             ]
-            return focused if focused else docs
-        return docs
+            if focused:
+                docs = _merge_unique(focused, docs)
+        return _sort_docs_for_coverage(
+            docs,
+            target_codes=target_codes,
+            target_articles=target_articles,
+        )
 
 
 class _LawAwareRetriever(BaseRetriever):
@@ -1572,28 +1662,42 @@ class _LawAwareRetriever(BaseRetriever):
     ) -> List[Document]:
         docs = _multi_query_retrieve(self.base_retriever, query)
         target_codes = _detect_target_codes(query)
-        article_number = _extract_query_article_number(query)
+        target_articles = _extract_query_article_numbers(query)
+        article_number = target_articles[0] if target_articles else None
         if target_codes:
             filtered = _filter_docs_by_codes(docs, target_codes)
-            docs = filtered if filtered else docs
+            if filtered:
+                docs = _merge_unique(filtered, docs)
             if len(docs) < min(_hybrid_k, 6):
                 extra = _multi_query_search_with_code_filters(
                     query,
                     target_codes,
                     k=max(_hybrid_k, 8),
                     article_number=article_number,
+                    article_numbers=target_articles,
+                )
+                if extra:
+                    docs = _merge_unique(docs, extra)
+            elif target_articles:
+                extra = _multi_query_search_with_code_filters(
+                    query,
+                    target_codes,
+                    k=4,
+                    article_numbers=target_articles,
                 )
                 if extra:
                     docs = _merge_unique(docs, extra)
         elif _is_criminal_query(query):
             filtered = _filter_docs_by_codes(docs, _uk_variants)
-            docs = filtered if filtered else docs
+            if filtered:
+                docs = _merge_unique(filtered, docs)
             if len(docs) < self.min_k_criminal:
                 extra = _multi_query_search_with_code_filters(
                     query,
                     _uk_variants,
                     k=self.min_k_criminal,
                     article_number=article_number,
+                    article_numbers=target_articles,
                 )
                 if extra:
                     docs = _merge_unique(docs, extra)
@@ -1620,7 +1724,11 @@ class _LawAwareRetriever(BaseRetriever):
             if extra_docs:
                 docs = _merge_unique(docs, extra_docs)
 
-        return docs
+        return _sort_docs_for_coverage(
+            docs,
+            target_codes=target_codes,
+            target_articles=target_articles,
+        )
 
 
 def _fetch_parent_context_from_store(
@@ -2045,6 +2153,23 @@ def get_retriever():
     # Call outside lock — _ensure_latency_patches calls get_llm() which needs _init_lock (avoid deadlock)
     _ensure_latency_patches()
     return _retriever_instance
+
+
+def get_retriever_for_coverage(top_k: int | None = None):
+    """Return retriever with a wider final trim for retrieval benchmarks.
+
+    This keeps the same retrieval stack but avoids cutting results down to the
+    LLM context limit before coverage metrics are computed.
+    """
+    retriever = get_retriever()
+    desired_top_k = max(1, int(top_k or getattr(config, "RETRIEVER_WIDE_K", 10)))
+    if isinstance(retriever, _TrimRetriever) and retriever.max_docs < desired_top_k:
+        return _TrimRetriever(
+            base_retriever=retriever.base_retriever,
+            max_docs=desired_top_k,
+            max_chars_per_doc=retriever.max_chars_per_doc,
+        )
+    return retriever
 
 
 def get_llm():
