@@ -943,11 +943,23 @@ def _detect_target_codes(query: str) -> list[str]:
     return detected
 
 
+def _normalize_article_number(value: str | None) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    raw = raw.replace("статья", "").replace("ст.", "").replace("ст", "").replace("бап", "")
+    raw = re.sub(r"\s+", "", raw)
+    raw = raw.replace("–", "-").replace("—", "-")
+    raw = re.sub(r"[^\da-zа-я\-\.]", "", raw, flags=re.IGNORECASE)
+    return raw.strip(".-")
+
+
 def _extract_query_article_number(query: str) -> str | None:
     q = query or ""
     match = re.search(r"(?:статья|ст\.|ст|бап)\s*(\d+[а-яА-Яa-zA-Z\-]?)", q, re.IGNORECASE)
     if match:
-        return match.group(1).strip()
+        normalized = _normalize_article_number(match.group(1))
+        return normalized or None
     return None
 
 
@@ -977,6 +989,101 @@ def _search_with_code_filters(
             docs.extend(store.similarity_search(query, k=k, filter=search_filter))
         except Exception:
             continue
+    return docs
+
+
+_LEGAL_SYNONYMS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("договор", ("обязательство", "сделка", "договорные отношения")),
+    ("налич", ("наличные расчеты", "денежные средства", "оплата наличными")),
+    ("ущерб", ("убытки", "вред", "возмещение вреда")),
+    ("мусор", ("отходы", "тбо", "санитарные требования")),
+    ("крипто", ("цифровые активы", "необеспеченные цифровые активы", "стейкинг")),
+    ("банкрот", ("неплатежеспособность", "восстановление платежеспособности")),
+    ("тоо", ("товарищество с ограниченной ответственностью", "участник тоо")),
+    ("ип", ("индивидуальный предприниматель", "предпринимательская деятельность")),
+    ("недвижим", ("имущество", "право собственности", "регистрация прав")),
+)
+
+
+def _expand_legal_synonyms(query: str) -> list[str]:
+    q = _normalized_query(query)
+    extras: list[str] = []
+    for needle, synonyms in _LEGAL_SYNONYMS:
+        if needle not in q:
+            continue
+        extras.extend(s for s in synonyms if s not in q)
+    return extras
+
+
+def _rewrite_query_for_retrieval(query: str) -> str:
+    """Deterministic legal rewrite: keep semantics stable and avoid extra LLM latency."""
+    target_codes = _detect_target_codes(query)
+    article_number = _extract_query_article_number(query)
+    focus_articles = sorted(_focus_articles_from_query(query))
+    parts = [query.strip()]
+
+    if target_codes:
+        parts.append(" ".join(dict.fromkeys(target_codes)))
+    if article_number:
+        parts.append(f"статья {article_number}")
+    if focus_articles:
+        parts.append(" ".join(f"статья {num}" for num in focus_articles[:4]))
+
+    synonym_tail = _expand_legal_synonyms(query)
+    if synonym_tail:
+        parts.append(" ".join(synonym_tail[:6]))
+
+    return " ".join(part for part in parts if part).strip()
+
+
+def _build_retrieval_queries(query: str) -> list[str]:
+    augmented = _augment_retrieval_query(query)
+    rewritten = _rewrite_query_for_retrieval(query)
+    queries: list[str] = []
+    for candidate in (query, augmented, rewritten):
+        cleaned = re.sub(r"\s+", " ", (candidate or "").strip())
+        if cleaned and cleaned not in queries:
+            queries.append(cleaned)
+
+    target_codes = _detect_target_codes(query)
+    if target_codes:
+        code_query = f"{rewritten} {' '.join(target_codes)}".strip()
+        if code_query and code_query not in queries:
+            queries.append(code_query)
+
+    limit = max(1, getattr(config, "RETRIEVER_MULTI_QUERY_LIMIT", 4))
+    return queries[:limit]
+
+
+def _multi_query_retrieve(base_retriever: Any, query: str) -> List[Document]:
+    merged: list[Document] = []
+    for candidate in _build_retrieval_queries(query):
+        try:
+            docs = base_retriever.invoke(candidate)
+        except Exception:
+            continue
+        merged = _merge_unique(merged, list(docs))
+    return merged
+
+
+def _multi_query_search_with_code_filters(
+    query: str,
+    code_names: list[str],
+    *,
+    k: int,
+    article_number: str | None = None,
+) -> List[Document]:
+    docs: list[Document] = []
+    for candidate in _build_retrieval_queries(query):
+        docs = _merge_unique(
+            docs,
+            _search_with_code_filters(
+                candidate,
+                code_names,
+                k=k,
+                article_number=article_number,
+            ),
+        )
     return docs
 
 
@@ -1122,7 +1229,7 @@ def _focus_articles_from_query(query: str) -> set[str]:
             "ақша",
         )
     ) and _is_criminal_query(query):
-        focus.update({"190", "218"})
+        focus.update({_normalize_article_number("190"), _normalize_article_number("218")})
     if any(
         token in q
         for token in (
@@ -1138,7 +1245,7 @@ def _focus_articles_from_query(query: str) -> set[str]:
             "уклонен",
         )
     ) and _is_criminal_query(query):
-        focus.update({"214", "245"})
+        focus.update({_normalize_article_number("214"), _normalize_article_number("245")})
     if any(
         token in q
         for token in (
@@ -1151,7 +1258,7 @@ def _focus_articles_from_query(query: str) -> set[str]:
             "30-50%",
         )
     ) and _is_criminal_query(query):
-        focus.update({"217", "190"})
+        focus.update({_normalize_article_number("217"), _normalize_article_number("190")})
     if any(
         token in q
         for token in (
@@ -1170,7 +1277,7 @@ def _focus_articles_from_query(query: str) -> set[str]:
             "жаппай ауру",
         )
     ):
-        focus.update({"328", "325", "324"})
+        focus.update({_normalize_article_number("328"), _normalize_article_number("325"), _normalize_article_number("324")})
     if any(
         token in q
         for token in (
@@ -1190,7 +1297,7 @@ def _focus_articles_from_query(query: str) -> set[str]:
             "прирост стоимости",
         )
     ):
-        focus.update({"228", "330", "332", "333"})
+        focus.update({_normalize_article_number("228"), _normalize_article_number("330"), _normalize_article_number("332"), _normalize_article_number("333")})
     return focus
 
 
@@ -1404,16 +1511,15 @@ class _HeuristicRetriever(BaseRetriever):
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun | None = None
     ) -> List[Document]:
-        search_query = _augment_retrieval_query(query)
-        docs = self.base_retriever.invoke(search_query)
+        docs = _multi_query_retrieve(self.base_retriever, query)
         target_codes = _detect_target_codes(query)
         if target_codes:
             filtered = _filter_docs_by_codes(docs, target_codes)
             if filtered:
                 docs = filtered
             else:
-                fallback_docs = _search_with_code_filters(
-                    search_query,
+                fallback_docs = _multi_query_search_with_code_filters(
+                    query,
                     target_codes,
                     k=6,
                 )
@@ -1424,8 +1530,8 @@ class _HeuristicRetriever(BaseRetriever):
             if filtered:
                 docs = filtered
             else:
-                fallback_docs = _search_with_code_filters(
-                    search_query,
+                fallback_docs = _multi_query_search_with_code_filters(
+                    query,
                     _uk_variants,
                     k=6,
                 )
@@ -1437,8 +1543,10 @@ class _HeuristicRetriever(BaseRetriever):
             filtered = [
                 d
                 for d in docs
-                if (d.metadata.get("article_number") or "").strip().isdigit()
-                and start <= int(d.metadata.get("article_number")) <= end
+                if _normalize_article_number(d.metadata.get("article_number")).isdigit()
+                and start
+                <= int(_normalize_article_number(d.metadata.get("article_number")))
+                <= end
             ]
             return filtered if filtered else docs
         focus = _focus_articles_from_query(query)
@@ -1446,7 +1554,7 @@ class _HeuristicRetriever(BaseRetriever):
             focused = [
                 d
                 for d in docs
-                if (d.metadata.get("article_number") or "").strip() in focus
+                if _normalize_article_number(d.metadata.get("article_number")) in focus
             ]
             return focused if focused else docs
         return docs
@@ -1462,17 +1570,18 @@ class _LawAwareRetriever(BaseRetriever):
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun | None = None
     ) -> List[Document]:
-        search_query = _augment_retrieval_query(query)
-        docs = self.base_retriever.invoke(search_query)
+        docs = _multi_query_retrieve(self.base_retriever, query)
         target_codes = _detect_target_codes(query)
+        article_number = _extract_query_article_number(query)
         if target_codes:
             filtered = _filter_docs_by_codes(docs, target_codes)
             docs = filtered if filtered else docs
             if len(docs) < min(_hybrid_k, 6):
-                extra = _search_with_code_filters(
-                    search_query,
+                extra = _multi_query_search_with_code_filters(
+                    query,
                     target_codes,
                     k=max(_hybrid_k, 8),
+                    article_number=article_number,
                 )
                 if extra:
                     docs = _merge_unique(docs, extra)
@@ -1480,10 +1589,11 @@ class _LawAwareRetriever(BaseRetriever):
             filtered = _filter_docs_by_codes(docs, _uk_variants)
             docs = filtered if filtered else docs
             if len(docs) < self.min_k_criminal:
-                extra = _search_with_code_filters(
-                    search_query,
+                extra = _multi_query_search_with_code_filters(
+                    query,
                     _uk_variants,
                     k=self.min_k_criminal,
+                    article_number=article_number,
                 )
                 if extra:
                     docs = _merge_unique(docs, extra)
@@ -1864,11 +1974,14 @@ def get_retriever():
                         target_articles: set[str] = set()
                         article_number = _extract_query_article_number(query)
                         if article_number:
-                            target_articles.add(article_number)
+                            target_articles.add(_normalize_article_number(article_number))
                         range_match = _extract_article_range(query)
                         if range_match:
                             start, end = range_match
-                            target_articles.update(str(n) for n in range(start, end + 1))
+                            target_articles.update(
+                                _normalize_article_number(str(n))
+                                for n in range(start, end + 1)
+                            )
                         pairs = [[query, d.page_content] for d in rerank_docs]
                         scores = _reranker_model.compute_score(pairs)
                         if isinstance(scores, float):
@@ -1877,7 +1990,9 @@ def get_retriever():
                         for i, doc in enumerate(rerank_docs):
                             final_score = float(scores[i])
                             doc_code = (doc.metadata.get("code_ru") or "").strip()
-                            doc_article = (doc.metadata.get("article_number") or "").strip()
+                            doc_article = _normalize_article_number(
+                                doc.metadata.get("article_number")
+                            )
 
                             if target_codes:
                                 if doc_code in target_codes:

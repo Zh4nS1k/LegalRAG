@@ -200,6 +200,9 @@ RETRIEVER_TOP_K_AFTER_RERANK = int(
 RETRIEVER_MIN_K_CRIMINAL = int(
     os.environ.get("LEGAL_RAG_RETRIEVER_MIN_K_CRIMINAL", "8")
 )
+RETRIEVER_MULTI_QUERY_LIMIT = int(
+    os.environ.get("LEGAL_RAG_RETRIEVER_MULTI_QUERY_LIMIT", "4")
+)
 HYBRID_K = RETRIEVER_WIDE_K
 # Pinecone hard filtering (lineage metadata: code_ru, article_number, revision_date from chunks)
 # Optional env: restrict retrieval to one code and/or article (e.g. for testing).

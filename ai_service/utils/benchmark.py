@@ -366,7 +366,10 @@ def run_benchmark(timeout_sec: float = None):
 
     print("Загрузка RAG-цепи...")
     try:
-        from rag_chain import invoke_qa, retriever, llm
+        try:
+            from ai_service.retrieval.rag_chain import invoke_qa, retriever, llm
+        except Exception:
+            from rag_chain import invoke_qa, retriever, llm
     except Exception as e:
         print(f"Ошибка загрузки rag_chain: {e}")
         sys.exit(1)

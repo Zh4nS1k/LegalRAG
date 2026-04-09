@@ -544,13 +544,57 @@ def _is_bad_chunk_text(text: str) -> bool:
     normalized = re.sub(r"\s+", " ", (text or "").strip().lower())
     if not normalized:
         return True
+    if len(normalized) < 80 and "статья" not in normalized and "-бап" not in normalized:
+        return True
     bad_markers = (
         "оглавление",
         "вниманию пользователей",
         "для удобства пользования",
         "сноска.",
+        "примечание изпи",
+        "примечание рцпи",
+        "содержание",
     )
     return any(marker in normalized[:300] for marker in bad_markers)
+
+
+def _build_indexable_text(chunk_text: str, meta: dict) -> str:
+    """Prefix chunk with compact legal structure to reduce code/article ambiguity in retrieval."""
+    parts: list[str] = []
+    code_ru = str(meta.get("code_ru") or "").strip()
+    article_number = str(meta.get("article_number") or "").strip()
+    article_title = str(meta.get("article_title") or "").strip()
+    chapter_number = str(meta.get("chapter_number") or "").strip()
+    chapter_title = str(meta.get("chapter_title") or "").strip()
+    clause_level = str(meta.get("clause_level") or "").strip()
+    clause_number = str(meta.get("clause_number") or "").strip()
+    subclause_number = str(meta.get("subclause_number") or "").strip()
+
+    if code_ru:
+        parts.append(f"Кодекс: {code_ru}")
+    if chapter_number or chapter_title:
+        chapter_label = " ".join(
+            part for part in (chapter_number, chapter_title) if part
+        ).strip()
+        if chapter_label:
+            parts.append(f"Глава: {chapter_label}")
+    if article_number:
+        article_label = article_number
+        if article_title:
+            article_label += f". {article_title}"
+        parts.append(f"Статья: {article_label}")
+    if clause_level == "clause" and clause_number:
+        parts.append(f"Пункт: {clause_number}")
+    elif clause_level == "subclause":
+        if clause_number:
+            parts.append(f"Пункт: {clause_number}")
+        if subclause_number:
+            parts.append(f"Подпункт: {subclause_number}")
+
+    if not parts:
+        return chunk_text
+    header = "\n".join(parts).strip()
+    return f"{header}\nТекст: {chunk_text.strip()}".strip()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -681,7 +725,12 @@ class ArticleTextSplitter(TextSplitter):
                 if article_title:
                     meta["article_title"] = article_title
 
-                documents.append(Document(page_content=chunk, metadata=meta))
+                documents.append(
+                    Document(
+                        page_content=_build_indexable_text(chunk, meta),
+                        metadata=meta,
+                    )
+                )
 
         return documents
 
