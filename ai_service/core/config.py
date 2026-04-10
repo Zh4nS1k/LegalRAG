@@ -192,16 +192,19 @@ CONTEXT_MAX_CHARS_PER_DOC = int(
 
 # Retriever (двухэтапный: широкий отбор + rerank)
 # Tune via env vars — lower = faster Pinecone (free tier). Raise only if recall drops.
-RETRIEVER_WIDE_K = int(os.environ.get("LEGAL_RAG_RETRIEVER_WIDE_K", "10"))
+RETRIEVER_WIDE_K = int(os.environ.get("LEGAL_RAG_RETRIEVER_WIDE_K", "50"))
 RETRIEVER_TOP_K = RETRIEVER_WIDE_K  # совместимость со старым кодом
 RETRIEVER_TOP_K_AFTER_RERANK = int(
-    os.environ.get("LEGAL_RAG_RETRIEVER_TOP_K_AFTER_RERANK", "6")
+    os.environ.get("LEGAL_RAG_RETRIEVER_TOP_K_AFTER_RERANK", "5")
 )
 RETRIEVER_MIN_K_CRIMINAL = int(
     os.environ.get("LEGAL_RAG_RETRIEVER_MIN_K_CRIMINAL", "8")
 )
 RETRIEVER_MULTI_QUERY_LIMIT = int(
     os.environ.get("LEGAL_RAG_RETRIEVER_MULTI_QUERY_LIMIT", "4")
+)
+RETRIEVER_SAME_CODE_PENALTY_STEP = float(
+    os.environ.get("LEGAL_RAG_RETRIEVER_SAME_CODE_PENALTY_STEP", "0.1")
 )
 HYBRID_K = RETRIEVER_WIDE_K
 # Pinecone hard filtering (lineage metadata: code_ru, article_number, revision_date from chunks)
@@ -218,6 +221,7 @@ VECTOR_WEIGHT = float(os.environ.get("LEGAL_RAG_VECTOR_WEIGHT", "0.6"))
 CHUNKS_PICKLE_PATH = BASE_DIR / "chunks_for_bm25.pkl"
 # Reranker
 USE_RERANKER = os.environ.get("LEGAL_RAG_USE_RERANKER", "1") == "1"
+USE_LLM_QUERY_REWRITE = os.environ.get("LEGAL_RAG_USE_LLM_QUERY_REWRITE", "0") == "1"
 EXPERIMENTAL_DEDUP_RETRIEVAL = (
     os.environ.get("LEGAL_RAG_EXPERIMENTAL_DEDUP_RETRIEVAL", "0") == "1"
 )

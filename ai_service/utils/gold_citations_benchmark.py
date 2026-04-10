@@ -164,6 +164,16 @@ def _compute_metrics(gold_pairs: list[tuple[str, str]], pred_pairs: list[tuple[s
     strict_recall = len(gold_set & pred_set) / len(gold_set) if gold_set else 0.0
     soft_precision = len(gold_articles & pred_articles) / len(pred_articles) if pred_articles else 0.0
     soft_recall = len(gold_articles & pred_articles) / len(gold_articles) if gold_articles else 0.0
+    strict_mrr = 0.0
+    soft_mrr = 0.0
+    for rank, pair in enumerate(pred_pairs, start=1):
+        if not strict_mrr and pair in gold_set:
+            strict_mrr = 1.0 / rank
+        if not soft_mrr and pair[0] in gold_articles:
+            soft_mrr = 1.0 / rank
+        if strict_mrr and soft_mrr:
+            break
+
     return {
         "strict_hit": strict_hit,
         "soft_hit": soft_hit,
@@ -171,6 +181,8 @@ def _compute_metrics(gold_pairs: list[tuple[str, str]], pred_pairs: list[tuple[s
         "strict_recall": strict_recall,
         "soft_precision": soft_precision,
         "soft_recall": soft_recall,
+        "strict_mrr": strict_mrr,
+        "soft_mrr": soft_mrr,
     }
 
 
@@ -248,6 +260,8 @@ def main() -> None:
             "strict_recall": _avg("answer_metrics", "strict_recall"),
             "soft_precision": _avg("answer_metrics", "soft_precision"),
             "soft_recall": _avg("answer_metrics", "soft_recall"),
+            "strict_mrr": _avg("answer_metrics", "strict_mrr"),
+            "soft_mrr": _avg("answer_metrics", "soft_mrr"),
         },
         "answer_plus_sources": {
             "strict_hit": _avg("combined_metrics", "strict_hit"),
@@ -256,6 +270,8 @@ def main() -> None:
             "strict_recall": _avg("combined_metrics", "strict_recall"),
             "soft_precision": _avg("combined_metrics", "soft_precision"),
             "soft_recall": _avg("combined_metrics", "soft_recall"),
+            "strict_mrr": _avg("combined_metrics", "strict_mrr"),
+            "soft_mrr": _avg("combined_metrics", "soft_mrr"),
         },
         "results": results,
     }

@@ -18,6 +18,8 @@ from pydantic import Field
 
 from ai_service.core import config
 from ai_service.lifecycle_hooks import network_sensor
+from ai_service.retrieval.domain import detect_domain, domain_matches_code
+from ai_service.retrieval.query_rewrite import rewrite_query
 from ai_service.utils import latency
 from ai_service.utils.connectivity import is_cache_populated, is_internet_available
 
@@ -1066,24 +1068,20 @@ def _expand_legal_synonyms(query: str) -> list[str]:
 
 
 def _rewrite_query_for_retrieval(query: str) -> str:
-    """Deterministic legal rewrite: keep semantics stable and avoid extra LLM latency."""
-    target_codes = _detect_target_codes(query)
-    article_number = _extract_query_article_number(query)
-    focus_articles = sorted(_focus_articles_from_query(query))
-    parts = [query.strip()]
-
-    if target_codes:
-        parts.append(" ".join(dict.fromkeys(target_codes)))
-    if article_number:
-        parts.append(f"статья {article_number}")
-    if focus_articles:
-        parts.append(" ".join(f"статья {num}" for num in focus_articles[:4]))
-
-    synonym_tail = _expand_legal_synonyms(query)
-    if synonym_tail:
-        parts.append(" ".join(synonym_tail[:6]))
-
-    return " ".join(part for part in parts if part).strip()
+    llm = None
+    if getattr(config, "USE_LLM_QUERY_REWRITE", False):
+        try:
+            llm = get_llm()
+        except Exception:
+            llm = None
+    return rewrite_query(
+        query,
+        llm=llm,
+        detect_target_codes=_detect_target_codes,
+        extract_query_article_number=_extract_query_article_number,
+        focus_articles_from_query=_focus_articles_from_query,
+        expand_legal_synonyms=_expand_legal_synonyms,
+    )
 
 
 def _build_retrieval_queries(query: str) -> list[str]:
@@ -1459,6 +1457,18 @@ def _doc_key(doc: Document) -> tuple[str, str]:
             ).strip(":"),
         )
     return (source, article)
+
+
+def _article_doc_key(doc: Document) -> tuple[str, str]:
+    meta = doc.metadata or {}
+    code_ru = str(meta.get("code_ru", "")).strip()
+    article = _normalize_article_number(meta.get("article_number"))
+    path = str(meta.get("path", "")).strip()
+    if code_ru and article:
+        return (code_ru, article)
+    if code_ru and path:
+        return (code_ru, path)
+    return _doc_key(doc)
 
 
 def _merge_unique(base: List[Document], extra: List[Document]) -> List[Document]:
@@ -1913,12 +1923,69 @@ class _DedupRetriever(BaseRetriever):
         unique_docs: list[Document] = []
         seen: set[tuple[str, str]] = set()
         for doc in docs:
-            key = _doc_key(doc)
+            key = _article_doc_key(doc)
             if key in seen:
                 continue
             seen.add(key)
             unique_docs.append(doc)
         return unique_docs
+
+
+def _apply_legal_score(
+    query: str,
+    doc: Document,
+    base_score: float,
+    *,
+    target_codes: list[str] | None = None,
+    target_articles: set[str] | None = None,
+) -> float:
+    score = float(base_score)
+    meta = doc.metadata or {}
+    doc_code = (meta.get("code_ru") or "").strip()
+    doc_article = _normalize_article_number(meta.get("article_number"))
+    query_lower = (query or "").lower()
+    domain = detect_domain(query)
+
+    if target_codes:
+        if doc_code in set(target_codes):
+            score += 0.25
+        else:
+            score -= 0.15
+
+    if target_articles and doc_article in target_articles:
+        score += 0.30
+        if doc_article and doc_article in query_lower:
+            score += 0.20
+
+    if domain:
+        if domain_matches_code(domain, doc_code):
+            score += 0.15
+        else:
+            score -= 0.20
+
+    return score
+
+
+def _apply_diversity_penalty(
+    scored_docs: Sequence[tuple[Document, float]],
+    *,
+    penalty_step: float,
+) -> list[tuple[Document, float]]:
+    if penalty_step <= 0:
+        return list(scored_docs)
+
+    code_counts: dict[str, int] = {}
+    adjusted: list[tuple[Document, float]] = []
+    for doc, score in sorted(scored_docs, key=lambda item: item[1], reverse=True):
+        code_ru = (doc.metadata.get("code_ru") or "").strip()
+        seen_count = code_counts.get(code_ru, 0)
+        adjusted_score = score - (penalty_step * seen_count if code_ru else 0.0)
+        adjusted.append((doc, adjusted_score))
+        if code_ru:
+            code_counts[code_ru] = seen_count + 1
+
+    adjusted.sort(key=lambda item: item[1], reverse=True)
+    return adjusted
 
 
 def _load_bm25_chunks() -> list[Document] | None:
@@ -2027,8 +2094,8 @@ def get_retriever():
         )
         retr: Any = law_aware_retriever
 
+        retr = _DedupRetriever(base_retriever=retr)
         if getattr(config, "EXPERIMENTAL_DEDUP_RETRIEVAL", False):
-            retr = _DedupRetriever(base_retriever=retr)
             print("Включён experimental dedup retrieval layer.")
 
         # Optional reranker (very heavy) — build lazily on first request.
@@ -2096,24 +2163,21 @@ def get_retriever():
                             scores = [scores]
                         scored_docs = []
                         for i, doc in enumerate(rerank_docs):
-                            final_score = float(scores[i])
-                            doc_code = (doc.metadata.get("code_ru") or "").strip()
-                            doc_article = _normalize_article_number(
-                                doc.metadata.get("article_number")
+                            final_score = _apply_legal_score(
+                                query,
+                                doc,
+                                float(scores[i]),
+                                target_codes=target_codes,
+                                target_articles=target_articles,
                             )
-
-                            if target_codes:
-                                if doc_code in target_codes:
-                                    final_score += 0.25
-                                else:
-                                    final_score -= 0.15
-
-                            if target_articles and doc_article in target_articles:
-                                final_score += 0.30
-
                             doc.metadata["relevance_score"] = final_score
                             scored_docs.append((doc, final_score))
-                        scored_docs.sort(key=lambda x: x[1], reverse=True)
+                        scored_docs = _apply_diversity_penalty(
+                            scored_docs,
+                            penalty_step=getattr(
+                                config, "RETRIEVER_SAME_CODE_PENALTY_STEP", 0.1
+                            ),
+                        )
                         ranked_docs = [d for d, _ in scored_docs]
                         llm_candidate_n = max(
                             self.top_n,
@@ -2208,6 +2272,57 @@ def get_llm():
                         logger.info(
                             "[SUCCESS] LLM Initialization (Groq, model=%s) (%.2fs)",
                             config.LLM_MODEL,
+                            time.perf_counter() - t0,
+                        )
+                    elif _llm_backend == "openrouter":
+                        try:
+                            from langchain_openai import ChatOpenAI
+                        except Exception as e:  # pragma: no cover
+                            raise SystemExit(
+                                "Для использования OpenRouter установите пакет 'langchain-openai':\n"
+                                "  pip install langchain-openai openai\n"
+                                f"Текущая ошибка импорта: {e}"
+                            )
+                        openrouter_api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get(
+                            "OPENAI_API_KEY"
+                        )
+                        if not openrouter_api_key:
+                            raise SystemExit(
+                                "Задайте OPENROUTER_API_KEY для OpenRouter: export OPENROUTER_API_KEY=..."
+                            )
+
+                        base_url = (
+                            os.environ.get("OPENROUTER_BASE_URL")
+                            or os.environ.get("OPENAI_BASE_URL")
+                            or "https://openrouter.ai/api/v1"
+                        ).strip()
+
+                        # OpenRouter accepts optional attribution headers.
+                        # Keep them ASCII-only to avoid httpx header encoding failures.
+                        default_headers: dict[str, str] = {}
+                        referer = (os.environ.get("OPENROUTER_HTTP_REFERER") or "").strip()
+                        title = (os.environ.get("OPENROUTER_APP_TITLE") or "").strip()
+                        if referer:
+                            default_headers["HTTP-Referer"] = referer.encode(
+                                "ascii", "ignore"
+                            ).decode("ascii")
+                        if title:
+                            default_headers["X-Title"] = title.encode(
+                                "ascii", "ignore"
+                            ).decode("ascii")
+
+                        _llm_instance = ChatOpenAI(
+                            api_key=openrouter_api_key,
+                            base_url=base_url,
+                            model=config.LLM_MODEL,
+                            temperature=config.LLM_TEMPERATURE,
+                            max_tokens=config.LLM_MAX_TOKENS,
+                            default_headers=default_headers or None,
+                        )
+                        logger.info(
+                            "[SUCCESS] LLM Initialization (OpenRouter, model=%s, base_url=%s) (%.2fs)",
+                            config.LLM_MODEL,
+                            base_url,
                             time.perf_counter() - t0,
                         )
                     elif _llm_backend == "ollama_cloud":
