@@ -7,7 +7,9 @@ from ai_service.retrieval.rag_chain import (
     _apply_diversity_penalty,
     _apply_legal_score,
     _build_retrieval_queries,
+    _lexical_overlap_score,
     _normalize_article_number,
+    _rank_docs_with_legal_scoring,
     _rewrite_query_for_retrieval,
 )
 
@@ -122,3 +124,47 @@ def test_apply_diversity_penalty_pushes_down_repeated_code():
 
     assert reranked[0][0].metadata["article_number"] == "190"
     assert reranked[1][0].metadata["article_number"] == "272"
+
+
+def test_lexical_overlap_score_rewards_shared_terms():
+    doc = Document(
+        page_content="Договор возмездного оказания услуг регулируется гражданским законодательством.",
+        metadata={
+            "code_ru": "Гражданский кодекс РК (Особенная часть)",
+            "article_title": "Договор возмездного оказания услуг",
+        },
+    )
+
+    score = _lexical_overlap_score("договор возмездного оказания услуг", doc)
+
+    assert score > 0
+
+
+def test_rank_docs_with_legal_scoring_prioritizes_code_and_article_match():
+    docs = [
+        Document(
+            page_content="Общие положения об обязательствах",
+            metadata={
+                "code_ru": "Гражданский кодекс РК (Особенная часть)",
+                "article_number": "272",
+                "article_title": "Надлежащее исполнение обязательства",
+            },
+        ),
+        Document(
+            page_content="Административная ответственность",
+            metadata={
+                "code_ru": "Кодекс об административных правонарушениях РК",
+                "article_number": "272",
+                "article_title": "Иная статья",
+            },
+        ),
+    ]
+
+    ranked = _rank_docs_with_legal_scoring(
+        "статья 272 договорные обязательства",
+        docs,
+        target_codes=["Гражданский кодекс РК (Особенная часть)"],
+        target_articles=["272"],
+    )
+
+    assert ranked[0].metadata["code_ru"] == "Гражданский кодекс РК (Особенная часть)"

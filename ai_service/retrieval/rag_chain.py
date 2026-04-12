@@ -1653,7 +1653,13 @@ class _HeuristicRetriever(BaseRetriever):
             ]
             if focused:
                 docs = _merge_unique(focused, docs)
-        return _sort_docs_for_coverage(
+        docs = _sort_docs_for_coverage(
+            docs,
+            target_codes=target_codes,
+            target_articles=target_articles,
+        )
+        return _rank_docs_with_legal_scoring(
+            query,
             docs,
             target_codes=target_codes,
             target_articles=target_articles,
@@ -1734,7 +1740,13 @@ class _LawAwareRetriever(BaseRetriever):
             if extra_docs:
                 docs = _merge_unique(docs, extra_docs)
 
-        return _sort_docs_for_coverage(
+        docs = _sort_docs_for_coverage(
+            docs,
+            target_codes=target_codes,
+            target_articles=target_articles,
+        )
+        return _rank_docs_with_legal_scoring(
+            query,
             docs,
             target_codes=target_codes,
             target_articles=target_articles,
@@ -1964,6 +1976,72 @@ def _apply_legal_score(
             score -= 0.20
 
     return score
+
+
+def _tokenize_legal_terms(text: str) -> list[str]:
+    normalized = _normalized_query(text)
+    terms: list[str] = []
+    for token in re.findall(r"[a-zа-яёқіңғүұһәө]{4,}", normalized, re.IGNORECASE):
+        if token not in terms:
+            terms.append(token)
+    return terms
+
+
+def _lexical_overlap_score(query: str, doc: Document) -> float:
+    query_terms = _tokenize_legal_terms(query)
+    if not query_terms:
+        return 0.0
+
+    meta = doc.metadata or {}
+    haystack = " ".join(
+        str(part)
+        for part in (
+            meta.get("code_ru", ""),
+            meta.get("article_title", ""),
+            meta.get("chapter_title", ""),
+            doc.page_content[:1200],
+        )
+        if part
+    ).lower()
+    if not haystack:
+        return 0.0
+
+    overlap = sum(1 for term in query_terms if term in haystack)
+    if overlap <= 0:
+        return 0.0
+    return min(0.35, overlap / max(4.0, float(len(query_terms))))
+
+
+def _rank_docs_with_legal_scoring(
+    query: str,
+    docs: List[Document],
+    *,
+    target_codes: list[str] | None = None,
+    target_articles: list[str] | None = None,
+) -> List[Document]:
+    if not docs:
+        return []
+
+    target_article_set = {
+        _normalize_article_number(article)
+        for article in (target_articles or [])
+        if _normalize_article_number(article)
+    }
+    ranked: list[tuple[float, int, Document]] = []
+    for idx, doc in enumerate(docs):
+        base_score = float(doc.metadata.get("relevance_score", 0.0) or 0.0)
+        score = _apply_legal_score(
+            query,
+            doc,
+            base_score,
+            target_codes=target_codes,
+            target_articles=target_article_set,
+        )
+        score += _lexical_overlap_score(query, doc)
+        ranked.append((score, idx, doc))
+
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    return [doc for _, _, doc in ranked]
 
 
 def _apply_diversity_penalty(

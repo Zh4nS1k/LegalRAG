@@ -3,6 +3,7 @@ import json
 import time
 from datetime import datetime, UTC
 from pathlib import Path
+from statistics import mean
 from typing import Any
 
 from ai_service.core import config
@@ -87,6 +88,59 @@ def _load_relevant_pairs(item: dict[str, Any]) -> list[tuple[str, str]]:
     return pairs
 
 
+def _classify_query(
+    query: str,
+    description: str,
+    lang: str,
+    relevant_articles: list[str],
+    relevant_pairs: list[tuple[str, str]],
+) -> list[str]:
+    text = " ".join(part for part in (query, description) if part).lower()
+    tags: list[str] = []
+
+    if lang:
+        tags.append(f"lang:{lang}")
+
+    tags.append("multi_article" if len(set(relevant_articles)) > 1 else "single_article")
+    if len(set(relevant_articles)) >= 5 or "-" in text:
+        tags.append("range_query")
+
+    compound_markers = (
+        " и ",
+        " және ",
+        "еще",
+        "ещё",
+        "вместе с",
+        "одновременно",
+        "қоса",
+        "бірге",
+    )
+    if len(set(relevant_articles)) > 1 or any(marker in text for marker in compound_markers):
+        tags.append("compound_issue")
+
+    penalty_markers = (
+        "что грозит",
+        "какое наказание",
+        "какая ответственность",
+        "какая статья",
+        "какие статьи",
+        "какой жаза",
+        "қандай жаза",
+        "қандай жауапкершілік",
+        "қандай бап",
+    )
+    if any(marker in text for marker in penalty_markers):
+        tags.append("penalty_focused")
+
+    lookup_markers = ("статья", "статьи", "бап", "ук рк", "қр қк", "кодекс")
+    if any(marker in text for marker in lookup_markers) or relevant_pairs:
+        tags.append("code_lookup")
+
+    if not tags:
+        tags.append("uncategorized")
+    return list(dict.fromkeys(tags))
+
+
 def _load_queries(path: Path, limit: int) -> list[dict[str, Any]]:
     with open(path, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -100,6 +154,8 @@ def _load_queries(path: Path, limit: int) -> list[dict[str, Any]]:
         query = str(item.get("query") or "").strip()
         if not query:
             continue
+        lang = str(item.get("lang", "")).strip()
+        description = str(item.get("description", "")).strip()
         relevant_articles = [
             _normalize_article(value)
             for value in (
@@ -110,14 +166,16 @@ def _load_queries(path: Path, limit: int) -> list[dict[str, Any]]:
             )
             if _normalize_article(value)
         ]
+        relevant_pairs = _load_relevant_pairs(item)
         rows.append(
             {
                 "id": item.get("id", f"q_{idx:03d}"),
                 "query": query,
-                "lang": item.get("lang", ""),
-                "description": item.get("description", ""),
+                "lang": lang,
+                "description": description,
                 "relevant_articles": relevant_articles,
-                "relevant_pairs": _load_relevant_pairs(item),
+                "relevant_pairs": relevant_pairs,
+                "tags": _classify_query(query, description, lang, relevant_articles, relevant_pairs),
             }
         )
 
@@ -169,12 +227,30 @@ def _compute_metrics(
         for article, code in (predicted_pairs or [])
         if _normalize_article(article)
     ]
+    normalized_predicted_pair_set = set(normalized_predicted_pairs)
 
     if normalized_relevant_pairs:
-        strict_hit = 1.0 if set(normalized_predicted_pairs) & normalized_relevant_pairs else 0.0
+        strict_relevant_set: set[Any] = normalized_relevant_pairs
+        strict_predicted_items: list[Any] = normalized_predicted_pairs
+        strict_predicted_set: set[Any] = normalized_predicted_pair_set
+    else:
+        strict_relevant_set = relevant_set
+        strict_predicted_items = predicted
+        strict_predicted_set = predicted_set
+
+    if normalized_relevant_pairs:
+        strict_hit = 1.0 if normalized_predicted_pair_set & normalized_relevant_pairs else 0.0
     else:
         strict_hit = 1.0 if relevant_set & predicted_set else 0.0
     soft_hit = 1.0 if relevant_set & predicted_set else 0.0
+
+    strict_matches = len(strict_relevant_set & strict_predicted_set)
+    soft_matches = len(relevant_set & predicted_set)
+
+    strict_precision = _safe_divide(strict_matches, len(strict_predicted_set))
+    strict_recall = _safe_divide(strict_matches, len(strict_relevant_set))
+    soft_precision = _safe_divide(soft_matches, len(predicted_set))
+    soft_recall = _safe_divide(soft_matches, len(relevant_set))
 
     reciprocal_rank = 0.0
     for rank, article in enumerate(predicted, start=1):
@@ -185,7 +261,19 @@ def _compute_metrics(
     return {
         "strict_hit": strict_hit,
         "soft_hit": soft_hit,
+        "strict_precision": strict_precision,
+        "strict_recall": strict_recall,
+        "strict_f1": _f1(strict_precision, strict_recall),
+        "soft_precision": soft_precision,
+        "soft_recall": soft_recall,
+        "soft_f1": _f1(soft_precision, soft_recall),
+        "strict_ap": _average_precision(strict_predicted_items, strict_relevant_set),
+        "soft_ap": _average_precision(predicted, relevant_set),
         "mrr": reciprocal_rank,
+        "relevant_count": float(len(relevant_set)),
+        "predicted_count": float(len(predicted_set)),
+        "strict_match_count": float(strict_matches),
+        "soft_match_count": float(soft_matches),
     }
 
 
@@ -194,26 +282,122 @@ def _average_metric(results: list[dict[str, Any]], metric_name: str) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
-def _build_summary(results: list[dict[str, Any]], top_k: int) -> dict[str, float | int]:
+def _safe_divide(numerator: float, denominator: float) -> float:
+    return numerator / denominator if denominator else 0.0
+
+
+def _f1(precision: float, recall: float) -> float:
+    return _safe_divide(2 * precision * recall, precision + recall)
+
+
+def _average_precision(predicted_items: list[Any], relevant_items: set[Any]) -> float:
+    if not relevant_items:
+        return 0.0
+
+    hits = 0
+    precision_sum = 0.0
+    seen: set[Any] = set()
+    for rank, item in enumerate(predicted_items, start=1):
+        if item in seen:
+            continue
+        seen.add(item)
+        if item in relevant_items:
+            hits += 1
+            precision_sum += hits / rank
+    return precision_sum / len(relevant_items)
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    index = round((len(ordered) - 1) * percentile)
+    return ordered[index]
+
+
+def _make_summary(results: list[dict[str, Any]], top_k: int) -> dict[str, float | int]:
+    elapsed_values = [float(row.get("elapsed_sec", 0.0)) for row in results]
     return {
         "queries_evaluated": len(results),
         "top_k": top_k,
         "strict_hit@k": _average_metric(results, "strict_hit"),
         "soft_hit@k": _average_metric(results, "soft_hit"),
+        "strict_precision@k": _average_metric(results, "strict_precision"),
+        "strict_recall@k": _average_metric(results, "strict_recall"),
+        "strict_f1@k": _average_metric(results, "strict_f1"),
+        "soft_precision@k": _average_metric(results, "soft_precision"),
+        "soft_recall@k": _average_metric(results, "soft_recall"),
+        "soft_f1@k": _average_metric(results, "soft_f1"),
+        "map_strict": _average_metric(results, "strict_ap"),
+        "map_soft": _average_metric(results, "soft_ap"),
         "mrr": _average_metric(results, "mrr"),
+        "avg_relevant_articles": _average_metric(results, "relevant_count"),
+        "avg_predicted_articles": _average_metric(results, "predicted_count"),
+        "latency_sec_avg": mean(elapsed_values) if elapsed_values else 0.0,
+        "latency_sec_p95": _percentile(elapsed_values, 0.95),
     }
+
+
+def _group_results(results: list[dict[str, Any]], top_k: int, key: str) -> dict[str, dict[str, float | int]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in results:
+        label = str(row.get(key) or "unknown")
+        grouped.setdefault(label, []).append(row)
+    return {label: _make_summary(group_rows, top_k) for label, group_rows in sorted(grouped.items())}
+
+
+def _group_results_by_tags(results: list[dict[str, Any]], top_k: int) -> dict[str, dict[str, float | int]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in results:
+        for tag in row.get("tags", []):
+            grouped.setdefault(str(tag), []).append(row)
+    return {label: _make_summary(group_rows, top_k) for label, group_rows in sorted(grouped.items())}
+
+
+def _build_summary(results: list[dict[str, Any]], top_k: int) -> dict[str, Any]:
+    by_complexity: dict[str, list[dict[str, Any]]] = {"single_article": [], "multi_article": []}
+    for row in results:
+        relevant_count = int(float(row["metrics"].get("relevant_count", 0.0)))
+        bucket = "multi_article" if relevant_count > 1 else "single_article"
+        by_complexity[bucket].append(row)
+
+    summary = _make_summary(results, top_k)
+    summary["by_lang"] = _group_results(results, top_k, "lang")
+    summary["by_tag"] = _group_results_by_tags(results, top_k)
+    summary["by_complexity"] = {
+        label: _make_summary(group_rows, top_k)
+        for label, group_rows in by_complexity.items()
+        if group_rows
+    }
+    return summary
 
 
 def _build_comparison(current_summary: dict[str, Any], previous_summary: dict[str, Any]) -> dict[str, float]:
     comparison: dict[str, float] = {}
-    for current_key, previous_key in (
-        ("strict_hit@k", "strict_hit@k"),
-        ("soft_hit@k", "soft_hit@k"),
-        ("mrr", "mrr"),
-    ):
-        comparison[f"delta_{current_key}"] = float(current_summary.get(current_key, 0.0)) - float(
-            previous_summary.get(previous_key, 0.0)
-        )
+    metric_names = (
+        "strict_hit@k",
+        "soft_hit@k",
+        "strict_precision@k",
+        "strict_recall@k",
+        "strict_f1@k",
+        "soft_precision@k",
+        "soft_recall@k",
+        "soft_f1@k",
+        "map_strict",
+        "map_soft",
+        "mrr",
+        "avg_relevant_articles",
+        "avg_predicted_articles",
+        "latency_sec_avg",
+        "latency_sec_p95",
+    )
+    for metric_name in metric_names:
+        if metric_name in current_summary or metric_name in previous_summary:
+            comparison[f"delta_{metric_name}"] = float(current_summary.get(metric_name, 0.0)) - float(
+                previous_summary.get(metric_name, 0.0)
+            )
     return comparison
 
 
@@ -253,6 +437,7 @@ def main() -> None:
                 "query": item["query"],
                 "lang": item["lang"],
                 "description": item["description"],
+                "tags": item.get("tags", []),
                 "relevant_articles": item["relevant_articles"],
                 "relevant_pairs": item.get("relevant_pairs", []),
                 "predicted_articles": predicted_articles,
