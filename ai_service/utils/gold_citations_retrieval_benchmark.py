@@ -72,6 +72,8 @@ def _normalize_code(value: str) -> str:
     if not text:
         return ""
     text = text.replace("«", '"').replace("»", '"')
+    text = re.sub(r'\bреспублики казахстан\b', "рк", text)
+    text = re.sub(r"[\"']", "", text)
     text = re.sub(r"\s+", " ", text)
 
     alias_groups = [
@@ -118,13 +120,23 @@ def _normalize_code(value: str) -> str:
             "закон о товариществах с ограниченной и дополнительной ответственностью рк",
             ("тоо", "товариществах с ограниченной и дополнительной ответственностью"),
         ),
+        ("закон о цифровых активах", ("о цифровых активах",)),
+        ("закон о дорожном движении рк", ("о дорожном движении",)),
+        (
+            "закон о воинской службе и статусе военнослужащих рк",
+            ("о воинской службе", "статусе военнослужащих"),
+        ),
+        (
+            "закон о восстановлении платежеспособности и банкротстве граждан рк",
+            ("о восстановлении платежеспособности и банкротстве граждан", "банкротстве граждан"),
+        ),
+        ("трудовой кодекс рк", ("тк рк", "трудовой кодекс", "тк")),
+        ("налоговый кодекс рк", ("нк рк", "налоговый кодекс", "нк")),
     ]
     for canonical, aliases in alias_groups:
         if canonical in text or any(alias in text for alias in aliases):
             return canonical
 
-    text = re.sub(r'\bреспублики казахстан\b', "рк", text)
-    text = re.sub(r"[\"']", "", text)
     return text.strip(" ,.")
 
 
@@ -137,7 +149,7 @@ def _gold_to_pair(value: str) -> tuple[str, str]:
     code = ""
     if "закон" in lower_raw:
         code = raw[lower_raw.find("закон") :]
-    elif "кодекс" in lower_raw or "гк" in lower_raw or "ук" in lower_raw or "гпк" in lower_raw:
+    elif any(token in lower_raw for token in ("кодекс", "гк", "ук", "гпк", "упк", "коап", "аппк", "тк", "нк")):
         code = raw
     return article, _normalize_code(code)
 

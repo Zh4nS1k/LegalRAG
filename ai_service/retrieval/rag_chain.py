@@ -1168,10 +1168,17 @@ def _build_retrieval_queries(query: str) -> list[str]:
             queries.append(cleaned)
 
     target_codes = _detect_target_codes(query)
+    target_articles = _extract_query_article_numbers(query)
     if target_codes:
         code_query = f"{rewritten} {' '.join(target_codes)}".strip()
         if code_query and code_query not in queries:
             queries.append(code_query)
+        # Add one focused query to improve recall when article number is explicit.
+        # Keep it tight (single code + single article) to avoid query explosion.
+        if target_articles:
+            focused_query = f"{target_codes[0]} статья {target_articles[0]}".strip()
+            if focused_query and focused_query not in queries:
+                queries.append(focused_query)
 
     if getattr(config, "EXPERIMENTAL_HYBRID_V3_RETRIEVAL", False):
         for subquery in _build_decomposed_queries(query):
