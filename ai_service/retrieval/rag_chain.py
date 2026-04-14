@@ -29,6 +29,27 @@ _nltk_ready = False
 _stemmer = None
 
 
+def _looks_like_raw_code_name(value: str) -> bool:
+    text = str(value or "").strip().lower()
+    return bool(text) and bool(re.fullmatch(r"[a-z0-9_]+", text)) and "_" in text
+
+
+def _is_noisy_legal_chunk(doc: Document) -> bool:
+    meta = doc.metadata or {}
+    article_number = _normalize_article_number(meta.get("article_number"))
+    code_ru = str(meta.get("code_ru") or "").strip()
+    clause_level = str(meta.get("clause_level") or "").strip().lower()
+    content_head = (doc.page_content or "")[:400].lower()
+
+    if not article_number and _looks_like_raw_code_name(code_ru):
+        return True
+    if clause_level == "article" and not article_number and not (meta.get("article_title") or "").strip():
+        return True
+    if any(marker in content_head for marker in ("мазмұны", "содержание", "зқаи-ның ескертпесі", "пользователей назарына")):
+        return True
+    return False
+
+
 def _ensure_nltk() -> bool:
     """Lazy NLTK setup (avoid downloading at import/startup)."""
     global _nltk_ready, _stemmer
@@ -1957,6 +1978,13 @@ def _apply_legal_score(
     doc_article = _normalize_article_number(meta.get("article_number"))
     query_lower = (query or "").lower()
     domain = detect_domain(query)
+
+    if _looks_like_raw_code_name(doc_code):
+        score -= 0.25
+    if not doc_article:
+        score -= 0.20
+    if _is_noisy_legal_chunk(doc):
+        score -= 0.45
 
     if target_codes:
         if doc_code in set(target_codes):

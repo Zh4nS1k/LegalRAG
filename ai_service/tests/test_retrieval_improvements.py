@@ -7,7 +7,9 @@ from ai_service.retrieval.rag_chain import (
     _apply_diversity_penalty,
     _apply_legal_score,
     _build_retrieval_queries,
+    _is_noisy_legal_chunk,
     _lexical_overlap_score,
+    _looks_like_raw_code_name,
     _normalize_article_number,
     _rank_docs_with_legal_scoring,
     _rewrite_query_for_retrieval,
@@ -58,6 +60,11 @@ def test_normalize_article_number_strips_noise():
     assert _normalize_article_number("бап 190") == "190"
 
 
+def test_looks_like_raw_code_name_detects_slug_metadata():
+    assert _looks_like_raw_code_name("law_on_military_service_kz")
+    assert not _looks_like_raw_code_name("Закон о воинской службе и статусе военнослужащих РК")
+
+
 def test_detect_domain_picks_expected_code_family():
     assert detect_domain("какая ответственность за административный штраф") == "koap"
     assert detect_domain("договор возмездного оказания услуг") == "gk"
@@ -102,6 +109,30 @@ def test_apply_legal_score_boosts_matching_article_and_penalizes_wrong_domain():
     wrong_score = _apply_legal_score(query, wrong_domain, 0.8, target_codes=["Уголовный кодекс РК"], target_articles={"190"})
 
     assert matched_score > wrong_score
+
+
+def test_is_noisy_legal_chunk_flags_preamble_style_chunk():
+    noisy = Document(
+        page_content="ЗҚАИ-ның ескертпесі! МАЗМҰНЫ Қолданушылар назарына!",
+        metadata={
+            "code_ru": "law_on_military_service_kz",
+            "article_number": "",
+            "clause_level": "article",
+            "article_title": "",
+        },
+    )
+    clean = Document(
+        page_content="Статья 190. Мошенничество",
+        metadata={
+            "code_ru": "Уголовный кодекс РК",
+            "article_number": "190",
+            "clause_level": "article",
+            "article_title": "Мошенничество",
+        },
+    )
+
+    assert _is_noisy_legal_chunk(noisy)
+    assert not _is_noisy_legal_chunk(clean)
 
 
 def test_apply_diversity_penalty_pushes_down_repeated_code():
