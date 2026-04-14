@@ -32,6 +32,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--vector-weight", type=float, default=1.0)
     parser.add_argument("--rerank-weight", type=float, default=0.50)
     parser.add_argument("--diversity-penalty", type=float, default=0.06)
+    parser.add_argument("--no-rerank", action="store_true")
+    parser.add_argument("--save-every", type=int, default=25)
     parser.add_argument(
         "--reranker-model",
         default=os.environ.get("LEGAL_RAG_RERANKER_FALLBACK_MODEL", "BAAI/bge-reranker-base"),
@@ -410,6 +412,45 @@ def _rerank_scores(backend: str, model: Any, query: str, texts: list[str]) -> li
     return [float(score) for score in scores]
 
 
+def _build_payload(
+    *,
+    args: argparse.Namespace,
+    xlsx_path: Path,
+    reranker_backend: str,
+    results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "xlsx": str(xlsx_path),
+        "evaluated_questions": len(results),
+        "top_k": args.top_k,
+        "pinecone_k": args.pinecone_k,
+        "bm25_k": args.bm25_k,
+        "candidate_k": args.candidate_k,
+        "reranker_model": args.reranker_model,
+        "reranker_backend": reranker_backend,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "summary": {
+            "strict_hit": _avg(results, "strict_hit"),
+            "soft_hit": _avg(results, "soft_hit"),
+            "strict_precision": _avg(results, "strict_precision"),
+            "strict_recall": _avg(results, "strict_recall"),
+            "soft_precision": _avg(results, "soft_precision"),
+            "soft_recall": _avg(results, "soft_recall"),
+            "strict_mrr": _avg(results, "strict_mrr"),
+            "soft_mrr": _avg(results, "soft_mrr"),
+            "avg_elapsed_sec": sum(item["elapsed_sec"] for item in results) / len(results)
+            if results
+            else 0.0,
+        },
+        "results": results,
+    }
+
+
+def _save_payload(output_path: Path, payload: dict[str, Any]) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def main() -> None:
     if "TRANSFORMERS_CACHE" in os.environ and "HF_HOME" not in os.environ:
         os.environ["HF_HOME"] = os.environ["TRANSFORMERS_CACHE"]
@@ -430,24 +471,25 @@ def main() -> None:
 
     bm25 = BM25Retriever.from_documents(prepare_data.chunks, k=args.bm25_k)
     embed_query = _get_embedder()
-    reranker_backend, reranker = _load_reranker(args.reranker_model)
+    reranker_backend, reranker = ("disabled", None) if args.no_rerank else _load_reranker(args.reranker_model)
     index = Pinecone(api_key=api_key).Index(index_name)
 
     df = pd.read_excel(xlsx_path)
     df = df.iloc[args.start_from : args.start_from + args.limit].copy()
 
+    output_path = Path(args.output)
     results: list[dict[str, Any]] = []
     for idx, row in df.iterrows():
-        qid = str(row.get("query_id") or idx)
-        query = str(row.get("query") or "").strip()
-        gold_raw = _normalize_gold(row.get("gold_citations"))
-        gold_pairs = [_gold_to_pair(item) for item in gold_raw]
-
-        started = time.perf_counter()
-        error = ""
-        pred_pairs: list[tuple[str, str]] = []
-        debug_candidates: list[dict[str, Any]] = []
         try:
+            qid = str(row.get("query_id") or idx)
+            query = str(row.get("query") or "").strip()
+            gold_raw = _normalize_gold(row.get("gold_citations"))
+            gold_pairs = [_gold_to_pair(item) for item in gold_raw]
+
+            started = time.perf_counter()
+            error = ""
+            pred_pairs: list[tuple[str, str]] = []
+            debug_candidates: list[dict[str, Any]] = []
             candidates: dict[tuple[str, str], dict[str, Any]] = {}
 
             subqueries = _build_subqueries(query)[: max(1, args.multi_query_limit)]
@@ -509,7 +551,7 @@ def main() -> None:
                 reverse=True,
             )[: args.candidate_k]
 
-            if rescored:
+            if rescored and not args.no_rerank:
                 rerank_texts = [item["text"] for item in rescored]
                 rerank_scores = _rerank_scores(reranker_backend, reranker, query, rerank_texts)
                 fused_norm = _minmax_normalize([float(item["fused_score"]) for item in rescored])
@@ -533,6 +575,26 @@ def main() -> None:
                     if code_key:
                         code_counts[code_key] = code_counts.get(code_key, 0) + 1
                 rescored.sort(key=lambda item: item["final_score"], reverse=True)
+            elif rescored:
+                code_counts: dict[str, int] = {}
+                for item in rescored:
+                    code_key = _canonicalize_code(
+                        str((item.get("meta") or {}).get("code_ru", "") or ""),
+                        str((item.get("meta") or {}).get("source", "") or ""),
+                    )
+                    diversity_penalty = args.diversity_penalty * code_counts.get(code_key, 0)
+                    item["rerank_score"] = 0.0
+                    item["final_score"] = _legal_score(
+                        query=query,
+                        meta=item.get("meta") or {},
+                        text=item.get("text", ""),
+                        base_score=float(item.get("fused_score", 0.0)),
+                        target_codes=target_codes,
+                        target_articles=target_articles,
+                    ) - diversity_penalty
+                    if code_key:
+                        code_counts[code_key] = code_counts.get(code_key, 0) + 1
+                rescored.sort(key=lambda item: item["final_score"], reverse=True)
 
             pred_pairs = [item["pair"] for item in rescored[: args.top_k]]
             debug_candidates = [
@@ -545,62 +607,49 @@ def main() -> None:
                 }
                 for item in rescored[: args.top_k]
             ]
-        except Exception as exc:
-            error = str(exc)
+            elapsed_sec = round(time.perf_counter() - started, 3)
+            metrics = _compute_metrics(gold_pairs, pred_pairs)
+            results.append(
+                {
+                    "row_index": int(idx),
+                    "query_id": qid,
+                    "query": query,
+                    "gold_citations": gold_raw,
+                    "retrieved_topk": [_pair_to_str(article, code) for article, code in pred_pairs],
+                    "candidates": debug_candidates,
+                    "metrics": metrics,
+                    "elapsed_sec": elapsed_sec,
+                    "error": error,
+                }
+            )
 
-        elapsed_sec = round(time.perf_counter() - started, 3)
-        metrics = _compute_metrics(gold_pairs, pred_pairs)
-        results.append(
-            {
-                "row_index": int(idx),
-                "query_id": qid,
-                "query": query,
-                "gold_citations": gold_raw,
-                "retrieved_topk": [_pair_to_str(article, code) for article, code in pred_pairs],
-                "candidates": debug_candidates,
-                "metrics": metrics,
-                "elapsed_sec": elapsed_sec,
-                "error": error,
-            }
-        )
+            print(
+                f"[{len(results)}/{len(df)}] {qid} "
+                f"strict_hit={metrics['strict_hit']:.0f} "
+                f"soft_hit={metrics['soft_hit']:.0f} "
+                f"strict_mrr={metrics['strict_mrr']:.3f} "
+                f"elapsed={elapsed_sec}s"
+            )
+            if args.save_every > 0 and (len(results) % args.save_every == 0):
+                payload = _build_payload(
+                    args=args,
+                    xlsx_path=xlsx_path,
+                    reranker_backend=reranker_backend,
+                    results=results,
+                )
+                _save_payload(output_path, payload)
+                print(f"Autosaved progress: {output_path} ({len(results)} rows)")
+        except KeyboardInterrupt:
+            print("\nInterrupted by user. Saving partial results...")
+            break
 
-        print(
-            f"[{len(results)}/{len(df)}] {qid} "
-            f"strict_hit={metrics['strict_hit']:.0f} "
-            f"soft_hit={metrics['soft_hit']:.0f} "
-            f"strict_mrr={metrics['strict_mrr']:.3f} "
-            f"elapsed={elapsed_sec}s"
-        )
-
-    payload = {
-        "xlsx": str(xlsx_path),
-        "evaluated_questions": len(results),
-        "top_k": args.top_k,
-        "pinecone_k": args.pinecone_k,
-        "bm25_k": args.bm25_k,
-        "candidate_k": args.candidate_k,
-        "reranker_model": args.reranker_model,
-        "reranker_backend": reranker_backend,
-        "generated_at": datetime.now(UTC).isoformat(),
-        "summary": {
-            "strict_hit": _avg(results, "strict_hit"),
-            "soft_hit": _avg(results, "soft_hit"),
-            "strict_precision": _avg(results, "strict_precision"),
-            "strict_recall": _avg(results, "strict_recall"),
-            "soft_precision": _avg(results, "soft_precision"),
-            "soft_recall": _avg(results, "soft_recall"),
-            "strict_mrr": _avg(results, "strict_mrr"),
-            "soft_mrr": _avg(results, "soft_mrr"),
-            "avg_elapsed_sec": sum(item["elapsed_sec"] for item in results) / len(results)
-            if results
-            else 0.0,
-        },
-        "results": results,
-    }
-
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    payload = _build_payload(
+        args=args,
+        xlsx_path=xlsx_path,
+        reranker_backend=reranker_backend,
+        results=results,
+    )
+    _save_payload(output_path, payload)
     print(f"\nSaved: {output_path}")
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
 
