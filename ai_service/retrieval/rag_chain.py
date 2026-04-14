@@ -1084,80 +1084,6 @@ def _rewrite_query_for_retrieval(query: str) -> str:
     )
 
 
-def _split_query_sentences(query: str) -> list[str]:
-    compact = re.sub(r"\s+", " ", str(query or "")).strip()
-    if not compact:
-        return []
-    parts = re.split(r"(?<=[\.\?!;])\s+", compact)
-    return [part.strip() for part in parts if part.strip()]
-
-
-def _should_decompose_query(query: str) -> bool:
-    compact = re.sub(r"\s+", " ", str(query or "")).strip()
-    if not compact:
-        return False
-
-    sentences = _split_query_sentences(compact)
-    article_mentions = len(_extract_query_article_numbers(compact))
-    legal_markers = (
-        "закон",
-        "кодекс",
-        "гк",
-        "ук",
-        "гпк",
-        "упк",
-        "коап",
-        "аппк",
-        "ст.",
-        "статья",
-        "бап",
-    )
-    legal_hits = sum(1 for marker in legal_markers if marker in compact.lower())
-    min_chars = max(
-        80, getattr(config, "RETRIEVER_QUERY_DECOMPOSITION_MIN_CHARS", 220)
-    )
-    return (
-        len(compact) >= min_chars
-        or len(sentences) >= 4
-        or legal_hits >= 3
-        or article_mentions >= 2
-    )
-
-
-def _build_decomposed_queries(query: str) -> list[str]:
-    compact = re.sub(r"\s+", " ", str(query or "")).strip()
-    if not compact or not _should_decompose_query(compact):
-        return []
-
-    sentences = _split_query_sentences(compact)
-    legal_markers = (
-        "закон",
-        "кодекс",
-        "гк",
-        "ук",
-        "гпк",
-        "упк",
-        "коап",
-        "аппк",
-        "ст.",
-        "статья",
-        "бап",
-    )
-    focused = [s for s in sentences if any(marker in s.lower() for marker in legal_markers)]
-
-    subqueries: list[str] = []
-    subqueries.extend(focused[:2])
-    if not focused and len(sentences) > 1:
-        subqueries.append(sentences[0])
-
-    if len(compact) > 240 and sentences:
-        head = " ".join(sentences[:2]).strip()
-        if head:
-            subqueries.append(head)
-
-    return list(dict.fromkeys(item for item in subqueries if item and item != compact))
-
-
 def _build_retrieval_queries(query: str) -> list[str]:
     augmented = _augment_retrieval_query(query)
     rewritten = _rewrite_query_for_retrieval(query)
@@ -1168,26 +1094,12 @@ def _build_retrieval_queries(query: str) -> list[str]:
             queries.append(cleaned)
 
     target_codes = _detect_target_codes(query)
-    target_articles = _extract_query_article_numbers(query)
     if target_codes:
         code_query = f"{rewritten} {' '.join(target_codes)}".strip()
         if code_query and code_query not in queries:
             queries.append(code_query)
-        # Add one focused query to improve recall when article number is explicit.
-        # Keep it tight (single code + single article) to avoid query explosion.
-        if target_articles:
-            focused_query = f"{target_codes[0]} статья {target_articles[0]}".strip()
-            if focused_query and focused_query not in queries:
-                queries.append(focused_query)
-
-    if getattr(config, "EXPERIMENTAL_HYBRID_V3_RETRIEVAL", False):
-        for subquery in _build_decomposed_queries(query):
-            if subquery not in queries:
-                queries.append(subquery)
 
     limit = max(1, getattr(config, "RETRIEVER_MULTI_QUERY_LIMIT", 4))
-    if getattr(config, "EXPERIMENTAL_HYBRID_V3_RETRIEVAL", False):
-        limit = max(limit, getattr(config, "RETRIEVER_HYBRID_V3_QUERY_LIMIT", limit))
     return queries[:limit]
 
 
@@ -1254,62 +1166,6 @@ def _sort_docs_for_coverage(
 
     scored.sort(key=lambda item: (-item[0], item[1]))
     return [doc for _, _, doc in scored]
-
-
-def _neighbor_article_numbers(article: str, *, window: int) -> list[str]:
-    normalized = _normalize_article_number(article)
-    if not normalized.isdigit():
-        return []
-    center = int(normalized)
-    neighbors: list[str] = []
-    for delta in range(1, max(0, window) + 1):
-        for candidate in (center - delta, center + delta):
-            if candidate <= 0:
-                continue
-            neighbors.append(str(candidate))
-    return neighbors
-
-
-def _expand_with_neighbor_articles(
-    query: str,
-    docs: List[Document],
-    *,
-    target_codes: list[str],
-    target_articles: list[str],
-) -> List[Document]:
-    if not getattr(config, "EXPERIMENTAL_NEIGHBOR_EXPANSION", False):
-        return docs
-    if not target_codes or not target_articles:
-        return docs
-
-    target_code_set = set(target_codes)
-    target_article_set = {_normalize_article_number(article) for article in target_articles}
-    has_direct_match = any(
-        (doc.metadata.get("code_ru") or "").strip() in target_code_set
-        and _normalize_article_number(doc.metadata.get("article_number")) in target_article_set
-        for doc in docs
-    )
-    if not has_direct_match:
-        return docs
-
-    window = getattr(config, "RETRIEVER_NEIGHBOR_EXPANSION_WINDOW", 1)
-    neighbor_articles: list[str] = []
-    for article in target_articles:
-        for neighbor in _neighbor_article_numbers(article, window=window):
-            if neighbor not in neighbor_articles:
-                neighbor_articles.append(neighbor)
-    if not neighbor_articles:
-        return docs
-
-    extra = _multi_query_search_with_code_filters(
-        query,
-        target_codes,
-        k=min(max(_hybrid_k, 6), 10),
-        article_numbers=neighbor_articles,
-    )
-    if not extra:
-        return docs
-    return _merge_unique(docs, extra)
 
 
 def _augment_retrieval_query(query: str) -> str:
@@ -1897,36 +1753,6 @@ class _LawAwareRetriever(BaseRetriever):
         )
 
 
-class _HybridV3Retriever(BaseRetriever):
-    """Light hybrid tuning: conditional neighbor expansion on top of law-aware retrieval."""
-
-    base_retriever: Any
-
-    def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun | None = None
-    ) -> List[Document]:
-        docs = list(self.base_retriever.invoke(query))
-        target_codes = _detect_target_codes(query)
-        target_articles = _extract_query_article_numbers(query)
-        docs = _expand_with_neighbor_articles(
-            query,
-            docs,
-            target_codes=target_codes,
-            target_articles=target_articles,
-        )
-        docs = _sort_docs_for_coverage(
-            docs,
-            target_codes=target_codes,
-            target_articles=target_articles,
-        )
-        return _rank_docs_with_legal_scoring(
-            query,
-            docs,
-            target_codes=target_codes,
-            target_articles=target_articles,
-        )
-
-
 def _fetch_parent_context_from_store(
     code_ru: str, article_number: str
 ) -> tuple[str, str, str]:
@@ -2345,9 +2171,6 @@ def get_retriever():
             min_k_criminal=getattr(config, "RETRIEVER_MIN_K_CRIMINAL", 10),
         )
         retr: Any = law_aware_retriever
-        if getattr(config, "EXPERIMENTAL_HYBRID_V3_RETRIEVAL", False):
-            retr = _HybridV3Retriever(base_retriever=retr)
-            print("Включён experimental hybrid v3 retrieval layer.")
 
         retr = _DedupRetriever(base_retriever=retr)
         if getattr(config, "EXPERIMENTAL_DEDUP_RETRIEVAL", False):
@@ -2356,8 +2179,6 @@ def get_retriever():
         # Optional reranker (very heavy) — build lazily on first request.
         if config.USE_RERANKER:
             try:
-                from FlagEmbedding import FlagReranker
-
                 try:
                     from langchain.retrievers import ContextualCompressionRetriever
                     from langchain.retrievers.document_compressors.base import (
@@ -2376,11 +2197,27 @@ def get_retriever():
                     "[START] Reranker initialization (%s)", config.RERANKER_MODEL
                 )
                 t_rerank = time.perf_counter()
-                # FlagReranker uses trust_remote_code=True by default in some versions,
-                # but we'll stick to FlagReranker as it is.
-                _reranker_model = FlagReranker(config.RERANKER_MODEL, use_fp16=True)
+                _reranker_backend = "flag_embedding"
+                _reranker_model: Any = None
+                try:
+                    from FlagEmbedding import FlagReranker
+
+                    # FlagReranker uses trust_remote_code=True by default in some versions.
+                    _reranker_model = FlagReranker(config.RERANKER_MODEL, use_fp16=True)
+                except Exception as flag_error:
+                    logger.warning(
+                        "FlagReranker unavailable (%s). Falling back to CrossEncoder: %s",
+                        flag_error,
+                        config.RERANKER_FALLBACK_MODEL,
+                    )
+                    from sentence_transformers import CrossEncoder
+
+                    _reranker_backend = "cross_encoder"
+                    _reranker_model = CrossEncoder(config.RERANKER_FALLBACK_MODEL)
+
                 logger.info(
-                    "[SUCCESS] Reranker initialized (%.2fs)",
+                    "[SUCCESS] Reranker initialized via %s (%.2fs)",
+                    _reranker_backend,
                     time.perf_counter() - t_rerank,
                 )
 
@@ -2413,7 +2250,10 @@ def get_retriever():
                                 for n in range(start, end + 1)
                             )
                         pairs = [[query, d.page_content] for d in rerank_docs]
-                        scores = _reranker_model.compute_score(pairs)
+                        if _reranker_backend == "flag_embedding":
+                            scores = _reranker_model.compute_score(pairs)
+                        else:
+                            scores = _reranker_model.predict(pairs)
                         if isinstance(scores, float):
                             scores = [scores]
                         scored_docs = []
