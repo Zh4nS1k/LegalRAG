@@ -266,7 +266,17 @@ MIN_CHUNK_LEN = 30
 
 def get_code_name(source_path: str) -> tuple[str, str]:
     name = Path(source_path).name
-    return CODE_NAMES.get(name, (name.replace(".txt", ""), name.replace(".txt", "")))
+    if name in CODE_NAMES:
+        return CODE_NAMES[name]
+
+    # KZ files are stored as "<base>_kz.txt" but should share the same canonical
+    # legal names as the corresponding RU file metadata.
+    if name.endswith("_kz.txt"):
+        base_name = name.replace("_kz.txt", ".txt")
+        if base_name in CODE_NAMES:
+            return CODE_NAMES[base_name]
+
+    return (name.replace(".txt", ""), name.replace(".txt", ""))
 
 
 def get_article_number(chunk_text: str) -> str | None:
