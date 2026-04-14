@@ -34,6 +34,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--diversity-penalty", type=float, default=0.06)
     parser.add_argument("--no-rerank", action="store_true")
     parser.add_argument("--save-every", type=int, default=25)
+    parser.add_argument("--article-only", action="store_true")
+    parser.add_argument("--strict-prefilter", action="store_true")
     parser.add_argument(
         "--reranker-model",
         default=os.environ.get("LEGAL_RAG_RERANKER_FALLBACK_MODEL", "BAAI/bge-reranker-base"),
@@ -308,6 +310,33 @@ def _is_noisy_candidate(meta: dict[str, Any], text: str) -> bool:
     return any(marker in content_head for marker in noisy_markers)
 
 
+def _passes_candidate_prefilter(
+    *,
+    meta: dict[str, Any],
+    text: str,
+    target_codes: list[str],
+    target_articles: set[str],
+    article_only: bool,
+    strict_prefilter: bool,
+) -> bool:
+    if _is_noisy_candidate(meta, text):
+        return False
+    if article_only and str(meta.get("clause_level", "") or "").strip().lower() != "article":
+        return False
+
+    if not strict_prefilter:
+        return True
+
+    doc_article = _normalize_article(meta.get("article_number", ""))
+    doc_code = _canonicalize_code(meta.get("code_ru", ""), meta.get("source", ""))
+
+    if target_articles and doc_article and doc_article not in target_articles:
+        return False
+    if target_codes and doc_code and doc_code not in set(target_codes):
+        return False
+    return True
+
+
 def _minmax_normalize(values: list[float]) -> list[float]:
     if not values:
         return []
@@ -506,6 +535,16 @@ def main() -> None:
                 query_weight = args.vector_weight if query_rank == 1 else (args.vector_weight * 0.35)
                 for rank, match in enumerate(response.get("matches", []), start=1):
                     meta = match.get("metadata", {}) or {}
+                    candidate_text = _candidate_text(meta)
+                    if not _passes_candidate_prefilter(
+                        meta=meta,
+                        text=candidate_text,
+                        target_codes=target_codes,
+                        target_articles=target_articles,
+                        article_only=args.article_only,
+                        strict_prefilter=args.strict_prefilter,
+                    ):
+                        continue
                     pair = (
                         _normalize_article(meta.get("article_number", "")),
                         _canonicalize_code(meta.get("code_ru", ""), meta.get("source", "")),
@@ -517,7 +556,7 @@ def main() -> None:
                         {
                             "pair": pair,
                             "meta": meta,
-                            "text": _candidate_text(meta),
+                            "text": candidate_text,
                             "fused_score": 0.0,
                         },
                     )
@@ -527,6 +566,16 @@ def main() -> None:
             for bm25_query in subqueries:
                 for rank, doc in enumerate(bm25.invoke(bm25_query), start=1):
                     meta = getattr(doc, "metadata", {}) or {}
+                    candidate_text = _candidate_text(meta, getattr(doc, "page_content", "") or "")
+                    if not _passes_candidate_prefilter(
+                        meta=meta,
+                        text=candidate_text,
+                        target_codes=target_codes,
+                        target_articles=target_articles,
+                        article_only=args.article_only,
+                        strict_prefilter=args.strict_prefilter,
+                    ):
+                        continue
                     pair = (
                         _normalize_article(meta.get("article_number", "")),
                         _canonicalize_code(meta.get("code_ru", ""), meta.get("source", "")),
@@ -539,7 +588,7 @@ def main() -> None:
                         {
                             "pair": pair,
                             "meta": meta,
-                            "text": _candidate_text(meta, getattr(doc, "page_content", "") or ""),
+                            "text": candidate_text,
                             "fused_score": 0.0,
                         },
                     )
