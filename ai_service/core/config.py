@@ -171,7 +171,7 @@ def configure_hf_hub() -> None:
     cache_dir = HF_CACHE_DIR
     os.environ["HF_HOME"] = cache_dir
     os.environ["HF_HUB_CACHE"] = cache_dir
-    os.environ["TRANSFORMERS_CACHE"] = cache_dir
+    os.environ.pop("TRANSFORMERS_CACHE", None)
     os.environ["SENTENCE_TRANSFORMERS_HOME"] = cache_dir
     os.environ.setdefault("HF_HUB_READ_TIMEOUT", str(HF_READ_TIMEOUT_SEC))
     os.environ.setdefault("HF_HUB_CONNECT_TIMEOUT", str(HF_CONNECT_TIMEOUT_SEC))

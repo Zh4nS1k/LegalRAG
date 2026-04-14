@@ -208,14 +208,28 @@ def _get_embedder():
         snapshots = sorted(snapshot_root.glob("*"))
         if snapshots:
             model_name = str(snapshots[-1])
-
-    model = HuggingFaceEmbeddings(
-        model_name=model_name,
-        encode_kwargs={"normalize_embeddings": True},
-        model_kwargs={"local_files_only": True, "trust_remote_code": True, "device": "cpu"},
-        cache_folder=config.HF_CACHE_DIR,
-        show_progress=False,
-    )
+    local_only = bool(config.HF_LOCAL_ONLY)
+    model_kwargs = {"local_files_only": True, "trust_remote_code": True, "device": "cpu"}
+    try:
+        model = HuggingFaceEmbeddings(
+            model_name=model_name,
+            encode_kwargs={"normalize_embeddings": True},
+            model_kwargs=model_kwargs,
+            show_progress=False,
+        )
+    except Exception:
+        if local_only or os.environ.get("HF_HUB_OFFLINE", "0") == "1":
+            raise RuntimeError(
+                "Embedding model is not available in local cache. "
+                "Disable offline mode or pre-download model into HF_HOME cache."
+            )
+        model_kwargs["local_files_only"] = False
+        model = HuggingFaceEmbeddings(
+            model_name=config.EMBEDDING_MODEL,
+            encode_kwargs={"normalize_embeddings": True},
+            model_kwargs=model_kwargs,
+            show_progress=False,
+        )
 
     def embed_query(text: str) -> list[float]:
         return model.embed_query("query: " + text)
