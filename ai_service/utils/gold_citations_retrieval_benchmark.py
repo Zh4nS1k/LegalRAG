@@ -8,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 
+from ai_service.processing.code_names import get_code_name
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -158,6 +160,19 @@ def _pair_to_str(article: str, code: str) -> str:
     return f"{_normalize_article(article)}::{_normalize_code(code)}"
 
 
+def _canonicalize_doc_code(meta: dict[str, Any]) -> str:
+    raw_code = str(meta.get("code_ru", "") or "")
+    normalized = _normalize_code(raw_code)
+    if normalized and "_" not in normalized:
+        return normalized
+
+    source = str(meta.get("source", "") or "").strip()
+    if source:
+        code_ru, _ = get_code_name(source)
+        return _normalize_code(code_ru)
+    return normalized
+
+
 def _compute_metrics(gold_pairs: list[tuple[str, str]], pred_pairs: list[tuple[str, str]]) -> dict[str, float]:
     gold_set = {pair for pair in gold_pairs if pair[0]}
     pred_set = {pair for pair in pred_pairs if pair[0]}
@@ -226,7 +241,7 @@ def main() -> None:
             meta = getattr(doc, "metadata", {}) or {}
             pair = (
                 _normalize_article(meta.get("article_number", "")),
-                _normalize_code(meta.get("code_ru", "")),
+                _canonicalize_doc_code(meta),
             )
             if pair[0] and pair not in pred_pairs:
                 pred_pairs.append(pair)
@@ -239,6 +254,16 @@ def main() -> None:
                 "query": query,
                 "gold_citations": gold_raw,
                 "retrieved_topk": [_pair_to_str(article, code) for article, code in pred_pairs],
+                "retrieved_docs": [
+                    {
+                        "metadata": {
+                            "source": str((getattr(doc, "metadata", {}) or {}).get("source", "") or ""),
+                            "code_ru": str((getattr(doc, "metadata", {}) or {}).get("code_ru", "") or ""),
+                            "article_number": str((getattr(doc, "metadata", {}) or {}).get("article_number", "") or ""),
+                        }
+                    }
+                    for doc in (docs or [])[: args.top_k]
+                ],
                 "metrics": metrics,
                 "elapsed_sec": elapsed_sec,
                 "error": error,
