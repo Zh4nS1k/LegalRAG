@@ -3,6 +3,7 @@ import json
 import os
 import re
 import time
+import warnings
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from pinecone import Pinecone
 
 from ai_service.core import config
 from ai_service.processing.code_names import get_code_name
+from ai_service.retrieval.domain import detect_domain, domain_matches_code
 
 
 def _parse_args() -> argparse.Namespace:
@@ -25,6 +27,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--pinecone-k", type=int, default=20)
     parser.add_argument("--bm25-k", type=int, default=20)
     parser.add_argument("--candidate-k", type=int, default=30)
+    parser.add_argument("--multi-query-limit", type=int, default=4)
+    parser.add_argument("--bm25-weight", type=float, default=0.40)
+    parser.add_argument("--vector-weight", type=float, default=1.0)
+    parser.add_argument("--rerank-weight", type=float, default=0.50)
+    parser.add_argument("--diversity-penalty", type=float, default=0.06)
     parser.add_argument(
         "--reranker-model",
         default=os.environ.get("LEGAL_RAG_RERANKER_FALLBACK_MODEL", "BAAI/bge-reranker-base"),
@@ -239,7 +246,99 @@ def _build_subqueries(query: str) -> list[str]:
         legal_markers = ("закон", "кодекс", "гк", "ук", "гпк", "упк", "коап", "аппк", "ст.", "статья", "бап")
         focused = [s for s in sentences if any(marker in s.lower() for marker in legal_markers)]
         subqueries.extend(focused[:2] if focused else sentences[:1])
-    return list(dict.fromkeys(item for item in subqueries if item))
+    deduped = list(dict.fromkeys(item for item in subqueries if item))
+    return deduped
+
+
+def _extract_target_codes(query: str) -> list[str]:
+    query_norm = _normalize_code(query)
+    candidates = [
+        "гражданский кодекс рк",
+        "уголовный кодекс рк",
+        "гражданский процессуальный кодекс рк",
+        "уголовно-процессуальный кодекс рк",
+        "кодекс об административных правонарушениях рк",
+        "кодекс об административных процедурах рк",
+        "налоговый кодекс рк",
+        "трудовой кодекс рк",
+        "закон о защите прав потребителей рк",
+        "закон о валютном регулировании и валютном контроле",
+        "закон о воинской службе и статусе военнослужащих рк",
+        "закон о товариществах с ограниченной и дополнительной ответственностью рк",
+    ]
+    found: list[str] = []
+    for candidate in candidates:
+        if candidate in query_norm and candidate not in found:
+            found.append(candidate)
+    return found
+
+
+def _looks_like_raw_code_name(value: str) -> bool:
+    text = str(value or "").strip().lower()
+    return bool(text) and bool(re.fullmatch(r"[a-z0-9_]+", text)) and "_" in text
+
+
+def _is_noisy_candidate(meta: dict[str, Any], text: str) -> bool:
+    article_number = _normalize_article(str(meta.get("article_number", "")))
+    code_ru = str(meta.get("code_ru", "") or "").strip()
+    clause_level = str(meta.get("clause_level", "") or "").strip().lower()
+    article_title = str(meta.get("article_title", "") or "").strip()
+    content_head = str(text or "")[:450].lower()
+    if not article_number and _looks_like_raw_code_name(code_ru):
+        return True
+    if clause_level == "article" and not article_number and not article_title:
+        return True
+    noisy_markers = ("мазмұны", "содержание", "зқаи-ның ескертпесі", "қолданушылар назарына")
+    return any(marker in content_head for marker in noisy_markers)
+
+
+def _minmax_normalize(values: list[float]) -> list[float]:
+    if not values:
+        return []
+    lo = min(values)
+    hi = max(values)
+    if hi - lo <= 1e-9:
+        return [0.5 for _ in values]
+    return [(value - lo) / (hi - lo) for value in values]
+
+
+def _legal_score(
+    *,
+    query: str,
+    meta: dict[str, Any],
+    text: str,
+    base_score: float,
+    target_codes: list[str],
+    target_articles: set[str],
+) -> float:
+    score = float(base_score)
+    doc_code = _canonicalize_code(meta.get("code_ru", ""), meta.get("source", ""))
+    doc_article = _normalize_article(meta.get("article_number", ""))
+    query_lower = str(query or "").lower()
+    domain = detect_domain(query)
+
+    if _looks_like_raw_code_name(str(meta.get("code_ru", ""))):
+        score -= 0.25
+    if not doc_article:
+        score -= 0.20
+    if _is_noisy_candidate(meta, text):
+        score -= 0.45
+
+    if target_codes:
+        if doc_code in set(target_codes):
+            score += 0.25
+        else:
+            score -= 0.15
+    if target_articles and doc_article in target_articles:
+        score += 0.30
+        if doc_article and doc_article in query_lower:
+            score += 0.20
+    if domain:
+        if domain_matches_code(domain, doc_code):
+            score += 0.15
+        else:
+            score -= 0.20
+    return score
 
 
 def _canonicalize_code(code: str, source: str | None = None) -> str:
@@ -272,6 +371,11 @@ def _load_reranker(model_name: str):
     try:
         from sentence_transformers import CrossEncoder
 
+        warnings.filterwarnings(
+            "ignore",
+            message="The Transformer `cache_dir` argument is deprecated",
+            category=FutureWarning,
+        )
         model = CrossEncoder(model_name)
         return "cross_encoder", model
     except Exception:
@@ -293,6 +397,9 @@ def _rerank_scores(backend: str, model: Any, query: str, texts: list[str]) -> li
 
 
 def main() -> None:
+    if "TRANSFORMERS_CACHE" in os.environ and "HF_HOME" not in os.environ:
+        os.environ["HF_HOME"] = os.environ["TRANSFORMERS_CACHE"]
+    os.environ.pop("TRANSFORMERS_CACHE", None)
     args = _parse_args()
     xlsx_path = Path(args.xlsx)
     if not xlsx_path.exists():
@@ -329,7 +436,9 @@ def main() -> None:
         try:
             candidates: dict[tuple[str, str], dict[str, Any]] = {}
 
-            subqueries = _build_subqueries(query)
+            subqueries = _build_subqueries(query)[: max(1, args.multi_query_limit)]
+            target_codes = _extract_target_codes(query)
+            target_articles = _extract_target_article_numbers(query)
             for query_rank, subquery in enumerate(subqueries, start=1):
                 vector = embed_query(subquery)
                 response = index.query(
@@ -338,7 +447,7 @@ def main() -> None:
                     namespace=namespace,
                     include_metadata=True,
                 )
-                query_weight = 1.0 if query_rank == 1 else 0.35
+                query_weight = args.vector_weight if query_rank == 1 else (args.vector_weight * 0.35)
                 for rank, match in enumerate(response.get("matches", []), start=1):
                     meta = match.get("metadata", {}) or {}
                     pair = (
@@ -358,24 +467,27 @@ def main() -> None:
                     )
                     entry["fused_score"] += query_weight * (1.0 / (50 + rank))
 
-            for rank, doc in enumerate(bm25.invoke(query), start=1):
-                meta = getattr(doc, "metadata", {}) or {}
-                pair = (
-                    _normalize_article(meta.get("article_number", "")),
-                    _canonicalize_code(meta.get("code_ru", ""), meta.get("source", "")),
-                )
-                if not pair[0]:
-                    continue
-                entry = candidates.setdefault(
-                    pair,
-                    {
-                        "pair": pair,
-                        "meta": meta,
-                        "text": _candidate_text(meta, getattr(doc, "page_content", "") or ""),
-                        "fused_score": 0.0,
-                    },
-                )
-                entry["fused_score"] += 0.30 * (1.0 / (80 + rank))
+            bm25_seen: set[tuple[str, str]] = set()
+            for bm25_query in subqueries:
+                for rank, doc in enumerate(bm25.invoke(bm25_query), start=1):
+                    meta = getattr(doc, "metadata", {}) or {}
+                    pair = (
+                        _normalize_article(meta.get("article_number", "")),
+                        _canonicalize_code(meta.get("code_ru", ""), meta.get("source", "")),
+                    )
+                    if not pair[0] or pair in bm25_seen:
+                        continue
+                    bm25_seen.add(pair)
+                    entry = candidates.setdefault(
+                        pair,
+                        {
+                            "pair": pair,
+                            "meta": meta,
+                            "text": _candidate_text(meta, getattr(doc, "page_content", "") or ""),
+                            "fused_score": 0.0,
+                        },
+                    )
+                    entry["fused_score"] += args.bm25_weight * (1.0 / (80 + rank))
 
             rescored = sorted(
                 candidates.values(),
@@ -386,9 +498,26 @@ def main() -> None:
             if rescored:
                 rerank_texts = [item["text"] for item in rescored]
                 rerank_scores = _rerank_scores(reranker_backend, reranker, query, rerank_texts)
-                for item, rerank_score in zip(rescored, rerank_scores):
+                fused_norm = _minmax_normalize([float(item["fused_score"]) for item in rescored])
+                rerank_norm = _minmax_normalize([float(score) for score in rerank_scores])
+                code_counts: dict[str, int] = {}
+                for idx, (item, rerank_score) in enumerate(zip(rescored, rerank_scores)):
                     item["rerank_score"] = float(rerank_score)
-                    item["final_score"] = float(item["fused_score"]) + (0.25 * float(rerank_score))
+                    code_key = _canonicalize_code(
+                        str((item.get("meta") or {}).get("code_ru", "") or ""),
+                        str((item.get("meta") or {}).get("source", "") or ""),
+                    )
+                    diversity_penalty = args.diversity_penalty * code_counts.get(code_key, 0)
+                    item["final_score"] = _legal_score(
+                        query=query,
+                        meta=item.get("meta") or {},
+                        text=item.get("text", ""),
+                        base_score=fused_norm[idx] + (args.rerank_weight * rerank_norm[idx]),
+                        target_codes=target_codes,
+                        target_articles=target_articles,
+                    ) - diversity_penalty
+                    if code_key:
+                        code_counts[code_key] = code_counts.get(code_key, 0) + 1
                 rescored.sort(key=lambda item: item["final_score"], reverse=True)
 
             pred_pairs = [item["pair"] for item in rescored[: args.top_k]]
