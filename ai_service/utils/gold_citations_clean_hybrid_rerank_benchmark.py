@@ -45,6 +45,17 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--grid-multi-query-limit", default="1,2,3")
     parser.add_argument("--grid-rerank-modes", default="off,on")
     parser.add_argument(
+        "--quick-limit",
+        type=int,
+        default=0,
+        help="If > 0, overrides --limit during grid-search runs for fast tuning.",
+    )
+    parser.add_argument(
+        "--resume-grid",
+        action="store_true",
+        help="Skip completed grid run outputs and continue from remaining combinations.",
+    )
+    parser.add_argument(
         "--reranker-model",
         default=os.environ.get("LEGAL_RAG_RERANKER_FALLBACK_MODEL", "BAAI/bge-reranker-base"),
     )
@@ -488,6 +499,22 @@ def _save_payload(output_path: Path, payload: dict[str, Any]) -> None:
     output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _try_load_existing_payload(output_path: Path) -> dict[str, Any] | None:
+    if not output_path.exists():
+        return None
+    try:
+        return json.loads(output_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _expected_eval_count(*, xlsx_path: Path, start_from: int, limit: int) -> int:
+    total_rows = len(pd.read_excel(xlsx_path))
+    if start_from >= total_rows:
+        return 0
+    return max(0, min(limit, total_rows - start_from))
+
+
 def _run_single(
     args: argparse.Namespace,
     *,
@@ -626,6 +653,8 @@ def main() -> None:
     step = 0
     base_output = Path(args.output)
     runs: list[dict[str, Any]] = []
+    effective_limit = args.quick_limit if args.quick_limit > 0 else args.limit
+    expected_count = _expected_eval_count(xlsx_path=xlsx_path, start_from=args.start_from, limit=effective_limit)
 
     for alpha in alphas:
         for pk in pinecone_ks:
@@ -636,6 +665,7 @@ def main() -> None:
                             step += 1
                             run_args = argparse.Namespace(**vars(args))
                             run_args.grid_search = False
+                            run_args.limit = effective_limit
                             run_args.vector_weight = alpha
                             run_args.bm25_weight = max(0.0, 1.0 - alpha)
                             run_args.pinecone_k = pk
@@ -646,6 +676,33 @@ def main() -> None:
                             run_name = f"a{alpha:.2f}_pk{pk}_bk{bk}_ck{ck}_mq{mq}_rr{mode}".replace(".", "_")
                             run_args.output = str(base_output.with_name(f"{base_output.stem}_{run_name}.json"))
                             print(f"\n[GRID {step}/{total}] {run_name}")
+                            if args.resume_grid:
+                                existing_payload = _try_load_existing_payload(Path(run_args.output))
+                                existing_count = int((existing_payload or {}).get("evaluated_questions") or 0)
+                                if existing_payload and existing_count >= expected_count:
+                                    summary = (existing_payload or {}).get("summary", {}) or {}
+                                    print(
+                                        f"Skipping completed run: {run_name} "
+                                        f"({existing_count}/{expected_count})"
+                                    )
+                                    runs.append(
+                                        {
+                                            "run_name": run_name,
+                                            "alpha": alpha,
+                                            "bm25_weight": run_args.bm25_weight,
+                                            "pinecone_k": pk,
+                                            "bm25_k": bk,
+                                            "candidate_k": ck,
+                                            "multi_query_limit": mq,
+                                            "rerank_mode": mode,
+                                            "strict_hit": summary.get("strict_hit", 0.0),
+                                            "strict_mrr": summary.get("strict_mrr", 0.0),
+                                            "soft_hit": summary.get("soft_hit", 0.0),
+                                            "avg_elapsed_sec": summary.get("avg_elapsed_sec", 0.0),
+                                            "output": run_args.output,
+                                        }
+                                    )
+                                    continue
                             payload = _run_single(run_args, xlsx_path=xlsx_path, bm25=bm25, embed_query=embed_query, index=index, namespace=namespace, reranker_backend=reranker_backend, reranker=reranker)
                             summary = payload.get("summary", {})
                             runs.append({"run_name": run_name, "alpha": alpha, "bm25_weight": run_args.bm25_weight, "pinecone_k": pk, "bm25_k": bk, "candidate_k": ck, "multi_query_limit": mq, "rerank_mode": mode, "strict_hit": summary.get("strict_hit", 0.0), "strict_mrr": summary.get("strict_mrr", 0.0), "soft_hit": summary.get("soft_hit", 0.0), "avg_elapsed_sec": summary.get("avg_elapsed_sec", 0.0), "output": run_args.output})
