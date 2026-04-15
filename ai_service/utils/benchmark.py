@@ -7,6 +7,8 @@
 Результаты сохраняются в benchmark_results/ (JSON + Excel).
 """
 
+import argparse
+import csv
 import json
 import os
 import sys
@@ -361,19 +363,59 @@ def _avg(values: List[Optional[float]]) -> Optional[float]:
     return sum(nums) / len(nums)
 
 
-def run_benchmark(timeout_sec: float = None):
+def _configure_retrieval(
+    *,
+    alpha: float,
+    retriever_k: int,
+    rerank_mode: str,
+) -> None:
+    alpha = max(0.0, min(1.0, float(alpha)))
+    bm25_weight = 1.0 - alpha
+    config.VECTOR_WEIGHT = alpha
+    config.BM25_WEIGHT = bm25_weight
+    config.RETRIEVER_WIDE_K = int(retriever_k)
+    config.HYBRID_K = int(retriever_k)
+    config.RETRIEVER_TOP_K = int(retriever_k)
+
+    mode = (rerank_mode or "on").strip().lower()
+    config.USE_RERANKER = mode != "off"
+
+
+def _reset_rag_chain_state(rag_module: Any) -> None:
+    for attr in (
+        "_embeddings_instance",
+        "_vector_store_instance",
+        "_retriever_instance",
+        "_llm_instance",
+    ):
+        if hasattr(rag_module, attr):
+            setattr(rag_module, attr, None)
+
+
+def run_benchmark(
+    timeout_sec: float = None,
+    *,
+    alpha: float = 0.6,
+    retriever_k: int = 50,
+    rerank_mode: str = "on",
+    run_label: str = "",
+):
     timeout_sec = timeout_sec or getattr(config, "BENCHMARK_TIMEOUT_SEC", 300)
+    _configure_retrieval(alpha=alpha, retriever_k=retriever_k, rerank_mode=rerank_mode)
 
     print("Загрузка RAG-цепи...")
     try:
         try:
+            import ai_service.retrieval.rag_chain as rag_chain_module
             from ai_service.retrieval.rag_chain import (
                 get_llm,
                 get_retriever,
                 invoke_qa,
             )
         except Exception:
+            import rag_chain as rag_chain_module
             from rag_chain import get_llm, get_retriever, invoke_qa
+        _reset_rag_chain_state(rag_chain_module)
         retriever = get_retriever()
         llm = get_llm()
     except Exception as e:
@@ -477,7 +519,14 @@ def run_benchmark(timeout_sec: float = None):
 
     # Сохранение
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    name_base = f"legal_rag_benchmark_{timestamp}"
+    safe_label = re.sub(r"[^a-zA-Z0-9_\-]+", "_", run_label).strip("_")
+    run_suffix = (
+        safe_label
+        if safe_label
+        else f"a{alpha:.2f}_k{retriever_k}_rerank_{rerank_mode.strip().lower()}"
+    )
+    run_suffix = run_suffix.replace(".", "_")
+    name_base = f"legal_rag_benchmark_{timestamp}_{run_suffix}"
 
     json_path = config.BENCHMARK_DIR / f"{name_base}.json"
     with open(json_path, "w", encoding="utf-8") as f:
@@ -506,6 +555,12 @@ def run_benchmark(timeout_sec: float = None):
                 "timestamp": timestamp,
                 "questions_count": len(results),
                 "judge_enabled": use_judge,
+                "config": {
+                    "alpha": alpha,
+                    "bm25_weight": 1.0 - alpha,
+                    "retriever_k": retriever_k,
+                    "rerank_mode": rerank_mode,
+                },
                 "summary": summary,
                 "results": results,
             },
@@ -570,8 +625,150 @@ def run_benchmark(timeout_sec: float = None):
         print(f"Average Groundedness: {avg_grounded:.3f}")
     if avg_refusal is not None:
         print(f"Average Refusal Rate: {avg_refusal:.3f}")
+
+    print(
+        "Конфиг: "
+        f"alpha={alpha:.2f}, bm25={1.0 - alpha:.2f}, "
+        f"k={retriever_k}, rerank_mode={rerank_mode}"
+    )
     return results
 
 
+def run_benchmark_with_alpha(
+    alpha: float,
+    *,
+    retriever_k: int = 50,
+    rerank_mode: str = "on",
+    timeout_sec: float | None = None,
+) -> dict[str, Any]:
+    results = run_benchmark(
+        timeout_sec=timeout_sec,
+        alpha=alpha,
+        retriever_k=retriever_k,
+        rerank_mode=rerank_mode,
+        run_label=f"alpha_{alpha:.2f}_k_{retriever_k}_rerank_{rerank_mode}",
+    )
+    return {
+        "alpha": alpha,
+        "bm25_weight": 1.0 - alpha,
+        "retriever_k": retriever_k,
+        "rerank_mode": rerank_mode,
+        "avg_mrr": _avg([r.get("mrr") for r in results]),
+        "avg_hit_rate@5": _avg([r.get("hit_rate@5") for r in results]),
+        "avg_precision@5": _avg([r.get("precision@5") for r in results]),
+        "avg_recall@10": _avg([r.get("recall@10") for r in results]),
+        "avg_latency_total_sec": _avg([r.get("latency_total_sec") for r in results]),
+    }
+
+
+def run_grid_search(
+    *,
+    timeout_sec: float,
+    alphas: list[float],
+    ks: list[int],
+    rerank_modes: list[str],
+) -> dict[str, Any]:
+    runs: list[dict[str, Any]] = []
+    total = len(alphas) * len(ks) * len(rerank_modes)
+    step = 0
+    for mode in rerank_modes:
+        for k in ks:
+            for alpha in alphas:
+                step += 1
+                print(f"\n[GRID {step}/{total}] alpha={alpha:.2f}, k={k}, rerank={mode}")
+                summary = run_benchmark_with_alpha(
+                    alpha=alpha,
+                    retriever_k=k,
+                    rerank_mode=mode,
+                    timeout_sec=timeout_sec,
+                )
+                runs.append(summary)
+
+    def _score(item: dict[str, Any]) -> float:
+        mrr = float(item.get("avg_mrr") or 0.0)
+        hit = float(item.get("avg_hit_rate@5") or 0.0)
+        latency = float(item.get("avg_latency_total_sec") or 0.0)
+        return (0.7 * mrr) + (0.3 * hit) - (0.01 * latency)
+
+    top3 = sorted(runs, key=_score, reverse=True)[:3]
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    result = {
+        "timestamp": timestamp,
+        "runs_count": len(runs),
+        "alphas": alphas,
+        "ks": ks,
+        "rerank_modes": rerank_modes,
+        "top3": top3,
+        "runs": runs,
+    }
+
+    json_path = config.BENCHMARK_DIR / f"legal_rag_grid_search_{timestamp}.json"
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+
+    csv_path = config.BENCHMARK_DIR / f"legal_rag_grid_search_{timestamp}.csv"
+    with open(csv_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "alpha",
+                "bm25_weight",
+                "retriever_k",
+                "rerank_mode",
+                "avg_mrr",
+                "avg_hit_rate@5",
+                "avg_precision@5",
+                "avg_recall@10",
+                "avg_latency_total_sec",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(runs)
+
+    print(f"\nGrid JSON: {json_path}")
+    print(f"Grid CSV: {csv_path}")
+    print("Top-3 конфигурации:")
+    for idx, item in enumerate(top3, 1):
+        print(
+            f"{idx}) alpha={item['alpha']:.2f}, k={item['retriever_k']}, "
+            f"rerank={item['rerank_mode']}, mrr={float(item['avg_mrr'] or 0):.4f}, "
+            f"hit@5={float(item['avg_hit_rate@5'] or 0):.4f}, "
+            f"lat={float(item['avg_latency_total_sec'] or 0):.2f}s"
+        )
+    return result
+
+
+def _parse_cli() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="LegalRAG benchmark and grid-search utility.")
+    parser.add_argument("--timeout-sec", type=float, default=None)
+    parser.add_argument("--alpha", type=float, default=0.6)
+    parser.add_argument("--retriever-k", type=int, default=50)
+    parser.add_argument("--rerank-mode", choices=("on", "off"), default="on")
+    parser.add_argument("--run-label", default="")
+    parser.add_argument("--grid-search", action="store_true")
+    parser.add_argument("--alphas", default="0.4,0.5,0.6,0.7")
+    parser.add_argument("--ks", default="20,30,50")
+    parser.add_argument("--rerank-modes", default="off,on")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    run_benchmark()
+    args = _parse_cli()
+    if args.grid_search:
+        alphas = [float(x.strip()) for x in args.alphas.split(",") if x.strip()]
+        ks = [int(x.strip()) for x in args.ks.split(",") if x.strip()]
+        modes = [x.strip() for x in args.rerank_modes.split(",") if x.strip()]
+        run_grid_search(
+            timeout_sec=args.timeout_sec or getattr(config, "BENCHMARK_TIMEOUT_SEC", 300),
+            alphas=alphas,
+            ks=ks,
+            rerank_modes=modes,
+        )
+    else:
+        run_benchmark(
+            timeout_sec=args.timeout_sec,
+            alpha=args.alpha,
+            retriever_k=args.retriever_k,
+            rerank_mode=args.rerank_mode,
+            run_label=args.run_label,
+        )
