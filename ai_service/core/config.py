@@ -224,6 +224,16 @@ USE_RERANKER = os.environ.get("LEGAL_RAG_USE_RERANKER", "1") == "1"
 RERANKER_FALLBACK_MODEL = os.environ.get(
     "LEGAL_RAG_RERANKER_FALLBACK_MODEL", "BAAI/bge-reranker-base"
 )
+# flag_embedding | jina | cross_encoder | auto (auto: jina if "jina" in RERANKER_MODEL else flag_embedding)
+RERANKER_BACKEND = os.environ.get("LEGAL_RAG_RERANKER_BACKEND", "auto").strip().lower()
+# Skip cross-encoder/Jina when hybrid top docs already match detected code_ru + lexical overlap
+RERANK_DYNAMIC_SKIP = os.environ.get("LEGAL_RAG_RERANK_DYNAMIC_SKIP", "0") == "1"
+RERANK_SKIP_LEXICAL_THRESHOLD = float(
+    os.environ.get("LEGAL_RAG_RERANK_SKIP_LEXICAL_THRESHOLD", "0.35")
+)
+RERANK_SKIP_MIN_CODE_MATCHES = int(
+    os.environ.get("LEGAL_RAG_RERANK_SKIP_MIN_CODE_MATCHES", "2")
+)
 USE_LLM_QUERY_REWRITE = os.environ.get("LEGAL_RAG_USE_LLM_QUERY_REWRITE", "0") == "1"
 EXPERIMENTAL_DEDUP_RETRIEVAL = (
     os.environ.get("LEGAL_RAG_EXPERIMENTAL_DEDUP_RETRIEVAL", "0") == "1"

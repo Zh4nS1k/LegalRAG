@@ -85,11 +85,12 @@ def bm25_preprocess_func(text: str) -> List[str] | None:
     return [_stemmer.stem(t) for t in tokens if t.isalnum()]
 
 
-_init_lock = threading.Lock()
+_init_lock = threading.RLock()
 _embeddings_instance = None
 _vector_store_instance = None
 _retriever_instance = None
 _llm_instance = None
+_disable_pinecone = os.environ.get("LEGAL_RAG_DISABLE_PINECONE", "0") == "1"
 
 
 class PrefixedEmbeddings:
@@ -190,6 +191,8 @@ def get_embeddings() -> PrefixedEmbeddings:
 
 
 def get_vector_store():
+    if _disable_pinecone:
+        raise RuntimeError("Pinecone disabled by LEGAL_RAG_DISABLE_PINECONE=1")
     global _vector_store_instance
     if _vector_store_instance is None:
         with _init_lock:
@@ -847,6 +850,19 @@ def _has_alias(query: str, alias: str) -> bool:
 _LAW_ROUTE_HINTS: list[tuple[tuple[str, ...], list[str], float]] = [
     (
         (
+            "возмездного оказания услуг",
+            "договор оказания услуг",
+            "представительство в суде",
+            "юридическая помощь",
+            "адвокатская деятельность",
+            "поверенный",
+            "договор поручения",
+        ),
+        _gk_special_variants,
+        1.5,
+    ),
+    (
+        (
             "валютном регулировании",
             "валютном контроле",
             "валюталық реттеу",
@@ -883,7 +899,7 @@ _LAW_ROUTE_HINTS: list[tuple[tuple[str, ...], list[str], float]] = [
             "ип",
         ),
         _llp_variants,
-        0.35,
+        0.15,
     ),
     (
         (
@@ -894,9 +910,39 @@ _LAW_ROUTE_HINTS: list[tuple[tuple[str, ...], list[str], float]] = [
             "продавец отказал",
             "некачественный товар",
             "недостаток товара",
+            "товарный вид",
+            "в течение четырнадцати дней",
+            "14 дней",
+            "потребитель",
+            "бритва",
         ),
         _consumer_variants,
-        1.1,
+        1.4,
+    ),
+    (
+        (
+            "цифровые активы",
+            "необеспеченные цифровые активы",
+            "крипто",
+            "криптобирж",
+            "стейкинг",
+            "kraken",
+        ),
+        _digital_assets_variants,
+        1.6,
+    ),
+    (
+        (
+            "мусор",
+            "тбо",
+            "отходы",
+            "антисанитар",
+            "контейнер",
+            "санитарно-эпидемиолог",
+            "мусорная площадка",
+        ),
+        _koap_variants,
+        1.3,
     ),
     (
         (
@@ -953,7 +999,7 @@ def _detect_target_codes(query: str) -> list[str]:
     top_score = ranked[0][1]
     second_score = ranked[1][1] if len(ranked) > 1 else 0.0
 
-    if top_score >= 1.5 and top_score >= second_score + 1.0:
+    if top_score >= 1.8 and top_score >= second_score + 1.2:
         return [code for code, score in ranked if score >= top_score - 0.4]
 
     cutoff = max(1.0, top_score - 0.5)
@@ -1037,7 +1083,10 @@ def _search_with_code_filters(
 ) -> List[Document]:
     if not code_names:
         return []
-    store = get_vector_store()
+    try:
+        store = get_vector_store()
+    except Exception:
+        return []
     docs: list[Document] = []
     target_articles = list(article_numbers or [])
     if article_number:
@@ -1988,7 +2037,7 @@ def _apply_legal_score(
 
     if target_codes:
         if doc_code in set(target_codes):
-            score += 0.25
+            score += 0.45
         else:
             score -= 0.15
 
@@ -2038,6 +2087,63 @@ def _lexical_overlap_score(query: str, doc: Document) -> float:
     if overlap <= 0:
         return 0.0
     return min(0.35, overlap / max(4.0, float(len(query_terms))))
+
+
+def _resolve_reranker_backend() -> str:
+    raw = (getattr(config, "RERANKER_BACKEND", None) or "auto").strip().lower()
+    if raw and raw != "auto":
+        return raw
+    model = (getattr(config, "RERANKER_MODEL", "") or "").lower()
+    if "jina" in model:
+        return "jina"
+    return "flag_embedding"
+
+
+def _should_skip_neural_rerank(query: str, documents: Sequence[Document]) -> bool:
+    if not getattr(config, "RERANK_DYNAMIC_SKIP", False):
+        return False
+    target_codes = _detect_target_codes(query)
+    if not target_codes:
+        return False
+    codes_set = set(target_codes)
+    top_k = min(4, len(documents))
+    if top_k < 1:
+        return False
+    matches = sum(
+        1
+        for d in documents[:top_k]
+        if (d.metadata.get("code_ru") or "").strip() in codes_set
+    )
+    thresh = float(getattr(config, "RERANK_SKIP_LEXICAL_THRESHOLD", 0.35))
+    min_m = int(getattr(config, "RERANK_SKIP_MIN_CODE_MATCHES", 2))
+    best_lex = max(_lexical_overlap_score(query, d) for d in documents[:top_k])
+    return matches >= min_m and best_lex >= thresh
+
+
+def _rank_docs_by_legal_only(
+    query: str,
+    documents: Sequence[Document],
+    *,
+    target_codes: list[str],
+    target_articles: set[str],
+) -> list[Document]:
+    scored: list[tuple[float, int, Document]] = []
+    for idx, doc in enumerate(documents):
+        base = 1.0 + _lexical_overlap_score(query, doc)
+        s = _apply_legal_score(
+            query,
+            doc,
+            base,
+            target_codes=target_codes,
+            target_articles=target_articles,
+        )
+        scored.append((s, idx, doc))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    out: list[Document] = []
+    for s, _, doc in scored:
+        doc.metadata["relevance_score"] = s
+        out.append(doc)
+    return out
 
 
 def _rank_docs_with_legal_scoring(
@@ -2133,7 +2239,7 @@ def get_retriever():
         if _retriever_instance is not None:
             return _retriever_instance
 
-        base_retriever: Any = _vector_retriever
+        base_retriever: Any | None = None if _disable_pinecone else _vector_retriever
 
         # Optional BM25 hybrid: build only when first request comes in.
         try:
@@ -2167,16 +2273,24 @@ def get_retriever():
                 else:
                     bm25_retriever = BM25Retriever.from_documents(chunks, k=_hybrid_k)
 
-                _vector_w = getattr(config, "VECTOR_WEIGHT", 0.6)
-                _bm25_w = getattr(config, "BM25_WEIGHT", 0.4)
-                base_retriever = EnsembleRetriever(
-                    retrievers=[_vector_retriever, bm25_retriever],
-                    weights=[_vector_w, _bm25_w],
-                )
-                print("Гибридный RAG готов! (BM25 + Pinecone, k=%d)" % _hybrid_k)
+                if _disable_pinecone:
+                    base_retriever = bm25_retriever
+                    print("BM25-only режим включён (Pinecone отключён).")
+                else:
+                    _vector_w = getattr(config, "VECTOR_WEIGHT", 0.6)
+                    _bm25_w = getattr(config, "BM25_WEIGHT", 0.4)
+                    base_retriever = EnsembleRetriever(
+                        retrievers=[_vector_retriever, bm25_retriever],
+                        weights=[_vector_w, _bm25_w],
+                    )
+                    print("Гибридный RAG готов! (BM25 + Pinecone, k=%d)" % _hybrid_k)
         except Exception as e:
             # Don't block startup: hybrid is optional.
             print(f"BM25 не запустился: {e}. Используется только Pinecone.")
+        if base_retriever is None:
+            raise RuntimeError(
+                "Retriever initialization failed: Pinecone disabled and BM25 chunks unavailable."
+            )
 
         # Post-filtering layer if enabled
         if _allowed_code_ru_for_filter or _filter_article:
@@ -2225,23 +2339,67 @@ def get_retriever():
                     "[START] Reranker initialization (%s)", config.RERANKER_MODEL
                 )
                 t_rerank = time.perf_counter()
-                _reranker_backend = "flag_embedding"
+                _backend_resolved = _resolve_reranker_backend()
+                _reranker_backend: str = _backend_resolved
                 _reranker_model: Any = None
-                try:
-                    from FlagEmbedding import FlagReranker
 
-                    # FlagReranker uses trust_remote_code=True by default in some versions.
-                    _reranker_model = FlagReranker(config.RERANKER_MODEL, use_fp16=True)
-                except Exception as flag_error:
-                    logger.warning(
-                        "FlagReranker unavailable (%s). Falling back to CrossEncoder: %s",
-                        flag_error,
-                        config.RERANKER_FALLBACK_MODEL,
-                    )
+                if _backend_resolved == "cross_encoder":
                     from sentence_transformers import CrossEncoder
 
-                    _reranker_backend = "cross_encoder"
-                    _reranker_model = CrossEncoder(config.RERANKER_FALLBACK_MODEL)
+                    _reranker_model = CrossEncoder(config.RERANKER_MODEL)
+                elif _backend_resolved == "jina":
+                    try:
+                        from transformers import AutoModel
+
+                        _reranker_model = AutoModel.from_pretrained(
+                            config.RERANKER_MODEL,
+                            dtype="auto",
+                            trust_remote_code=True,
+                        )
+                        _reranker_model.eval()
+                    except Exception as jina_err:
+                        logger.warning(
+                            "Jina reranker load failed (%s). Using CrossEncoder fallback (%s).",
+                            jina_err,
+                            config.RERANKER_FALLBACK_MODEL,
+                        )
+                        from sentence_transformers import CrossEncoder
+
+                        _reranker_model = CrossEncoder(config.RERANKER_FALLBACK_MODEL)
+                        _reranker_backend = "cross_encoder"
+
+                if _reranker_model is None:
+                    try:
+                        from FlagEmbedding import FlagReranker
+
+                        # FlagReranker uses trust_remote_code=True by default in some versions.
+                        _reranker_model = FlagReranker(
+                            config.RERANKER_MODEL, use_fp16=True
+                        )
+                        _reranker_backend = "flag_embedding"
+                        # Some checkpoints do not define pad_token and fail on batched scoring.
+                        try:
+                            _tok = getattr(_reranker_model, "tokenizer", None)
+                            if _tok is not None and getattr(
+                                _tok, "pad_token", None
+                            ) is None:
+                                eos_token = getattr(_tok, "eos_token", None)
+                                if eos_token:
+                                    _tok.pad_token = eos_token
+                                else:
+                                    _tok.add_special_tokens({"pad_token": "<pad>"})
+                        except Exception:
+                            pass
+                    except Exception as flag_error:
+                        logger.warning(
+                            "FlagReranker unavailable (%s). Falling back to CrossEncoder: %s",
+                            flag_error,
+                            config.RERANKER_FALLBACK_MODEL,
+                        )
+                        from sentence_transformers import CrossEncoder
+
+                        _reranker_backend = "cross_encoder"
+                        _reranker_model = CrossEncoder(config.RERANKER_FALLBACK_MODEL)
 
                 logger.info(
                     "[SUCCESS] Reranker initialized via %s (%.2fs)",
@@ -2260,10 +2418,64 @@ def get_retriever():
                     ) -> Sequence[Document]:
                         if not documents:
                             return []
+                        docs_seq = list(documents)
                         target_codes = _detect_target_codes(query)
+
+                        if _should_skip_neural_rerank(query, docs_seq):
+                            rerank_docs = list(docs_seq)
+                            if target_codes:
+                                filtered_docs = _filter_docs_by_codes(
+                                    rerank_docs, target_codes
+                                )
+                                if filtered_docs:
+                                    rerank_docs = filtered_docs
+                            target_articles_skip: set[str] = set()
+                            article_number = _extract_query_article_number(query)
+                            if article_number:
+                                target_articles_skip.add(
+                                    _normalize_article_number(article_number)
+                                )
+                            range_match = _extract_article_range(query)
+                            if range_match:
+                                start, end = range_match
+                                target_articles_skip.update(
+                                    _normalize_article_number(str(n))
+                                    for n in range(start, end + 1)
+                                )
+                            ranked = _rank_docs_by_legal_only(
+                                query,
+                                rerank_docs,
+                                target_codes=target_codes,
+                                target_articles=target_articles_skip,
+                            )
+                            scored_docs = [
+                                (d, float(d.metadata.get("relevance_score", 0.0)))
+                                for d in ranked
+                            ]
+                            scored_docs = _apply_diversity_penalty(
+                                scored_docs,
+                                penalty_step=getattr(
+                                    config, "RETRIEVER_SAME_CODE_PENALTY_STEP", 0.1
+                                ),
+                            )
+                            ranked_docs = [d for d, _ in scored_docs]
+                            llm_candidate_n = max(
+                                self.top_n,
+                                getattr(config, "LLM_RERANK_CANDIDATES", self.top_n),
+                            )
+                            if getattr(config, "USE_LLM_RERANKER", False):
+                                return _llm_rerank_documents(
+                                    query,
+                                    ranked_docs[:llm_candidate_n],
+                                    getattr(config, "LLM_RERANK_TOP_N", self.top_n),
+                                )
+                            return ranked_docs[: self.top_n]
+
                         rerank_docs = list(documents)
                         if target_codes:
-                            filtered_docs = _filter_docs_by_codes(rerank_docs, target_codes)
+                            filtered_docs = _filter_docs_by_codes(
+                                rerank_docs, target_codes
+                            )
                             if filtered_docs:
                                 rerank_docs = filtered_docs
                         target_articles: set[str] = set()
@@ -2278,8 +2490,32 @@ def get_retriever():
                                 for n in range(start, end + 1)
                             )
                         pairs = [[query, d.page_content] for d in rerank_docs]
-                        if _reranker_backend == "flag_embedding":
-                            scores = _reranker_model.compute_score(pairs)
+                        if _reranker_backend == "jina":
+                            texts = [d.page_content for d in rerank_docs]
+                            with torch.inference_mode():
+                                jina_results = _reranker_model.rerank(
+                                    query, texts, top_n=len(texts)
+                                )
+                            scores = [0.0] * len(rerank_docs)
+                            for item in jina_results:
+                                ji = int(item.get("index", -1))
+                                if 0 <= ji < len(scores):
+                                    scores[ji] = float(
+                                        item.get("relevance_score", 0.0)
+                                    )
+                        elif _reranker_backend == "flag_embedding":
+                            try:
+                                scores = _reranker_model.compute_score(pairs)
+                            except ValueError as ve:
+                                if "no padding token" in str(ve).lower():
+                                    scores = [
+                                        float(
+                                            _reranker_model.compute_score([pair])[0]
+                                        )
+                                        for pair in pairs
+                                    ]
+                                else:
+                                    raise
                         else:
                             scores = _reranker_model.predict(pairs)
                         if isinstance(scores, float):
@@ -2504,27 +2740,28 @@ def _ensure_latency_patches() -> None:
     # Patch once, when heavy components exist. Add diagnostic logging for each step.
     if getattr(_ensure_latency_patches, "_done", False):
         return
-    try:
-        emb = get_embeddings()
-        original_embed_query = emb.embed_query
+    if not _disable_pinecone:
+        try:
+            emb = get_embeddings()
+            original_embed_query = emb.embed_query
 
-        @latency.measure_latency("embedding")
-        def wrapped_embed_query(*args, **kwargs):
-            logger.info("[START] Embedding Query")
-            t0 = time.perf_counter()
-            try:
-                out = original_embed_query(*args, **kwargs)
-                logger.info(
-                    "[SUCCESS] Query Embedded (%.2fs)", time.perf_counter() - t0
-                )
-                return out
-            except Exception as exc:
-                logger.error("Embedding failed: %s", exc, exc_info=True)
-                raise
+            @latency.measure_latency("embedding")
+            def wrapped_embed_query(*args, **kwargs):
+                logger.info("[START] Embedding Query")
+                t0 = time.perf_counter()
+                try:
+                    out = original_embed_query(*args, **kwargs)
+                    logger.info(
+                        "[SUCCESS] Query Embedded (%.2fs)", time.perf_counter() - t0
+                    )
+                    return out
+                except Exception as exc:
+                    logger.error("Embedding failed: %s", exc, exc_info=True)
+                    raise
 
-        emb.embed_query = wrapped_embed_query
-    except Exception:
-        pass
+            emb.embed_query = wrapped_embed_query
+        except Exception:
+            pass
 
     try:
         original_trim_get_docs = _TrimRetriever._get_relevant_documents
@@ -2572,18 +2809,19 @@ def _ensure_latency_patches() -> None:
     _ensure_latency_patches._done = True
 
 
-UNIVERSAL_PROMPT_TEMPLATE = """You are a Legal Synthesizer. Based on the
-verified context {context} and the analyzed user intent {input}, provide a
-final legal standing. Mention the 'Flip-Point' (what could change the
-outcome).
+UNIVERSAL_PROMPT_TEMPLATE = """Ты — юридический ассистент по праву РК.
+ОТВЕЧАЙ ИСКЛЮЧИТЕЛЬНО на основе предоставленного контекста.
+Если нужной нормы в контексте нет — отвечай ровно:
+"Информация не найдена в доступных текстах законов."
+Никогда не подставляй нормы из других кодексов и не выдумывай статьи.
 
 {chat_history}
-Context:
+Контекст:
 {context}
 
-Question: {input}
+Вопрос: {input}
 
-Answer:"""
+Ответ:"""
 
 CRIMINAL_PROMPT_TEMPLATE = """Ты — эксперт по Уголовному кодексу РК.
 • Гражданский кодекс РК (Общая и Особенная части)
@@ -2717,12 +2955,11 @@ RANGE_PROMPT = PromptTemplate.from_template(RANGE_PROMPT_TEMPLATE)
 
 @latency.measure_latency("prompt_template_build")
 def _select_prompt(question: str, intent: str = None) -> PromptTemplate:
-    if intent == "GENERAL_LEGAL":
-        return GENERAL_PROMPT
-    if intent == "CASE_SPECIFIC":
-        return CASE_PROMPT
     if _extract_article_range(question):
         return RANGE_PROMPT
+    if intent in {"GENERAL_LEGAL", "CASE_SPECIFIC"}:
+        # Use the strictest template for legal tasks to minimize cross-code hallucinations.
+        return CRIMINAL_PROMPT
     q = question or ""
     if _is_criminal_query(q) or re.search(
         r"(?:ст\.?\s*\d|статья\s*\d|бап\s*\d)", q, re.IGNORECASE
