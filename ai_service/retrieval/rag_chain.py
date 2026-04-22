@@ -2603,9 +2603,7 @@ def get_llm():
                 logger.info("[START] LLM Initialization")
                 t0 = time.perf_counter()
                 try:
-                    _llm_backend = os.environ.get(
-                        "LEGAL_RAG_LLM_BACKEND", "groq"
-                    ).lower()
+                    _llm_backend = getattr(config, "LLM_BACKEND", "groq").lower()
                     if _llm_backend == "groq":
                         try:
                             from langchain_groq import ChatGroq  # type: ignore[import]
@@ -2809,11 +2807,41 @@ def _ensure_latency_patches() -> None:
     _ensure_latency_patches._done = True
 
 
-UNIVERSAL_PROMPT_TEMPLATE = """Ты — юридический ассистент по праву РК.
+UNIVERSAL_PROMPT_TEMPLATE = """Ты — сильный Legal AI по законодательству Республики Казахстан.
 ОТВЕЧАЙ ИСКЛЮЧИТЕЛЬНО на основе предоставленного контекста.
 Если нужной нормы в контексте нет — отвечай ровно:
 "Информация не найдена в доступных текстах законов."
-Никогда не подставляй нормы из других кодексов и не выдумывай статьи.
+Никогда не подставляй нормы из других кодексов и не выдумывай статьи, части статей, исключения или выводы.
+
+Строгие правила качества:
+1. Всегда начинай строго с фразы:
+   "Это не официальная юридическая консультация. Информация только из базы."
+2. Следующей строкой пиши:
+   "Здравствуйте!"
+3. Если вопрос задан на русском — отвечай только на русском.
+   Если вопрос задан на казахском — отвечай только на казахском.
+4. Сначала дай прямой вывод по сути вопроса.
+   Не пиши расплывчатое "всё зависит", если из контекста можно дать ясный ответ.
+5. Затем отвечай в однородном плавном стиле, как опытный юридический ИИ:
+   - короткое объяснение сути,
+   - применимые нормы,
+   - что лучше не использовать,
+   - краткая рекомендация,
+   - источники.
+6. Если называешь конкретный закон, кодекс или статью, кратко объясняй, почему именно эта норма здесь применяется.
+7. Не перегружай ответ лишними нормами.
+   Лучше 2-6 точных норм с объяснением, чем длинный список без логики.
+8. Не смешивай разные отрасли права без опоры в контексте.
+
+Предпочтительный шаблон ответа:
+- "Это не официальная юридическая консультация. Информация только из базы."
+- "Здравствуйте!"
+- Прямой вывод.
+- "Основу вашей позиции составляют следующие нормы:"
+- Плавное объяснение применимых норм.
+- "Что лучше не использовать ..."
+- "Краткая рекомендация:"
+- "Источники:"
 
 {chat_history}
 Контекст:
@@ -2958,8 +2986,10 @@ def _select_prompt(question: str, intent: str = None) -> PromptTemplate:
     if _extract_article_range(question):
         return RANGE_PROMPT
     if intent in {"GENERAL_LEGAL", "CASE_SPECIFIC"}:
-        # Use the strictest template for legal tasks to minimize cross-code hallucinations.
-        return CRIMINAL_PROMPT
+        # Most legal questions are not criminal-law questions.
+        # Route them through the universal legal template instead of the
+        # criminal-only template to avoid wrong answer structure and bias.
+        return UNIVERSAL_PROMPT
     q = question or ""
     if _is_criminal_query(q) or re.search(
         r"(?:ст\.?\s*\d|статья\s*\d|бап\s*\d)", q, re.IGNORECASE

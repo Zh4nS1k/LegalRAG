@@ -17,7 +17,8 @@ def _load_dotenv():
 
         for p in (AI_SERVICE_DIR / ".env", BASE_DIR / ".env"):
             if p.exists():
-                load_dotenv(p, override=False)
+                # Local service .env must win over inherited shell vars.
+                load_dotenv(p, override=True)
                 break
     except ImportError:
         pass
@@ -179,8 +180,10 @@ def configure_hf_hub() -> None:
         os.environ["HF_HUB_OFFLINE"] = "1"
 
 
-# LLM (по умолчанию — Groq, можно переключить на Ollama)
+# LLM profile defaults to Groq with a valid Groq model.
+# Backend/model can still be overridden via env.
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+LLM_BACKEND = os.environ.get("LEGAL_RAG_LLM_BACKEND", "groq").lower()
 LLM_MODEL = os.environ.get("LEGAL_RAG_LLM", "llama-3.1-8b-instant")
 LLM_TEMPERATURE = 0.0
 LLM_MAX_TOKENS = int(os.environ.get("LEGAL_RAG_LLM_MAX_TOKENS", "2048"))
