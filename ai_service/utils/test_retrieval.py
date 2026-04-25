@@ -7,7 +7,6 @@ sys.path.insert(
 )
 
 from ai_service.retrieval.rag_chain import _vector_retriever, invoke_qa
-from langchain_core.documents import Document
 
 query = "Что будет если я украду яблоко?"
 

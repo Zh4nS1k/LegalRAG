@@ -1,8 +1,6 @@
 import time
 import contextvars
 from functools import wraps
-from pydantic import BaseModel
-from typing import Dict, Any, Optional
 
 # contextvar to hold latency metrics per request
 # Using a dict to store {"embedding": 110, "vector_search": 65, ...}

@@ -4,7 +4,6 @@ Strict 2-second timeout for connectivity checks—no hangs.
 """
 
 import socket
-import sys
 from pathlib import Path
 
 CONNECTIVITY_TIMEOUT_SEC = 2.0

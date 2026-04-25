@@ -6,9 +6,6 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from ai_service.core import config
-
-
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Benchmark retrieval quality on JSON queries with article-level ground truth."

@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any
 from langchain_core.documents import Document
 from ai_service.retrieval import rag_chain
 

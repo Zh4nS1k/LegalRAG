@@ -1,6 +1,5 @@
 import argparse
 import json
-from pathlib import Path
 
 
 def _parse_args() -> argparse.Namespace:

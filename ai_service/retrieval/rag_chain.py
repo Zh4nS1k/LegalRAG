@@ -2807,6 +2807,23 @@ def _ensure_latency_patches() -> None:
     _ensure_latency_patches._done = True
 
 
+LEGAL_REASONING_GUIDANCE = """
+Обязательная юридическая логика ответа:
+1. Сначала выдели ключевые юридически значимые факты из вопроса.
+2. Затем проанализируй только те нормы, которые прямо есть в контексте.
+3. После этого явно сопоставь каждый существенный факт с диспозицией соответствующей статьи.
+4. Только потом формулируй итоговый вывод.
+5. Не пропускай этап сопоставления фактов и нормы, даже если ответ кажется очевидным.
+6. Если для любого шага не хватает нормы в контексте, прямо укажи это и не достраивай вывод предположениями.
+
+Обязательные блоки в ответе после краткого прямого вывода:
+- "Ключевые юридические факты:"
+- "Анализ норм:"
+- "Сопоставление фактов и нормы:"
+- "Вывод:"
+"""
+
+
 UNIVERSAL_PROMPT_TEMPLATE = """Ты — сильный Legal AI по законодательству Республики Казахстан.
 ОТВЕЧАЙ ИСКЛЮЧИТЕЛЬНО на основе предоставленного контекста.
 Если нужной нормы в контексте нет — отвечай ровно:
@@ -2832,11 +2849,18 @@ UNIVERSAL_PROMPT_TEMPLATE = """Ты — сильный Legal AI по закон�
 7. Не перегружай ответ лишними нормами.
    Лучше 2-6 точных норм с объяснением, чем длинный список без логики.
 8. Не смешивай разные отрасли права без опоры в контексте.
+9. Обязательно проведи юридический анализ по шагам: факты -> нормы -> сопоставление -> вывод.
+
+{legal_reasoning_guidance}
 
 Предпочтительный шаблон ответа:
 - "Это не официальная юридическая консультация. Информация только из базы."
 - "Здравствуйте!"
 - Прямой вывод.
+- "Ключевые юридические факты:"
+- "Анализ норм:"
+- "Сопоставление фактов и нормы:"
+- "Вывод:"
 - "Основу вашей позиции составляют следующие нормы:"
 - Плавное объяснение применимых норм.
 - "Что лучше не использовать ..."
@@ -2934,6 +2958,9 @@ CRIMINAL_PROMPT_TEMPLATE = """Ты — эксперт по Уголовному 
    - Субъективті жағы / Субъективная сторона
 6. Ауырлататын және жеңілдететін мән-жайлар (Отягчающие и смягчающие обстоятельства) — ТОЛЬКО если они указаны в статье.
 7. Санкцию цитируй дословно / Санкцияны дәлме-дәл келтіріңіз.
+8. Перед итогом обязательно выполни юридическую последовательность: факты -> анализ нормы -> сопоставление с диспозицией -> вывод.
+
+{legal_reasoning_guidance}
 
 {chat_history}
 Контекст (с источниками / дереккөздермен):
@@ -2955,6 +2982,9 @@ RANGE_PROMPT_TEMPLATE = """Ты — точный ассистент по УК Р
   релевантные статьи из контекста с номерами и кратким описанием.
 • Цитируй санкции и ключевые части дословно.
 • Указывай источник (название кодекса) и номер статьи.
+• Для каждой статьи соблюдай порядок: факты вопроса -> анализ нормы -> сопоставление -> вывод.
+
+{legal_reasoning_guidance}
 
 {chat_history}
 Контекст:
@@ -2976,9 +3006,21 @@ CASE_PROMPT = PromptTemplate.from_template(
     "оценки нарушения — уточни их у пользователя. Контекст: {context}"
 )
 
-UNIVERSAL_PROMPT = PromptTemplate.from_template(UNIVERSAL_PROMPT_TEMPLATE)
-CRIMINAL_PROMPT = PromptTemplate.from_template(CRIMINAL_PROMPT_TEMPLATE)
-RANGE_PROMPT = PromptTemplate.from_template(RANGE_PROMPT_TEMPLATE)
+UNIVERSAL_PROMPT = PromptTemplate(
+    input_variables=["chat_history", "context", "input"],
+    partial_variables={"legal_reasoning_guidance": LEGAL_REASONING_GUIDANCE.strip()},
+    template=UNIVERSAL_PROMPT_TEMPLATE,
+)
+CRIMINAL_PROMPT = PromptTemplate(
+    input_variables=["chat_history", "context", "input"],
+    partial_variables={"legal_reasoning_guidance": LEGAL_REASONING_GUIDANCE.strip()},
+    template=CRIMINAL_PROMPT_TEMPLATE,
+)
+RANGE_PROMPT = PromptTemplate(
+    input_variables=["chat_history", "context", "input"],
+    partial_variables={"legal_reasoning_guidance": LEGAL_REASONING_GUIDANCE.strip()},
+    template=RANGE_PROMPT_TEMPLATE,
+)
 
 
 @latency.measure_latency("prompt_template_build")

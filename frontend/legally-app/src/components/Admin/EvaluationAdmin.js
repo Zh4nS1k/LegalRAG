@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import evaluationService from '../../services/evaluationService';
 import UserManagement from './UserManagement';
-import axios from 'axios';
 import { Container, Card, Paper, Box, Typography } from '@mui/material';
 import TaskDetailModal from './TaskDetailModal';
 import AssignmentModal from './AssignmentModal';
-// Here is the Evalution admin page
+
 const EvaluationAdmin = () => {
     const [view, setView] = useState('tasks'); // 'tasks' or 'users'
     const [tasks, setTasks] = useState([]);

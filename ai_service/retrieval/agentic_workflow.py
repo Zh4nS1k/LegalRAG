@@ -6,7 +6,7 @@ import json
 import logging
 import re
 import time
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from langchain_core.documents import Document
 

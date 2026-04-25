@@ -7,7 +7,6 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Allow running as script from ai_service: python processing/prepare_data.py
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -574,7 +573,6 @@ def _is_bad_chunk_text(text: str) -> bool:
 
 
 def _build_indexable_text(chunk_text: str, meta: dict) -> str:
-    """Prefix chunk with compact legal structure to reduce code/article ambiguity in retrieval."""
     parts: list[str] = []
     code_ru = str(meta.get("code_ru") or "").strip()
     article_number = str(meta.get("article_number") or "").strip()

@@ -8,9 +8,6 @@ from typing import Any
 
 import pandas as pd
 
-from ai_service.core import config
-
-
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Benchmark RAG answers against gold citations from XLSX."
