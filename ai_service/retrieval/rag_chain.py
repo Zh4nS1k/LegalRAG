@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import json
+from pathlib import Path
 from typing import Any, List, Optional, Sequence
 
 import torch
@@ -91,6 +92,7 @@ _vector_store_instance = None
 _retriever_instance = None
 _llm_instance = None
 _disable_pinecone = os.environ.get("LEGAL_RAG_DISABLE_PINECONE", "0") == "1"
+_context_tokenizer = None
 
 
 class PrefixedEmbeddings:
@@ -102,6 +104,242 @@ class PrefixedEmbeddings:
 
     def embed_query(self, text):
         return self.embeddings.embed_query("query: " + text)
+
+
+def _get_context_tokenizer():
+    global _context_tokenizer
+    if _context_tokenizer is not None:
+        return _context_tokenizer
+    with _init_lock:
+        if _context_tokenizer is not None:
+            return _context_tokenizer
+        try:
+            from transformers import AutoTokenizer
+
+            _context_tokenizer = AutoTokenizer.from_pretrained(
+                getattr(config, "CONTEXT_TOKENIZER_MODEL", ""),
+                local_files_only=True,
+            )
+        except Exception:
+            _context_tokenizer = False
+    return _context_tokenizer
+
+
+def _resolve_torch_dtype(value: str):
+    normalized = str(value or "auto").strip().lower()
+    if normalized in {"", "auto"}:
+        return "auto"
+    mapping = {
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+        "float32": torch.float32,
+        "fp32": torch.float32,
+    }
+    if normalized not in mapping:
+        raise ValueError(f"Unsupported LEGAL_RAG_HF_TORCH_DTYPE: {value}")
+    return mapping[normalized]
+
+
+def _resolve_local_hf_snapshot(model_name_or_path: str) -> str:
+    candidate = Path(str(model_name_or_path or "").strip())
+    if candidate.exists():
+        return str(candidate)
+
+    model_id = str(model_name_or_path or "").strip()
+    if not model_id or "/" not in model_id:
+        return model_id
+
+    org, name = model_id.split("/", 1)
+    cache_root = Path(config.HF_CACHE_DIR)
+    model_cache_dir = cache_root / f"models--{org}--{name}"
+    snapshots_dir = model_cache_dir / "snapshots"
+    refs_main = model_cache_dir / "refs" / "main"
+
+    if refs_main.exists():
+        snapshot_name = refs_main.read_text(encoding="utf-8").strip()
+        snapshot_dir = snapshots_dir / snapshot_name
+        if snapshot_dir.exists():
+            return str(snapshot_dir)
+
+    if snapshots_dir.exists():
+        snapshot_dirs = sorted((p for p in snapshots_dir.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime, reverse=True)
+        if snapshot_dirs:
+            return str(snapshot_dirs[0])
+
+    return model_id
+
+
+def _select_hf_runtime() -> str:
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _make_hf_generation_pipeline():
+    logger.info("[START] HF/PEFT Pipeline Initialization")
+    t0 = time.perf_counter()
+    config.configure_hf_hub()
+
+    base_model = getattr(config, "HF_LLM_BASE_MODEL", "").strip()
+    if not base_model:
+        raise RuntimeError(
+            "LEGAL_RAG_HF_BASE_MODEL is required when LEGAL_RAG_LLM_BACKEND=hf_peft"
+        )
+
+    adapter_path = getattr(config, "HF_LLM_ADAPTER_PATH", "").strip()
+    local_only = config.HF_LOCAL_ONLY or not is_internet_available(timeout=2.0)
+    model_source = _resolve_local_hf_snapshot(base_model) if local_only else base_model
+    runtime_device = _select_hf_runtime()
+    common_kwargs: dict[str, Any] = {
+        "trust_remote_code": True,
+        "cache_dir": config.HF_CACHE_DIR,
+        "local_files_only": local_only,
+    }
+    if config.HF_TOKEN:
+        common_kwargs["token"] = config.HF_TOKEN
+
+    from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+
+    tokenizer = AutoTokenizer.from_pretrained(model_source, **common_kwargs)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model_kwargs: dict[str, Any] = {
+        "trust_remote_code": True,
+        "cache_dir": config.HF_CACHE_DIR,
+        "local_files_only": local_only,
+    }
+    if config.HF_TOKEN:
+        model_kwargs["token"] = config.HF_TOKEN
+
+    configured_device_map = getattr(config, "HF_LLM_DEVICE_MAP", "auto")
+    if runtime_device == "cuda":
+        model_kwargs["device_map"] = configured_device_map
+    elif configured_device_map not in {"", "auto"}:
+        model_kwargs["device_map"] = configured_device_map
+
+    torch_dtype = _resolve_torch_dtype(getattr(config, "HF_LLM_TORCH_DTYPE", "auto"))
+    if torch_dtype != "auto":
+        model_kwargs["dtype"] = torch_dtype
+
+    load_in_4bit = getattr(config, "HF_LLM_LOAD_IN_4BIT", False)
+    load_in_8bit = getattr(config, "HF_LLM_LOAD_IN_8BIT", False)
+    if load_in_4bit and load_in_8bit:
+        raise RuntimeError(
+            "Choose only one quantization mode: LEGAL_RAG_HF_LOAD_IN_4BIT or LEGAL_RAG_HF_LOAD_IN_8BIT"
+        )
+    if load_in_4bit or load_in_8bit:
+        try:
+            from transformers import BitsAndBytesConfig
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(
+                "bitsandbytes quantization requested, but BitsAndBytesConfig is unavailable. "
+                "Install bitsandbytes and compatible transformers."
+            ) from exc
+        quant_kwargs = {"load_in_4bit": load_in_4bit, "load_in_8bit": load_in_8bit}
+        if load_in_4bit:
+            quant_kwargs.update(
+                {
+                    "bnb_4bit_quant_type": "nf4",
+                    "bnb_4bit_use_double_quant": True,
+                    "bnb_4bit_compute_dtype": (
+                        torch_dtype if torch_dtype != "auto" else torch.float16
+                    ),
+                }
+            )
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(**quant_kwargs)
+
+    model = AutoModelForCausalLM.from_pretrained(model_source, **model_kwargs)
+    if runtime_device == "mps":
+        model = model.to("mps")
+    elif runtime_device == "cpu":
+        model = model.to("cpu")
+
+    if adapter_path:
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(
+            model,
+            adapter_path,
+            local_files_only=local_only,
+            token=config.HF_TOKEN if config.HF_TOKEN else None,
+        )
+
+    text_generation_pipeline = pipeline(
+        task="text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=config.LLM_MAX_TOKENS,
+        temperature=config.LLM_TEMPERATURE,
+        do_sample=getattr(config, "HF_LLM_DO_SAMPLE", False),
+        top_p=getattr(config, "HF_LLM_TOP_P", 0.95),
+        repetition_penalty=getattr(config, "HF_LLM_REPETITION_PENALTY", 1.05),
+        return_full_text=False,
+        pad_token_id=tokenizer.pad_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+    )
+
+    from langchain_huggingface import HuggingFacePipeline
+
+    llm = HuggingFacePipeline(pipeline=text_generation_pipeline)
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "[SUCCESS] HF/PEFT Pipeline Initialization (base=%s, source=%s, adapter=%s) (%.2fs)",
+        base_model,
+        model_source,
+        adapter_path or "<none>",
+        elapsed,
+    )
+    return llm
+
+
+def _estimate_token_count(text: str) -> int:
+    text = str(text or "")
+    if not text:
+        return 0
+    tokenizer = _get_context_tokenizer()
+    if tokenizer:
+        try:
+            return len(tokenizer.encode(text, add_special_tokens=False))
+        except Exception:
+            pass
+    # Fallback heuristic for Cyrillic/Kazakh legal text when no local tokenizer is cached.
+    return max(1, (len(text) + 3) // 4)
+
+
+def _truncate_text_to_token_budget(text: str, max_tokens: int, *, suffix: str) -> str:
+    raw = str(text or "").strip()
+    if not raw or max_tokens <= 0:
+        return suffix.strip()
+    if _estimate_token_count(raw) <= max_tokens:
+        return raw
+
+    left = 0
+    right = len(raw)
+    best = ""
+    while left <= right:
+        mid = (left + right) // 2
+        candidate = raw[:mid].rstrip()
+        candidate_with_suffix = candidate + suffix
+        if _estimate_token_count(candidate_with_suffix) <= max_tokens:
+            best = candidate_with_suffix
+            left = mid + 1
+        else:
+            right = mid - 1
+    return best or suffix.strip()
+
+
+def _format_doc_for_prompt(doc: Document, content: str | None = None) -> str:
+    meta = doc.metadata or {}
+    code_ru = str(meta.get("code_ru") or "").strip() or "Неизвестный источник"
+    article_number = str(meta.get("article_number") or "").strip() or "Н/Д"
+    source = str(meta.get("source") or "").strip() or "Неизвестно"
+    body = str(content if content is not None else doc.page_content or "").strip()
+    return f"[{code_ru} | ст. {article_number} | {source}]\n{body}"
 
 
 def _make_embeddings() -> PrefixedEmbeddings:
@@ -131,6 +369,11 @@ def _make_embeddings() -> PrefixedEmbeddings:
     # Smart loader: internet → normal (allow cache updates);
     # no internet → local_files_only
     local_only = config.HF_LOCAL_ONLY or not internet_ok
+    embedding_source = (
+        _resolve_local_hf_snapshot(config.EMBEDDING_MODEL)
+        if local_only
+        else config.EMBEDDING_MODEL
+    )
     model_kwargs: dict = {
         "local_files_only": local_only,
         "trust_remote_code": True,
@@ -149,7 +392,7 @@ def _make_embeddings() -> PrefixedEmbeddings:
 
         emb = PrefixedEmbeddings(
             HuggingFaceEmbeddings(
-                model_name=config.EMBEDDING_MODEL,
+                model_name=embedding_source,
                 encode_kwargs={"normalize_embeddings": True},
                 model_kwargs=model_kwargs,
                 cache_folder=cache_folder,
@@ -733,6 +976,430 @@ _LAW_ALIAS_GROUPS: list[tuple[tuple[str, ...], list[str]]] = [
         _ai_variants,
     ),
 ]
+
+_THEFT_QUERY_HINTS: tuple[str, ...] = (
+    "краж",
+    "украл",
+    "украду",
+    "украсть",
+    "воров",
+    "похит",
+    "тайное хищение",
+    "ұрлық",
+    "ұрла",
+    "жымқыру",
+)
+
+_LEGAL_CONCEPT_BUNDLES: tuple[dict[str, Any], ...] = (
+    {
+        "name": "theft",
+        "patterns": _THEFT_QUERY_HINTS,
+        "code_names": _uk_variants,
+        "focus_articles": ("188",),
+        "expansions_ru": (
+            "кража 188 УК РК",
+            "тайное хищение чужого имущества",
+            "кража из жилища",
+        ),
+        "expansions_kz": (
+            "ұрлық 188-бап ҚР ҚК",
+            "бөтен мүлікті жасырын жымқыру",
+            "тұрғын үйден ұрлау",
+        ),
+        "doc_terms": (
+            "кража",
+            "тайное хищение",
+            "чужого имущества",
+            "ұрлық",
+            "жымқыру",
+        ),
+        "weight": 1.6,
+        "criminal": True,
+    },
+    {
+        "name": "fraud",
+        "patterns": (
+            "мошеннич",
+            "алаяқ",
+            "обман",
+            "обманул",
+            "обманным путем",
+            "злоупотребление доверием",
+            "афер",
+        ),
+        "code_names": _uk_variants,
+        "focus_articles": ("190",),
+        "expansions_ru": (
+            "мошенничество 190 УК РК",
+            "хищение путем обмана или злоупотребления доверием",
+        ),
+        "expansions_kz": (
+            "алаяқтық 190-бап ҚР ҚК",
+            "алдау немесе сенімді теріс пайдалану арқылы мүлікті иелену",
+        ),
+        "doc_terms": (
+            "мошенничество",
+            "обман",
+            "злоупотребление доверием",
+            "алаяқтық",
+        ),
+        "weight": 1.7,
+        "criminal": True,
+    },
+    {
+        "name": "violent_property",
+        "patterns": (
+            "грабеж",
+            "грабил",
+            "разбой",
+            "вымог",
+            "шантаж",
+            "ограб",
+            "тонау",
+            "қарақшылық",
+            "қорқытып алу",
+        ),
+        "code_names": _uk_variants,
+        "focus_articles": (),
+        "expansions_ru": (
+            "насильственное хищение чужого имущества",
+            "грабеж разбой вымогательство УК РК",
+        ),
+        "expansions_kz": (
+            "бөтен мүлікті күш қолданып иелену",
+            "тонау қарақшылық қорқытып алу ҚК",
+        ),
+        "doc_terms": (
+            "грабеж",
+            "разбой",
+            "вымогательство",
+            "тонау",
+            "қарақшылық",
+        ),
+        "weight": 1.4,
+        "criminal": True,
+    },
+    {
+        "name": "consumer_return",
+        "patterns": (
+            "возврат товара",
+            "некачественный товар",
+            "дефект товара",
+            "товарный вид",
+            "продавец отказал",
+            "каспи магазин",
+            "бритва",
+            "қайтару",
+            "сапасыз тауар",
+        ),
+        "code_names": _consumer_variants,
+        "focus_articles": (),
+        "expansions_ru": (
+            "защита прав потребителей возврат товара",
+            "недостатки товара право потребителя",
+        ),
+        "expansions_kz": (
+            "тұтынушылардың құқықтарын қорғау тауарды қайтару",
+            "тауар кемшілігі тұтынушы құқығы",
+        ),
+        "doc_terms": (
+            "защите прав потребителей",
+            "возврат товара",
+            "недостаток товара",
+            "тұтынушылардың құқықтарын қорғау",
+        ),
+        "weight": 1.4,
+        "criminal": False,
+    },
+    {
+        "name": "family_support",
+        "patterns": (
+            "алимент",
+            "развод",
+            "расторжение брака",
+            "бывш",
+            "ребенок",
+            "детей",
+            "опек",
+            "родительских прав",
+            "неке",
+            "отбасы",
+            "қамқоршы",
+        ),
+        "code_names": _family_variants,
+        "focus_articles": (),
+        "expansions_ru": (
+            "кодекс о браке и семье алименты развод опека",
+            "родительские права ребенок содержание",
+        ),
+        "expansions_kz": (
+            "неке отбасы кодексі алимент ажырасу қорғаншылық",
+            "ата-ана құқықтары бала асырау",
+        ),
+        "doc_terms": (
+            "алименты",
+            "расторжение брака",
+            "родительских прав",
+            "опека",
+            "неке",
+            "отбасы",
+        ),
+        "weight": 1.4,
+        "criminal": False,
+    },
+    {
+        "name": "labor_employment",
+        "patterns": (
+            "увольн",
+            "сокращен",
+            "зарплат",
+            "работодатель",
+            "трудовой договор",
+            "отпуск",
+            "штат",
+            "жұмыс",
+            "еңбек",
+            "жалақы",
+        ),
+        "code_names": _tk_variants,
+        "focus_articles": (),
+        "expansions_ru": (
+            "трудовой кодекс увольнение сокращение заработная плата",
+            "трудовые права работника обязанности работодателя",
+        ),
+        "expansions_kz": (
+            "еңбек кодексі жұмыстан шығару қысқарту жалақы",
+            "жұмыскердің құқықтары жұмыс берушінің міндеттері",
+        ),
+        "doc_terms": (
+            "трудовой договор",
+            "работодатель",
+            "заработная плата",
+            "еңбек",
+            "жалақы",
+        ),
+        "weight": 1.4,
+        "criminal": False,
+    },
+    {
+        "name": "bank_credit",
+        "patterns": (
+            "кредит",
+            "заем",
+            "ипотек",
+            "банк",
+            "проценты",
+            "просроч",
+            "кредитор",
+            "неси",
+            "қарыз",
+            "банкрот",
+        ),
+        "code_names": _banks_variants,
+        "focus_articles": (),
+        "expansions_ru": (
+            "банковский заем кредитный договор просрочка банк",
+            "проценты по кредиту реструктуризация задолженности",
+        ),
+        "expansions_kz": (
+            "банктік қарыз кредит шарты мерзімін өткізу банк",
+            "кредит бойынша пайыздар берешекті қайта құрылымдау",
+        ),
+        "doc_terms": (
+            "банковский заем",
+            "кредит",
+            "ипотека",
+            "банк",
+            "несие",
+        ),
+        "weight": 1.25,
+        "criminal": False,
+    },
+    {
+        "name": "housing_real_estate",
+        "patterns": (
+            "квартир",
+            "жилой дом",
+            "дом оформлен",
+            "недвижим",
+            "собственност",
+            "нотариус",
+            "жилье",
+            "пәтер",
+            "үй",
+        ),
+        "code_names": _housing_variants + _real_estate_registration_variants + _gk_variants,
+        "focus_articles": (),
+        "expansions_ru": (
+            "жилищные отношения право собственности недвижимое имущество",
+            "государственная регистрация прав на недвижимое имущество",
+        ),
+        "expansions_kz": (
+            "тұрғын үй қатынастары меншік құқығы жылжымайтын мүлік",
+            "жылжымайтын мүлікке құқықтарды мемлекеттік тіркеу",
+        ),
+        "doc_terms": (
+            "жилищные отношения",
+            "недвижимое имущество",
+            "право собственности",
+            "тұрғын үй",
+        ),
+        "weight": 1.35,
+        "criminal": False,
+    },
+    {
+        "name": "tax_business",
+        "patterns": (
+            "налог",
+            "ндс",
+            "деклараци",
+            "ип",
+            "тоо",
+            "предприним",
+            "салық",
+            "деклар",
+            "кәсіпкер",
+            "тіркеусіз",
+        ),
+        "code_names": _nk_variants + _llp_variants + _pk_variants,
+        "focus_articles": (),
+        "expansions_ru": (
+            "налоговый кодекс декларация обязательства налогоплательщика",
+            "тоо ип предпринимательская деятельность регистрация",
+        ),
+        "expansions_kz": (
+            "салық кодексі декларация салық төлеушінің міндеттері",
+            "тоо ип кәсіпкерлік қызмет тіркеу",
+        ),
+        "doc_terms": (
+            "налоговый кодекс",
+            "декларация",
+            "налогоплательщик",
+            "салық",
+            "тоо",
+        ),
+        "weight": 1.45,
+        "criminal": False,
+    },
+    {
+        "name": "bankruptcy",
+        "patterns": (
+            "банкрот",
+            "неплатежеспособ",
+            "реабилитац",
+            "восстановление платежеспособности",
+            "төлем қабілетті",
+            "оңалту",
+            "дәрменсіз",
+        ),
+        "code_names": _citizen_bankruptcy_variants + _rehabilitation_bankruptcy_variants,
+        "focus_articles": (),
+        "expansions_ru": (
+            "банкротство граждан восстановление платежеспособности",
+            "реабилитация и банкротство должника",
+        ),
+        "expansions_kz": (
+            "азаматтардың банкроттығы төлем қабілеттілігін қалпына келтіру",
+            "оңалту және банкроттық борышкер",
+        ),
+        "doc_terms": (
+            "банкротство",
+            "восстановление платежеспособности",
+            "реабилитация",
+            "банкроттық",
+        ),
+        "weight": 1.5,
+        "criminal": False,
+    },
+    {
+        "name": "waste_sanitary",
+        "patterns": (
+            "мусор",
+            "тбо",
+            "антисанитар",
+            "контейнер",
+            "отходы",
+            "санитарно",
+            "қоқыс",
+            "санитар",
+        ),
+        "code_names": _koap_variants,
+        "focus_articles": (),
+        "expansions_ru": (
+            "нарушение санитарных требований отходы коап",
+            "мусорная площадка твердые бытовые отходы",
+        ),
+        "expansions_kz": (
+            "санитариялық талаптарды бұзу қалдықтар әкімшілік кодекс",
+            "қоқыс алаңы тұрмыстық қатты қалдықтар",
+        ),
+        "doc_terms": (
+            "санитар",
+            "отходы",
+            "тбо",
+            "қоқыс",
+        ),
+        "weight": 1.3,
+        "criminal": False,
+    },
+    {
+        "name": "noise_silence",
+        "patterns": (
+            "тишин",
+            "шум",
+            "шумет",
+            "шуметь",
+            "громк",
+            "сосед",
+            "суббот",
+            "воскресен",
+            "выходн",
+            "праздничн",
+            "ноч",
+            "покой",
+            "квартира",
+            "ремонт",
+            "сверл",
+            "перфорат",
+            "22:00",
+            "23:00",
+            "09:00",
+            "10:00",
+            "22 30",
+            "22:30",
+            "23 30",
+            "23:30",
+            "тыныш",
+            "шу",
+            "демалыс",
+            "сенбі",
+            "жексенбі",
+            "мереке",
+        ),
+        "code_names": _koap_variants,
+        "focus_articles": ("437",),
+        "expansions_ru": (
+            "нарушение тишины коап 437 покой физических лиц",
+            "тишина в будние выходные и праздничные дни",
+            "шум в квартире ремонтные работы в жилом доме",
+        ),
+        "expansions_kz": (
+            "тыныштықты бұзу әкімшілік кодекс 437 жеке тұлғалардың тыныштығы",
+            "жұмыс күндері демалыс және мереке күндеріндегі тыныштық",
+            "пәтердегі шу тұрғын үйдегі жөндеу жұмыстары",
+        ),
+        "doc_terms": (
+            "нарушение тишины",
+            "покой физических лиц",
+            "выходные и праздничные дни",
+            "шумом",
+            "тыныштық",
+            "тыныштығы",
+        ),
+        "weight": 1.75,
+        "criminal": False,
+    },
+)
 _allowed_code_ru_for_filter = None
 _filter_clauses: list[dict] = []
 
@@ -823,6 +1490,117 @@ class _FilterByCodeRetriever(BaseRetriever):
 
         # fallback: хоть что-то вернуть
         return filtered if filtered else docs[:5]
+
+
+def _get_target_code_profile(query: str) -> tuple[list[str], bool]:
+    ranked = _score_target_codes(query)
+    if not ranked:
+        return [], False
+    top_score = ranked[0][1]
+    second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+    detected = _detect_target_codes(query)
+    confident = top_score >= 1.8 and top_score >= second_score + 1.2
+    return detected, confident
+
+
+def _adaptive_wide_k(query: str, target_codes: list[str], target_articles: list[str]) -> int:
+    base_k = int(getattr(config, "RETRIEVER_WIDE_K", getattr(config, "HYBRID_K", 24)))
+    query_len = len(str(query or ""))
+    if target_codes and target_articles:
+        return max(12, min(base_k, 16))
+    if target_codes:
+        return max(14, min(base_k, 18))
+    if query_len > 1200:
+        return max(16, min(base_k, 20))
+    if query_len > 600:
+        return max(18, min(base_k, 22))
+    return base_k
+
+
+def _prioritize_docs(
+    query: str,
+    docs: Sequence[Document],
+    *,
+    target_codes: list[str] | None = None,
+    target_articles: list[str] | None = None,
+    limit: int | None = None,
+) -> list[Document]:
+    ranked = _rank_docs_with_legal_scoring(
+        query,
+        list(docs),
+        target_codes=target_codes,
+        target_articles=target_articles,
+    )
+    if limit is not None:
+        return ranked[:limit]
+    return ranked
+
+
+class QueryAwareHybridRetriever(BaseRetriever):
+    vector_retriever: Any | None = None
+    bm25_retriever: Any | None = None
+    default_k: int = 24
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun | None = None
+    ) -> List[Document]:
+        target_codes, confident_code = _get_target_code_profile(query)
+        target_articles = _extract_query_article_numbers(query)
+        wide_k = _adaptive_wide_k(query, target_codes, target_articles)
+        prefetch_k = min(10, max(6, wide_k // 2))
+
+        merged: list[Document] = []
+        if target_codes:
+            merged = _merge_unique(
+                merged,
+                _search_with_code_filters(
+                    query,
+                    target_codes,
+                    k=prefetch_k,
+                    article_numbers=target_articles[:4],
+                ),
+            )
+
+        if self.vector_retriever is not None and (not confident_code or len(merged) < max(4, wide_k // 3)):
+            try:
+                vector_docs = get_vector_store().similarity_search(query, k=wide_k)
+                merged = _merge_unique(merged, vector_docs)
+            except Exception:
+                pass
+
+        if self.bm25_retriever is not None:
+            try:
+                bm25_docs = list(self.bm25_retriever.invoke(query))
+            except Exception:
+                bm25_docs = []
+            if target_codes:
+                filtered_bm25 = _filter_docs_by_codes(bm25_docs, target_codes)
+                filtered_bm25 = _prioritize_docs(
+                    query,
+                    filtered_bm25,
+                    target_codes=target_codes,
+                    target_articles=target_articles,
+                    limit=wide_k,
+                )
+                merged = _merge_unique(merged, filtered_bm25[:wide_k])
+                if not confident_code and len(merged) < wide_k:
+                    merged = _merge_unique(merged, bm25_docs[:wide_k])
+            else:
+                merged = _merge_unique(merged, bm25_docs[:wide_k])
+
+        if not merged and self.vector_retriever is not None:
+            try:
+                merged = list(self.vector_retriever.invoke(query))
+            except Exception:
+                merged = []
+
+        return _prioritize_docs(
+            query,
+            merged,
+            target_codes=target_codes,
+            target_articles=target_articles,
+            limit=wide_k,
+        )
 
 
 def _extract_article_range(query: str) -> tuple[int, int] | None:
@@ -945,6 +1723,11 @@ _LAW_ROUTE_HINTS: list[tuple[tuple[str, ...], list[str], float]] = [
         1.3,
     ),
     (
+        _THEFT_QUERY_HINTS,
+        _uk_variants,
+        1.6,
+    ),
+    (
         (
             "банковской деятельности",
             "банковский счет",
@@ -984,6 +1767,11 @@ def _score_target_codes(query: str) -> list[tuple[str, float]]:
         boost = min(weight * matched_count, weight * 3)
         for code_name in code_names:
             scores[code_name] = scores.get(code_name, 0.0) + boost
+
+    for bundle in _matching_legal_concepts(query):
+        weight = float(bundle.get("weight", 1.0) or 1.0)
+        for code_name in bundle.get("code_names", ()):
+            scores[code_name] = scores.get(code_name, 0.0) + weight
 
     ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     if not ranked:
@@ -1126,6 +1914,19 @@ _LEGAL_SYNONYMS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("недвижим", ("имущество", "право собственности", "регистрация прав")),
 )
 
+def _is_theft_query(query: str) -> bool:
+    q = _normalized_query(query)
+    return any(token in q for token in _THEFT_QUERY_HINTS)
+
+
+def _matching_legal_concepts(query: str) -> list[dict[str, Any]]:
+    q = _normalized_query(query)
+    matched: list[dict[str, Any]] = []
+    for bundle in _LEGAL_CONCEPT_BUNDLES:
+        if any(token in q for token in bundle.get("patterns", ())):
+            matched.append(bundle)
+    return matched
+
 
 def _expand_legal_synonyms(query: str) -> list[str]:
     q = _normalized_query(query)
@@ -1267,6 +2068,11 @@ def _augment_retrieval_query(query: str) -> str:
             extras.append("работники, не достигшие восемнадцатилетнего возраста")
             extras.append("статья 76 Трудовой кодекс РК")
             extras.append("запрет ночной работы несовершеннолетних")
+    for bundle in _matching_legal_concepts(query):
+        if bundle.get("criminal") and not is_criminal:
+            continue
+        localized = bundle.get("expansions_kz", ()) if is_kz else bundle.get("expansions_ru", ())
+        extras.extend(str(item) for item in localized if item)
     if any(
         token in q
         for token in (
@@ -1353,12 +2159,20 @@ def _is_criminal_query(query: str) -> bool:
     q = _normalized_query(query)
     if any(token in q for token in ("қылмыстық", "уголов", "преступ", "ук рк", "квалификация преступ", "состав преступ")):
         return True
+    if any(bundle.get("criminal") for bundle in _matching_legal_concepts(q)):
+        return True
     return False
 
 
 def _focus_articles_from_query(query: str) -> set[str]:
     q = (query or "").lower()
     focus: set[str] = set()
+    for bundle in _matching_legal_concepts(q):
+        focus.update(
+            _normalize_article_number(article)
+            for article in bundle.get("focus_articles", ())
+            if _normalize_article_number(article)
+        )
     if any(
         token in q
         for token in (
@@ -1952,6 +2766,8 @@ class _TrimRetriever(BaseRetriever):
     base_retriever: Any
     max_docs: int = 8
     max_chars_per_doc: int = 1800
+    max_tokens_per_doc: int = 0
+    max_total_tokens: int = 0
 
     def _get_relevant_documents(
         self,
@@ -1981,11 +2797,37 @@ class _TrimRetriever(BaseRetriever):
 
         docs = self.base_retriever.invoke(query)
         trimmed: list[Document] = []
+        total_tokens = 0
+        doc_suffix = "\n[...текст обрезан...]"
         for d in docs[: self.max_docs]:
-            content = d.page_content
+            content = str(d.page_content or "")
             if len(content) > self.max_chars_per_doc:
-                content = content[: self.max_chars_per_doc] + "\n[...текст обрезан...]"
-            trimmed.append(Document(page_content=content, metadata=d.metadata))
+                content = content[: self.max_chars_per_doc].rstrip() + doc_suffix
+            if self.max_tokens_per_doc > 0:
+                content = _truncate_text_to_token_budget(
+                    content,
+                    self.max_tokens_per_doc,
+                    suffix=doc_suffix,
+                )
+
+            candidate = Document(page_content=content, metadata=d.metadata)
+            candidate_tokens = _estimate_token_count(_format_doc_for_prompt(candidate))
+            if self.max_total_tokens > 0 and total_tokens + candidate_tokens > self.max_total_tokens:
+                remaining_tokens = self.max_total_tokens - total_tokens
+                if remaining_tokens <= 80:
+                    break
+                content = _truncate_text_to_token_budget(
+                    content,
+                    max(40, remaining_tokens - 32),
+                    suffix=doc_suffix,
+                )
+                candidate = Document(page_content=content, metadata=d.metadata)
+                candidate_tokens = _estimate_token_count(_format_doc_for_prompt(candidate))
+                if total_tokens + candidate_tokens > self.max_total_tokens:
+                    break
+
+            trimmed.append(candidate)
+            total_tokens += candidate_tokens
         # Inject parent-context breadcrumb so LLM knows Code → Chapter → Article scope
         return _enrich_with_parent_context(trimmed)
 
@@ -2027,6 +2869,16 @@ def _apply_legal_score(
     doc_article = _normalize_article_number(meta.get("article_number"))
     query_lower = (query or "").lower()
     domain = detect_domain(query)
+    concept_matches = _matching_legal_concepts(query)
+    title_haystack = " ".join(
+        str(part).lower()
+        for part in (
+            meta.get("article_title", ""),
+            meta.get("chapter_title", ""),
+            doc.page_content[:800],
+        )
+        if part
+    )
 
     if _looks_like_raw_code_name(doc_code):
         score -= 0.25
@@ -2051,6 +2903,24 @@ def _apply_legal_score(
             score += 0.15
         else:
             score -= 0.20
+
+    if concept_matches:
+        for bundle in concept_matches:
+            bundle_codes = set(bundle.get("code_names", ()))
+            if bundle_codes and doc_code in bundle_codes:
+                score += 0.18
+
+            focus_articles = {
+                _normalize_article_number(article)
+                for article in bundle.get("focus_articles", ())
+                if _normalize_article_number(article)
+            }
+            if focus_articles and doc_article in focus_articles:
+                score += 0.30
+
+            doc_terms = tuple(str(term).lower() for term in bundle.get("doc_terms", ()) if term)
+            if doc_terms and any(term in title_haystack for term in doc_terms):
+                score += 0.16
 
     return score
 
@@ -2239,19 +3109,12 @@ def get_retriever():
         if _retriever_instance is not None:
             return _retriever_instance
 
-        base_retriever: Any | None = None if _disable_pinecone else _vector_retriever
+        base_retriever: Any | None = None
+        bm25_retriever: Any | None = None
 
         # Optional BM25 hybrid: build only when first request comes in.
         try:
             from langchain_community.retrievers import BM25Retriever
-
-            try:
-                from langchain.retrievers import EnsembleRetriever
-            except ImportError:
-                try:
-                    from langchain.retrievers.ensemble import EnsembleRetriever
-                except ImportError:
-                    from langchain_classic.retrievers import EnsembleRetriever
 
             chunks = _load_bm25_chunks()
             if chunks:
@@ -2274,19 +3137,25 @@ def get_retriever():
                     bm25_retriever = BM25Retriever.from_documents(chunks, k=_hybrid_k)
 
                 if _disable_pinecone:
-                    base_retriever = bm25_retriever
-                    print("BM25-only режим включён (Pinecone отключён).")
-                else:
-                    _vector_w = getattr(config, "VECTOR_WEIGHT", 0.6)
-                    _bm25_w = getattr(config, "BM25_WEIGHT", 0.4)
-                    base_retriever = EnsembleRetriever(
-                        retrievers=[_vector_retriever, bm25_retriever],
-                        weights=[_vector_w, _bm25_w],
+                    base_retriever = QueryAwareHybridRetriever(
+                        vector_retriever=None,
+                        bm25_retriever=bm25_retriever,
+                        default_k=_hybrid_k,
                     )
-                    print("Гибридный RAG готов! (BM25 + Pinecone, k=%d)" % _hybrid_k)
+                    print("BM25-only режим включён (Pinecone отключён).")
         except Exception as e:
             # Don't block startup: hybrid is optional.
             print(f"BM25 не запустился: {e}. Используется только Pinecone.")
+        if not _disable_pinecone:
+            base_retriever = QueryAwareHybridRetriever(
+                vector_retriever=_vector_retriever,
+                bm25_retriever=bm25_retriever,
+                default_k=_hybrid_k,
+            )
+            if bm25_retriever is not None:
+                print("Гибридный RAG готов! (adaptive BM25 + Pinecone, k=%d)" % _hybrid_k)
+            else:
+                print("Vector-first RAG готов! (adaptive Pinecone only, k=%d)" % _hybrid_k)
         if base_retriever is None:
             raise RuntimeError(
                 "Retriever initialization failed: Pinecone disabled and BM25 chunks unavailable."
@@ -2569,6 +3438,8 @@ def get_retriever():
             base_retriever=retr,
             max_docs=getattr(config, "CONTEXT_MAX_DOCS", 8),
             max_chars_per_doc=getattr(config, "CONTEXT_MAX_CHARS_PER_DOC", 1800),
+            max_tokens_per_doc=getattr(config, "CONTEXT_MAX_TOKENS_PER_DOC", 0),
+            max_total_tokens=getattr(config, "CONTEXT_MAX_TOTAL_TOKENS", 0),
         )
 
         _retriever_instance = retr
@@ -2591,6 +3462,8 @@ def get_retriever_for_coverage(top_k: int | None = None):
             base_retriever=retriever.base_retriever,
             max_docs=desired_top_k,
             max_chars_per_doc=retriever.max_chars_per_doc,
+            max_tokens_per_doc=retriever.max_tokens_per_doc,
+            max_total_tokens=0,
         )
     return retriever
 
@@ -2708,6 +3581,8 @@ def get_llm():
                             config.LLM_MODEL,
                             time.perf_counter() - t0,
                         )
+                    elif _llm_backend == "hf_peft":
+                        _llm_instance = _make_hf_generation_pipeline()
                     else:
                         from langchain_ollama import OllamaLLM
 
@@ -3067,7 +3942,7 @@ def _make_qa_chain(prompt: PromptTemplate) -> Any:
     # Define a prompt to format each document including metadata
     document_prompt = PromptTemplate(
         input_variables=["page_content", "source", "article_number", "code_ru"],
-        template="Источник: {source}\nКодекс: {code_ru}\nСтатья: {article_number}\nТекст: {page_content}",
+        template="[{code_ru} | ст. {article_number} | {source}]\n{page_content}",
     )
 
     # LCEL pipeline: Retriever -> Document Chain -> Retrieval Chain
@@ -3136,7 +4011,7 @@ def invoke_qa_with_context(
     # create_stuff_documents_chain and invoke with context=docs.
     document_prompt = PromptTemplate(
         input_variables=["page_content", "source", "article_number", "code_ru"],
-        template="Источник: {source}\nКодекс: {code_ru}\nСтатья: {article_number}\nТекст: {page_content}",
+        template="[{code_ru} | ст. {article_number} | {source}]\n{page_content}",
     )
     question_answer_chain = create_stuff_documents_chain(
         get_llm(), prompt, document_prompt=document_prompt

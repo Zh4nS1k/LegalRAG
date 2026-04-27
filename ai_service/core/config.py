@@ -187,15 +187,37 @@ LLM_BACKEND = os.environ.get("LEGAL_RAG_LLM_BACKEND", "groq").lower()
 LLM_MODEL = os.environ.get("LEGAL_RAG_LLM", "llama-3.1-8b-instant")
 LLM_TEMPERATURE = 0.0
 LLM_MAX_TOKENS = int(os.environ.get("LEGAL_RAG_LLM_MAX_TOKENS", "2048"))
-# Контекст (ограничение длины для предотвращения 413/TPM)
-CONTEXT_MAX_DOCS = int(os.environ.get("LEGAL_RAG_CONTEXT_MAX_DOCS", "5"))
+HF_LLM_BASE_MODEL = os.environ.get(
+    "LEGAL_RAG_HF_BASE_MODEL", "Qwen/Qwen2.5-7B-Instruct"
+)
+HF_LLM_ADAPTER_PATH = os.environ.get("LEGAL_RAG_HF_ADAPTER_PATH", "").strip()
+HF_LLM_DEVICE_MAP = os.environ.get("LEGAL_RAG_HF_DEVICE_MAP", "auto").strip() or "auto"
+HF_LLM_LOAD_IN_4BIT = os.environ.get("LEGAL_RAG_HF_LOAD_IN_4BIT", "0") == "1"
+HF_LLM_LOAD_IN_8BIT = os.environ.get("LEGAL_RAG_HF_LOAD_IN_8BIT", "0") == "1"
+HF_LLM_TORCH_DTYPE = os.environ.get("LEGAL_RAG_HF_TORCH_DTYPE", "auto").strip().lower()
+HF_LLM_TOP_P = float(os.environ.get("LEGAL_RAG_HF_TOP_P", "0.95"))
+HF_LLM_REPETITION_PENALTY = float(
+    os.environ.get("LEGAL_RAG_HF_REPETITION_PENALTY", "1.05")
+)
+HF_LLM_DO_SAMPLE = os.environ.get("LEGAL_RAG_HF_DO_SAMPLE", "0") == "1"
+# Контекст: conservative defaults to avoid Groq 413/TPM overflow on long legal prompts.
+CONTEXT_MAX_DOCS = int(os.environ.get("LEGAL_RAG_CONTEXT_MAX_DOCS", "4"))
 CONTEXT_MAX_CHARS_PER_DOC = int(
-    os.environ.get("LEGAL_RAG_CONTEXT_MAX_CHARS_PER_DOC", "1200")
+    os.environ.get("LEGAL_RAG_CONTEXT_MAX_CHARS_PER_DOC", "900")
+)
+CONTEXT_MAX_TOTAL_TOKENS = int(
+    os.environ.get("LEGAL_RAG_CONTEXT_MAX_TOTAL_TOKENS", "1400")
+)
+CONTEXT_MAX_TOKENS_PER_DOC = int(
+    os.environ.get("LEGAL_RAG_CONTEXT_MAX_TOKENS_PER_DOC", "380")
+)
+CONTEXT_TOKENIZER_MODEL = os.environ.get(
+    "LEGAL_RAG_CONTEXT_TOKENIZER_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct"
 )
 
 # Retriever (двухэтапный: широкий отбор + rerank)
 # Tune via env vars — lower = faster Pinecone (free tier). Raise only if recall drops.
-RETRIEVER_WIDE_K = int(os.environ.get("LEGAL_RAG_RETRIEVER_WIDE_K", "50"))
+RETRIEVER_WIDE_K = int(os.environ.get("LEGAL_RAG_RETRIEVER_WIDE_K", "24"))
 RETRIEVER_TOP_K = RETRIEVER_WIDE_K  # совместимость со старым кодом
 RETRIEVER_TOP_K_AFTER_RERANK = int(
     os.environ.get("LEGAL_RAG_RETRIEVER_TOP_K_AFTER_RERANK", "5")

@@ -29,7 +29,7 @@ def pre_flight_check():
     )
     if not model_files:
         print(f"[INFO] No model files in cache: {cache_dir}, downloading...")
-        result = download_models_main()
+        result = download_models_main([])
         if result != 0:
             print("[FAIL] Failed to download models")
             sys.exit(1)

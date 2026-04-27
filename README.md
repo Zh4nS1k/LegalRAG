@@ -192,6 +192,9 @@ All values are loaded via **Pydantic `EngineSettings`** from the root `.env` fil
 | `LEGAL_RAG_CONTEXT_MAX_CHARS_PER_DOC` | `int` | `1200` | Max chars per doc |
 | `HF_HUB_OFFLINE` | `bool` | `0` | Set `1` for cached-model offline mode (faster boot) |
 | `LEGAL_RAG_HF_LOCAL_ONLY` | `bool` | `0` | Force local HuggingFace cache only |
+| `LEGAL_RAG_HF_BASE_MODEL` | `str` | `Qwen/Qwen2.5-7B-Instruct` | Base HuggingFace model for local `hf_peft` backend |
+| `LEGAL_RAG_HF_ADAPTER_PATH` | `str` | empty | Local path to LoRA adapter |
+| `LEGAL_RAG_HF_LOAD_IN_4BIT` | `bool` | `0` | Enable 4-bit quantized HF inference |
 
 ### Retriever Filters (Advanced)
 
@@ -215,6 +218,38 @@ LEGAL_RAG_FILTER_ARTICLE_NUMBER="136"
 | `ai_service/processing/fetch_adilet.py` | Scrapes current law text from `adilet.zan.kz` |
 | `ai_service/utils/latency.py` | `@measure_latency` decorator, per-request timing context |
 | `ai_service/utils/benchmark.py` | Full RAGAS-style benchmark suite with faithfulness, recall, precision metrics |
+
+### Domain Fine-Tuning with LoRA
+
+The project now supports a local HuggingFace inference backend with an optional PEFT adapter:
+
+```bash
+export LEGAL_RAG_LLM_BACKEND=hf_peft
+export LEGAL_RAG_HF_BASE_MODEL=Qwen/Qwen2.5-7B-Instruct
+export LEGAL_RAG_HF_ADAPTER_PATH=./ai_service/models/legal-lora
+export LEGAL_RAG_HF_LOAD_IN_4BIT=1
+```
+
+`LEGAL_RAG_HF_LOAD_IN_4BIT=1` requires `bitsandbytes` and is typically practical on Linux with NVIDIA CUDA. On macOS or CPU-only environments, leave it disabled.
+
+To train a legal-domain LoRA adapter on JSONL instruction data:
+
+```bash
+python -m ai_service.scripts.train_legal_lora \
+  --dataset ai_service/training_data/legal_lora_sample.jsonl \
+  --base-model Qwen/Qwen2.5-7B-Instruct \
+  --output-dir ai_service/models/legal-lora
+```
+
+For Linux + NVIDIA CUDA you can add `--load-in-4bit`. On macOS, keep it off.
+
+Expected JSONL schema per line:
+
+```json
+{"instruction":"Вопрос пользователя","context":"Фрагменты норм или кейс","response":"Юридически выверенный ответ"}
+```
+
+Practical recommendation: keep `RAG` as the source of facts, and use LoRA primarily for tone, terminology, answer structure, and better handling of Kazakhstani legal phrasing.
 
 ---
 

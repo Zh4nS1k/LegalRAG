@@ -17,6 +17,7 @@ Environment:
   - HF_TOKEN: Optional token for gated models
 """
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -36,42 +37,57 @@ def _setup_cache_env() -> None:
     os.environ["SENTENCE_TRANSFORMERS_HOME"] = _CACHE_DIR
 
 
-def main() -> int:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Download LegalRAG Hugging Face models into the project-local cache."
+    )
+    parser.add_argument(
+        "--only",
+        choices=("embedding", "reranker"),
+        help="Download only one model family instead of both.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
     _setup_cache_env()
     os.makedirs(_CACHE_DIR, exist_ok=True)
     print(f"[download_models] Cache directory: {_CACHE_DIR}")
 
     # 1. Embedding model (intfloat/multilingual-e5-large)
-    embedding_model = os.environ.get(
-        "LEGAL_RAG_EMBEDDING", "intfloat/multilingual-e5-large"
-    )
-    print(f"[download_models] Downloading embedding model: {embedding_model}")
-    try:
-        from sentence_transformers import SentenceTransformer
+    if args.only in (None, "embedding"):
+        embedding_model = os.environ.get(
+            "LEGAL_RAG_EMBEDDING", "intfloat/multilingual-e5-large"
+        )
+        print(f"[download_models] Downloading embedding model: {embedding_model}")
+        try:
+            from sentence_transformers import SentenceTransformer
 
-        SentenceTransformer(embedding_model)
-        print(f"[download_models] OK: {embedding_model}")
-    except Exception as e:
-        print(f"[download_models] FAILED: {embedding_model}: {e}", file=sys.stderr)
-        return 1
+            SentenceTransformer(embedding_model)
+            print(f"[download_models] OK: {embedding_model}")
+        except Exception as e:
+            print(f"[download_models] FAILED: {embedding_model}: {e}", file=sys.stderr)
+            return 1
 
     # 2. Reranker (BAAI/bge-reranker-v2-m3) — used by agentic workflow
-    reranker_model = os.environ.get(
-        "LEGAL_RAG_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"
-    )
-    print(f"[download_models] Downloading reranker model: {reranker_model}")
-    try:
-        from FlagEmbedding import FlagReranker
-
-        FlagReranker(reranker_model, use_fp16=True)
-        print(f"[download_models] OK: {reranker_model}")
-    except ImportError:
-        print(
-            f"[download_models] SKIP: FlagEmbedding not installed, reranker not cached"
+    if args.only in (None, "reranker"):
+        reranker_model = os.environ.get(
+            "LEGAL_RAG_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"
         )
-    except Exception as e:
-        print(f"[download_models] FAILED: {reranker_model}: {e}", file=sys.stderr)
-        return 1
+        print(f"[download_models] Downloading reranker model: {reranker_model}")
+        try:
+            from FlagEmbedding import FlagReranker
+
+            FlagReranker(reranker_model, use_fp16=True)
+            print(f"[download_models] OK: {reranker_model}")
+        except ImportError:
+            print(
+                f"[download_models] SKIP: FlagEmbedding not installed, reranker not cached"
+            )
+        except Exception as e:
+            print(f"[download_models] FAILED: {reranker_model}: {e}", file=sys.stderr)
+            return 1
 
     print(
         "[download_models] All models cached. Start server with LEGAL_RAG_HF_LOCAL_ONLY=1 for offline mode."

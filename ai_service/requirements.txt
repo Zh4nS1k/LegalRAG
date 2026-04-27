@@ -33,6 +33,7 @@ transformers>=4.44,<5.0
 flashrank>=0.2.0
 FlagEmbedding>=1.2.0
 peft>=0.10.0
+datasets>=2.19.0
 
 # Облачный LLM (Groq) — опционально, включается LEGAL_RAG_LLM_BACKEND=groq
 langchain-groq>=0.1.0

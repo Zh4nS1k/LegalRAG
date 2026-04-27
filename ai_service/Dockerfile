@@ -12,6 +12,7 @@ ENV HF_HOME=/app/.models_cache \
 # Install system dependencies if needed (e.g., for certain python libs)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache

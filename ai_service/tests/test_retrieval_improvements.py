@@ -7,6 +7,9 @@ from ai_service.retrieval.rag_chain import (
     _apply_diversity_penalty,
     _apply_legal_score,
     _build_retrieval_queries,
+    _detect_target_codes,
+    _focus_articles_from_query,
+    _is_criminal_query,
     _is_noisy_legal_chunk,
     _lexical_overlap_score,
     _looks_like_raw_code_name,
@@ -52,6 +55,82 @@ def test_build_retrieval_queries_is_unique_and_limited():
     assert 1 <= len(queries) <= 4
     assert len(queries) == len(set(queries))
     assert any("статья 272" in q for q in queries)
+
+
+def test_theft_query_is_treated_as_criminal_and_augmented_for_uk():
+    query = "что будет если я украду яблоко из соседского дома"
+
+    queries = _build_retrieval_queries(query)
+
+    assert _is_criminal_query(query)
+    assert "188" in _focus_articles_from_query(query)
+    assert any("188 УК РК" in candidate or "кража 188" in candidate for candidate in queries)
+
+
+def test_fraud_query_routes_to_uk_and_focuses_article_190():
+    query = "Меня обманом лишили денег, это мошенничество?"
+
+    queries = _build_retrieval_queries(query)
+    target_codes = _detect_target_codes(query)
+
+    assert _is_criminal_query(query)
+    assert "190" in _focus_articles_from_query(query)
+    assert any("190" in candidate and ("мошеннич" in candidate.lower() or "алаяқ" in candidate.lower()) for candidate in queries)
+    assert any("Уголовный кодекс" in code or "Қылмыстық кодекс" in code for code in target_codes)
+
+
+def test_consumer_return_query_routes_to_consumer_law():
+    query = "Продавец отказал в возврате некачественного товара, что делать?"
+
+    target_codes = _detect_target_codes(query)
+    queries = _build_retrieval_queries(query)
+
+    assert any("защите прав потребителей" in code.lower() for code in target_codes)
+    assert any("защита прав потребителей" in candidate.lower() for candidate in queries)
+
+
+def test_labor_query_routes_to_labor_code():
+    query = "Работодатель хочет уволить меня по сокращению штата, какие у меня права?"
+
+    target_codes = _detect_target_codes(query)
+    queries = _build_retrieval_queries(query)
+
+    assert any("трудовой кодекс" in code.lower() or "еңбек кодексі" in code.lower() for code in target_codes)
+    assert any("трудовой кодекс" in candidate.lower() or "заработная плата" in candidate.lower() or "сокращение" in candidate.lower() for candidate in queries)
+
+
+def test_family_query_routes_to_family_code():
+    query = "После развода как взыскать алименты на ребенка?"
+
+    target_codes = _detect_target_codes(query)
+    queries = _build_retrieval_queries(query)
+
+    assert any("браке" in code.lower() or "отбасы" in code.lower() for code in target_codes)
+    assert any("алименты" in candidate.lower() or "развод" in candidate.lower() for candidate in queries)
+
+
+def test_noise_query_routes_to_koap_and_focuses_article_437():
+    query = "Можно ли шуметь в субботу в 22:30 в квартире?"
+
+    target_codes = _detect_target_codes(query)
+    queries = _build_retrieval_queries(query)
+
+    assert any(
+        "административных правонарушениях" in code.lower() or "әкімшілік құқық бұзушылық" in code.lower()
+        for code in target_codes
+    )
+    assert "437" in _focus_articles_from_query(query)
+    assert any("437" in candidate or "нарушение тишины" in candidate.lower() for candidate in queries)
+
+
+def test_bankruptcy_query_routes_to_bankruptcy_laws():
+    query = "Я оформила банкротство из-за долгов и хочу понять свои права"
+
+    target_codes = _detect_target_codes(query)
+    queries = _build_retrieval_queries(query)
+
+    assert any("банкрот" in code.lower() or "төлем қабілетті" in code.lower() for code in target_codes)
+    assert any("банкрот" in candidate.lower() or "платежеспособ" in candidate.lower() for candidate in queries)
 
 
 def test_normalize_article_number_strips_noise():

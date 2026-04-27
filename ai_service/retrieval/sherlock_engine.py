@@ -7,6 +7,28 @@ from ai_service.retrieval import rag_chain
 
 logger = logging.getLogger("ai_service.sherlock_engine")
 
+# Indexed `code_ru` values must match prepare_data.CODE_NAMES exactly.
+RK_CODE_FILTERS = {
+    "ГК": [
+        "Гражданский кодекс РК (Общая часть)",
+        "Гражданский кодекс РК (Особенная часть)",
+    ],
+    "УК": ["Уголовный кодекс РК"],
+    "ТК": ["Трудовой кодекс РК"],
+    "КоАП": ["Кодекс об административных правонарушениях РК"],
+    "УПК": ["Уголовно-процессуальный кодекс РК"],
+    "ГПК": ["Гражданский процессуальный кодекс РК"],
+    "АППК": ["Кодекс об административных процедурах РК"],
+    "НК": ["Налоговый кодекс РК"],
+    "БК": ["Бюджетный кодекс РК"],
+    "ЭК": ["Экологический кодекс РК"],
+    "ЗК": ["Земельный кодекс РК"],
+    "Предпринимательский кодекс": ["Предпринимательский кодекс РК"],
+    "Кодекс о здоровье": ["Кодекс о здоровье народа РК"],
+    "Кодекс о браке и семье": ["Кодекс о браке и семье РК"],
+    "Социальный кодекс": ["Социальный кодекс РК"],
+}
+
 # Официальные названия 19 кодексов РК для фильтрации в Pinecone
 RK_CODES_OFFICIAL = {
     "ГК": "Гражданский кодекс РК",
@@ -131,7 +153,10 @@ class SherlockEngine:
     ) -> List[Document]:
         """Stage 3: Targeted Fetch within selected codes."""
         vs = self._get_vs()
-        target_names = [RK_CODES_OFFICIAL.get(c, c) for c in codes]
+        target_names: list[str] = []
+        for code in codes:
+            target_names.extend(RK_CODE_FILTERS.get(code, [RK_CODES_OFFICIAL.get(code, code)]))
+        target_names = list(dict.fromkeys(target_names))
 
         # Pinecone $or filter for codes
         if len(target_names) == 1:

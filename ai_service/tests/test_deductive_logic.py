@@ -56,6 +56,18 @@ async def test_stage_3_targeted_fetch(sherlock):
     assert kwargs["filter"]["code_ru"] == "Трудовой кодекс РК"
 
 
+@pytest.mark.asyncio
+async def test_stage_3_targeted_fetch_koap_uses_indexed_code_name(sherlock):
+    sherlock.vectorstore.similarity_search.return_value = [
+        MagicMock(page_content="Art 437")
+    ]
+
+    await sherlock.stage_3_targeted_fetch(["КоАП"], "шум в субботу")
+
+    args, kwargs = sherlock.vectorstore.similarity_search.call_args
+    assert kwargs["filter"]["code_ru"] == "Кодекс об административных правонарушениях РК"
+
+
 def test_stage_4_fact_check(sherlock):
     doc1 = MagicMock(
         page_content="Статья 437. Нарушение тишины в ночное время (с 23 до 6 часов утра)"

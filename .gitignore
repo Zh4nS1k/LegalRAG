@@ -70,6 +70,16 @@ instance/
 hf_cache/
 ~/.cache/huggingface/
 
+# Fine-tuned local model artifacts
+ai_service/models/legal-lora-*/
+ai_service/models/**/checkpoint-*/
+ai_service/models/**/*.safetensors
+ai_service/models/**/optimizer.pt
+ai_service/models/**/scheduler.pt
+ai_service/models/**/rng_state.pth
+ai_service/models/**/trainer_state.json
+ai_service/models/**/training_args.bin
+
 # AI generated data
 chat_history.json
 file_map.json

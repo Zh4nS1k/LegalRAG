@@ -7,6 +7,27 @@ from ai_service.retrieval import rag_chain
 
 logger = logging.getLogger("ai_service.verification_engine")
 
+RK_CODE_FILTERS = {
+    "ГК": [
+        "Гражданский кодекс РК (Общая часть)",
+        "Гражданский кодекс РК (Особенная часть)",
+    ],
+    "УК": ["Уголовный кодекс РК"],
+    "ТК": ["Трудовой кодекс РК"],
+    "КоАП": ["Кодекс об административных правонарушениях РК"],
+    "УПК": ["Уголовно-процессуальный кодекс РК"],
+    "ГПК": ["Гражданский процессуальный кодекс РК"],
+    "АППК": ["Кодекс об административных процедурах РК"],
+    "НК": ["Налоговый кодекс РК"],
+    "БК": ["Бюджетный кодекс РК"],
+    "ЭК": ["Экологический кодекс РК"],
+    "ЗК": ["Земельный кодекс РК"],
+    "Предпринимательский кодекс": ["Предпринимательский кодекс РК"],
+    "Кодекс о здоровье": ["Кодекс о здоровье народа РК"],
+    "Кодекс о браке и семье": ["Кодекс о браке и семье РК"],
+    "Социальный кодекс": ["Социальный кодекс РК"],
+}
+
 # Список кодексов РК (основные 19)
 RK_CODES = {
     "ГК": "Гражданский кодекс",
@@ -98,19 +119,11 @@ class VerificationEngine:
         enhanced_query = f"{query} {' '.join(keywords)}"
         vectorstore = rag_chain.get_vector_store()
 
-        # Mapping our internal abbreviations to 'code_ru' metadata values
-        code_map = {
-            "ГК": "Гражданский кодекс РК",
-            "УК": "Уголовный кодекс РК",
-            "ТК": "Трудовой кодекс РК",
-            "КоАП": "Кодекс РК об административных правонарушениях",
-            "НК": "Налоговый кодекс РК",
-        }
-
-        target_code_ru = code_map.get(code_abbr, code_abbr)
-
-        # Pinecone filter syntax for our metadata
-        search_filter = {"code_ru": target_code_ru}
+        target_code_ru = RK_CODE_FILTERS.get(code_abbr, [code_abbr])
+        if len(target_code_ru) == 1:
+            search_filter = {"code_ru": target_code_ru[0]}
+        else:
+            search_filter = {"$or": [{"code_ru": code_name} for code_name in target_code_ru]}
 
         # Use similarity_search with filter
         docs = vectorstore.similarity_search(enhanced_query, k=10, filter=search_filter)

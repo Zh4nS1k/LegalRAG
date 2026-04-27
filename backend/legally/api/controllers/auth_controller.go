@@ -7,8 +7,10 @@ import (
 	"legally/models"
 	"legally/services"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 // RegisterRequest allows specifying an optional name and required role.
@@ -118,7 +120,10 @@ func GetUser(c *gin.Context) {
 func Refresh(c *gin.Context) {
 	var req RefreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":      "Проверьте введённые данные: " + bindingErrorMessage(err),
+			"error_code": "VALIDATION_ERROR",
+		})
 		return
 	}
 
@@ -225,6 +230,44 @@ func AdminDeleteUser(c *gin.Context) {
 
 // bindingErrorMessage converts a gin/validator error into a user-friendly Russian message.
 func bindingErrorMessage(err error) string {
+	var validationErrors validator.ValidationErrors
+	if errors.As(err, &validationErrors) {
+		messages := make([]string, 0, len(validationErrors))
+		for _, fieldErr := range validationErrors {
+			field := strings.ToLower(fieldErr.Field())
+			switch fieldErr.Field() {
+			case "Email":
+				field = "email"
+			case "Password":
+				field = "пароль"
+			case "Name":
+				field = "имя"
+			case "Role":
+				field = "роль"
+			}
+
+			switch fieldErr.Tag() {
+			case "required":
+				messages = append(messages, field+" обязателен")
+			case "email":
+				messages = append(messages, "введите корректный email")
+			case "min":
+				if fieldErr.Field() == "Password" {
+					messages = append(messages, "пароль должен содержать минимум "+fieldErr.Param()+" символов")
+				} else {
+					messages = append(messages, field+" должен содержать минимум "+fieldErr.Param()+" символов")
+				}
+			case "oneof":
+				messages = append(messages, "выберите корректную роль")
+			default:
+				messages = append(messages, "некорректное поле: "+field)
+			}
+		}
+		if len(messages) > 0 {
+			return strings.Join(messages, ", ")
+		}
+	}
+
 	msg := err.Error()
 	if len(msg) > 120 {
 		return "некорректные данные"
