@@ -8,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 
+from ai_service.utils import citations as cit
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Benchmark RAG answers against gold citations from XLSX."
@@ -198,8 +200,8 @@ def main() -> None:
     for row_index, row in df.iterrows():
         query = str(row.get("query") or "").strip()
         qid = str(row.get("query_id") or row_index)
-        gold_raw = _normalize_gold(row.get("gold_citations"))
-        gold_pairs = [_gold_to_pair(item) for item in gold_raw]
+        gold_raw = cit.normalize_gold(row.get("gold_citations"))
+        gold_pairs = [cit.gold_to_pair(item) for item in gold_raw]
 
         started = time.perf_counter()
         try:
@@ -213,12 +215,12 @@ def main() -> None:
             error = str(exc)
         elapsed_sec = round(time.perf_counter() - started, 3)
 
-        answer_pairs = _extract_citation_pairs_from_text(str(answer))
-        source_pairs = _extract_pairs_from_docs(source_documents)
+        answer_pairs = cit.extract_citation_pairs_from_text(str(answer))
+        source_pairs = cit.extract_pairs_from_docs(source_documents)
         combined_pairs = list(dict.fromkeys(answer_pairs + source_pairs))
 
-        answer_metrics = _compute_metrics(gold_pairs, answer_pairs)
-        combined_metrics = _compute_metrics(gold_pairs, combined_pairs)
+        answer_metrics = cit.compute_pair_metrics(gold_pairs, answer_pairs)
+        combined_metrics = cit.compute_pair_metrics(gold_pairs, combined_pairs)
 
         results.append(
             {

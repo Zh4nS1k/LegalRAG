@@ -30,8 +30,24 @@ func NewRAGService() *RAGService {
 	return &RAGService{}
 }
 
+// LegacyGoRAGEnabled gates the old Go-side RAG pipeline.
+// Production should route all question answering through the Python AI service.
+func LegacyGoRAGEnabled() bool {
+	return os.Getenv("LEGAL_RAG_ENABLE_LEGACY_GO_RAG") == "1"
+}
+
+func ensureLegacyGoRAGEnabled() error {
+	if !LegacyGoRAGEnabled() {
+		return fmt.Errorf("legacy Go RAG is disabled; use the Python AI service")
+	}
+	return nil
+}
+
 // UploadRAGDocument processes and stores a new document in the RAG system
 func (s *RAGService) UploadRAGDocument(c *gin.Context, req models.RAGUploadRequest) (*models.RAGDocument, error) {
+	if err := ensureLegacyGoRAGEnabled(); err != nil {
+		return nil, err
+	}
 	utils.LogAction("Загрузка нового RAG документа")
 
 	// Get file from request
@@ -148,8 +164,11 @@ func (s *RAGService) ProcessDocumentAsync(docID primitive.ObjectID) {
 func (s *RAGService) generateEmbeddings(text string) ([]float64, error) {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		// Fallback to simple embedding simulation for development
-		return s.generateSimpleEmbeddings(text), nil
+		if os.Getenv("LEGAL_RAG_ALLOW_SIMULATED_EMBEDDINGS") == "1" {
+			utils.LogWarning("Using simulated embeddings for legacy Go RAG; this path is non-production only")
+			return s.generateSimpleEmbeddings(text), nil
+		}
+		return nil, fmt.Errorf("OPENAI_API_KEY is required for legacy Go RAG embeddings")
 	}
 
 	payload := map[string]interface{}{
@@ -203,9 +222,8 @@ func (s *RAGService) generateEmbeddings(text string) ([]float64, error) {
 	return result.Data[0].Embedding, nil
 }
 
-// generateSimpleEmbeddings generates simple embeddings for development
+// generateSimpleEmbeddings generates simple embeddings for non-production use only.
 func (s *RAGService) generateSimpleEmbeddings(text string) []float64 {
-	// Simple embedding simulation - in production, use real embeddings
 	// This creates a 384-dimensional vector based on character frequency
 	embedding := make([]float64, 384)
 
@@ -252,6 +270,9 @@ func (s *RAGService) chunkDocument(content string) []models.DocumentChunk {
 
 // SearchRAGDocuments searches for relevant documents
 func (s *RAGService) SearchRAGDocuments(query string, limit int, category string) ([]models.RAGSearchResult, error) {
+	if err := ensureLegacyGoRAGEnabled(); err != nil {
+		return nil, err
+	}
 	utils.LogAction(fmt.Sprintf("Поиск RAG документов: %s", query))
 
 	if limit <= 0 {
@@ -269,6 +290,9 @@ func (s *RAGService) SearchRAGDocuments(query string, limit int, category string
 
 // GetRAGDocuments retrieves RAG documents with pagination
 func (s *RAGService) GetRAGDocuments(limit, offset int, category string) ([]models.RAGDocument, error) {
+	if err := ensureLegacyGoRAGEnabled(); err != nil {
+		return nil, err
+	}
 	utils.LogAction("Получение RAG документов")
 
 	if limit <= 0 {
@@ -294,6 +318,9 @@ func (s *RAGService) GetRAGDocuments(limit, offset int, category string) ([]mode
 
 // DeleteRAGDocument deletes a RAG document
 func (s *RAGService) DeleteRAGDocument(docID string) error {
+	if err := ensureLegacyGoRAGEnabled(); err != nil {
+		return err
+	}
 	utils.LogAction(fmt.Sprintf("Удаление RAG документа: %s", docID))
 
 	objID, err := primitive.ObjectIDFromHex(docID)
@@ -312,6 +339,9 @@ func (s *RAGService) DeleteRAGDocument(docID string) error {
 
 // GetRAGStats returns statistics about RAG documents
 func (s *RAGService) GetRAGStats() (map[string]interface{}, error) {
+	if err := ensureLegacyGoRAGEnabled(); err != nil {
+		return nil, err
+	}
 	utils.LogAction("Получение статистики RAG документов")
 
 	stats, err := repositories.GetRAGDocumentStats()

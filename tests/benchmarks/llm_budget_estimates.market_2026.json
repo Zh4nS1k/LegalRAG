@@ -1,0 +1,165 @@
+{
+  "dataset": "tests/benchmarks/kz_benchmark_gold_final.filtered.xlsx",
+  "rows": 1168,
+  "assumption": "Projected total uses query as input and existing RAG answer column as output proxy.",
+  "pricing_basis": "User-provided market snapshot for April 2026.",
+  "token_bases": {
+    "gpt": {
+      "input_tokens_total": 139621,
+      "output_tokens_total": 373782,
+      "note": "Measured with GPT tokenizer; reused for GPT-5.4 variants as a pricing proxy."
+    },
+    "gemini": {
+      "input_tokens_total": 146906,
+      "output_tokens_total": 391270,
+      "note": "Measured batched via Gemini API; reused for Gemini 2.5/3 pricing scenarios."
+    },
+    "claude": {
+      "input_tokens_total": 146906,
+      "output_tokens_total": 391270,
+      "note": "Still proxy volume, not direct Claude tokenization."
+    },
+    "llama": {
+      "input_tokens_total": 167649,
+      "output_tokens_total": 438747,
+      "note": "Measured with local llama tokenizer; reused for Llama 3.3 / Llama 4 Maverick as pricing proxy."
+    },
+    "deepseek": {
+      "input_tokens_total": 165983,
+      "output_tokens_total": 430039,
+      "note": "Measured with local DeepSeek tokenizer; reused for DeepSeek V3.2 pricing scenario."
+    }
+  },
+  "market_models": [
+    {
+      "model": "deepseek_v3_2",
+      "label": "DeepSeek V3.2",
+      "token_base": "deepseek",
+      "input_tokens_total": 165983,
+      "output_tokens_total": 430039,
+      "input_price_per_million_usd": 0.14,
+      "output_price_per_million_usd": 0.28,
+      "input_only_dataset_usd": 0.02323762,
+      "projected_dataset_usd": 0.14364854000000002,
+      "avg_input_only_per_request_usd": 1.9895222602739727e-05,
+      "avg_projected_per_request_usd": 0.00012298676369863016
+    },
+    {
+      "model": "llama_4_maverick",
+      "label": "Llama 4 Maverick",
+      "token_base": "llama",
+      "input_tokens_total": 167649,
+      "output_tokens_total": 438747,
+      "input_price_per_million_usd": 0.2,
+      "output_price_per_million_usd": 0.6,
+      "input_only_dataset_usd": 0.0335298,
+      "projected_dataset_usd": 0.296778,
+      "avg_input_only_per_request_usd": 2.8707020547945203e-05,
+      "avg_projected_per_request_usd": 0.0002540907534246575
+    },
+    {
+      "model": "llama_3_3_70b",
+      "label": "Llama 3.3 70B",
+      "token_base": "llama",
+      "input_tokens_total": 167649,
+      "output_tokens_total": 438747,
+      "input_price_per_million_usd": 0.59,
+      "output_price_per_million_usd": 0.79,
+      "input_only_dataset_usd": 0.09891290999999999,
+      "projected_dataset_usd": 0.44552304,
+      "avg_input_only_per_request_usd": 8.468571061643835e-05,
+      "avg_projected_per_request_usd": 0.0003814409589041096
+    },
+    {
+      "model": "gpt_5_4_nano",
+      "label": "GPT-5.4 Nano",
+      "token_base": "gpt",
+      "input_tokens_total": 139621,
+      "output_tokens_total": 373782,
+      "input_price_per_million_usd": 0.2,
+      "output_price_per_million_usd": 1.25,
+      "input_only_dataset_usd": 0.0279242,
+      "projected_dataset_usd": 0.49515170000000003,
+      "avg_input_only_per_request_usd": 2.3907705479452055e-05,
+      "avg_projected_per_request_usd": 0.00042393125000000004
+    },
+    {
+      "model": "gpt_5_4_standard",
+      "label": "GPT-5.4 Standard",
+      "token_base": "gpt",
+      "input_tokens_total": 139621,
+      "output_tokens_total": 373782,
+      "input_price_per_million_usd": 2.5,
+      "output_price_per_million_usd": 10.0,
+      "input_only_dataset_usd": 0.3490525,
+      "projected_dataset_usd": 4.0868725,
+      "avg_input_only_per_request_usd": 0.00029884631849315065,
+      "avg_projected_per_request_usd": 0.0034990346746575345
+    },
+    {
+      "model": "gemini_2_5_pro",
+      "label": "Gemini 2.5 Pro",
+      "token_base": "gemini",
+      "input_tokens_total": 146906,
+      "output_tokens_total": 391270,
+      "input_price_per_million_usd": 1.25,
+      "output_price_per_million_usd": 10.0,
+      "input_only_dataset_usd": 0.1836325,
+      "projected_dataset_usd": 4.0963325,
+      "avg_input_only_per_request_usd": 0.00015721960616438355,
+      "avg_projected_per_request_usd": 0.003507133989726027
+    },
+    {
+      "model": "gemini_3_pro",
+      "label": "Gemini 3 Pro",
+      "token_base": "gemini",
+      "input_tokens_total": 146906,
+      "output_tokens_total": 391270,
+      "input_price_per_million_usd": 2.0,
+      "output_price_per_million_usd": 12.0,
+      "input_only_dataset_usd": 0.293812,
+      "projected_dataset_usd": 4.989052,
+      "avg_input_only_per_request_usd": 0.00025155136986301373,
+      "avg_projected_per_request_usd": 0.004271448630136987
+    },
+    {
+      "model": "gpt_5_4_pro",
+      "label": "GPT-5.4 Pro",
+      "token_base": "gpt",
+      "input_tokens_total": 139621,
+      "output_tokens_total": 373782,
+      "input_price_per_million_usd": 3.0,
+      "output_price_per_million_usd": 15.0,
+      "input_only_dataset_usd": 0.418863,
+      "projected_dataset_usd": 6.025593,
+      "avg_input_only_per_request_usd": 0.0003586155821917808,
+      "avg_projected_per_request_usd": 0.005158898116438356
+    },
+    {
+      "model": "claude_4_6_sonnet",
+      "label": "Claude 4.6 Sonnet",
+      "token_base": "claude",
+      "input_tokens_total": 146906,
+      "output_tokens_total": 391270,
+      "input_price_per_million_usd": 3.0,
+      "output_price_per_million_usd": 15.0,
+      "input_only_dataset_usd": 0.44071800000000005,
+      "projected_dataset_usd": 6.309768,
+      "avg_input_only_per_request_usd": 0.0003773270547945206,
+      "avg_projected_per_request_usd": 0.005402198630136986
+    },
+    {
+      "model": "claude_4_6_opus",
+      "label": "Claude 4.6 Opus",
+      "token_base": "claude",
+      "input_tokens_total": 146906,
+      "output_tokens_total": 391270,
+      "input_price_per_million_usd": 5.0,
+      "output_price_per_million_usd": 25.0,
+      "input_only_dataset_usd": 0.73453,
+      "projected_dataset_usd": 10.51628,
+      "avg_input_only_per_request_usd": 0.0006288784246575342,
+      "avg_projected_per_request_usd": 0.009003664383561644
+    }
+  ]
+}

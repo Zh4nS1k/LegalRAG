@@ -1,332 +1,215 @@
+import asyncio
 import json
 import logging
 import time
-from typing import List, Tuple, Dict, Any
+from typing import Any, Dict, List
+
 from langchain_core.documents import Document
+
+from ai_service.core import config
 from ai_service.retrieval import rag_chain
 
 logger = logging.getLogger("ai_service.sherlock_engine")
 
-# Indexed `code_ru` values must match prepare_data.CODE_NAMES exactly.
-RK_CODE_FILTERS = {
-    "ГК": [
-        "Гражданский кодекс РК (Общая часть)",
-        "Гражданский кодекс РК (Особенная часть)",
-    ],
-    "УК": ["Уголовный кодекс РК"],
-    "ТК": ["Трудовой кодекс РК"],
-    "КоАП": ["Кодекс об административных правонарушениях РК"],
-    "УПК": ["Уголовно-процессуальный кодекс РК"],
-    "ГПК": ["Гражданский процессуальный кодекс РК"],
-    "АППК": ["Кодекс об административных процедурах РК"],
-    "НК": ["Налоговый кодекс РК"],
-    "БК": ["Бюджетный кодекс РК"],
-    "ЭК": ["Экологический кодекс РК"],
-    "ЗК": ["Земельный кодекс РК"],
-    "Предпринимательский кодекс": ["Предпринимательский кодекс РК"],
-    "Кодекс о здоровье": ["Кодекс о здоровье народа РК"],
-    "Кодекс о браке и семье": ["Кодекс о браке и семье РК"],
-    "Социальный кодекс": ["Социальный кодекс РК"],
+SHERLOCK_AUDIT_PROMPT = """Ты — Sherlock audit mode.
+Твоя задача — сделать краткий юридический аудит на основе уже извлечённого canonical retrieval context.
+
+Жёсткие правила:
+- Не выполняй отдельный поиск.
+- Не придумывай нормы, которых нет в context.
+- Если контекста недостаточно, прямо скажи об этом.
+- Отвечай строго в JSON.
+
+Формат:
+{
+  "summary": "краткий вывод",
+  "position": "роль пользователя или правовая позиция",
+  "applicable_articles": [
+    {
+      "code_ru": "название кодекса или закона",
+      "article_number": "номер статьи или null",
+      "reason": "почему статья релевантна"
+    }
+  ],
+  "conflicts": [
+    {
+      "description": "если есть коллизия, иначе пустой список",
+      "resolution": "как её разрешить"
+    }
+  ],
+  "needs_clarification": true,
+  "clarifying_question": "вопрос, если данных недостаточно",
+  "confidence": 0.0
 }
 
-# Официальные названия 19 кодексов РК для фильтрации в Pinecone
-RK_CODES_OFFICIAL = {
-    "ГК": "Гражданский кодекс РК",
-    "УК": "Уголовный кодекс РК",
-    "ТК": "Трудовой кодекс РК",
-    "КоАП": "Кодекс РК об административных правонарушениях",
-    "УПК": "Уголовно-процессуальный кодекс РК",
-    "ГПК": "Гражданский процессуальный кодекс РК",
-    "АППК": "Административный процедурно-процессуальный кодекс РК",
-    "НК": "Налоговый кодекс РК",
-    "БК": "Бюджетный кодекс РК",
-    "ЭК": "Экологический кодекс РК",
-    "ЗК": "Земельный кодекс РК",
-    "Водный кодекс": "Водный кодекс РК",
-    "Лесной кодекс": "Лесной кодекс РК",
-    "Предпринимательский кодекс": "Предпринимательский кодекс РК",
-    "Кодекс о здоровье": "Кодекс РК о здоровье народа и системе здравоохранения",
-    "Кодекс о браке и семье": "Кодекс РК о браке (супружестве) и семье",
-    "Таможенный кодекс": "Кодекс РК о таможенном регулировании",
-    "Кодекс о недрах": "Кодекс РК о недрах и недропользовании",
-    "Социальный кодекс": "Социальный кодекс РК",
-}
+Запрос:
+__QUERY__
 
-SHERLOCK_CLASSIFIER_PROMPT = """Ты — эксперт по законодательству Республики Казахстан. 
-Твоя задача — определить, к каким из 19 кодексов РК относится запрос пользователя.
-Выбери от 1 до 3 наиболее релевантных кодексов.
-
-Список кодексов:
-{codes_list}
-
-Запрос пользователя: "{query}"
-
-Инструкции:
-1. Выбери наиболее подходящие кодексы (макс 3).
-2. Обоснуй выбор каждого кодекса.
-3. Извлеки ключевые юридические термины (факты) из запроса (например: возраст, время суток, тип договора, статус лица).
-
-Верни ответ СТРОГО в формате JSON:
-{{
-  "selected_codes": ["Аббревиатура1", "Аббревиатура2"],
-  "reasoning": "краткое обоснование выбора",
-  "facts": {{
-      "age": "значение или null",
-      "time": "значение или null",
-      "role_hint": "подсказка о роли",
-      "action": "основное действие"
-  }}
-}}
+Контекст:
+__CONTEXT__
 """
 
-SHERLOCK_SYSTEM_MESSAGE = """Ты — судебный аудитор системы 'Шерлок'. 
-Твоя цель — провести независимый дедуктивный аудит ситуации на основе предоставленных статей законов.
-Не просто отвечай пользователю, а анализируй логические связи.
 
-Структура твоего анализа:
-1. Путь дедукции: [Кодекс] -> [Статья] (объясни, почему выбраны именно они).
-2. Анализ позиции: Кто пользователь в этой ситуации (роль) и какие у него права/обязанности.
-3. Вердикт по коллизиям: Если нормы разных законов пересекаются или спорят, укажи, какая превалирует (Конституция > Кодекс > Закон). Если спора нет — так и напиши.
+def _extract_json_block(content: str) -> Dict[str, Any]:
+    raw = str(content or "").strip()
+    if not raw:
+        return {}
 
-Будь сух, точен и детерминирован.
-"""
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start < 0 or end < 0 or end <= start:
+        return {}
+
+    try:
+        return json.loads(raw[start : end + 1])
+    except Exception:
+        return {}
+
+
+def _stringify_article(article: Dict[str, Any]) -> str:
+    code_ru = str(article.get("code_ru") or "").strip() or "Неизвестный источник"
+    article_number = str(article.get("article_number") or "").strip()
+    reason = str(article.get("reason") or "").strip()
+    header = code_ru
+    if article_number and article_number.lower() != "null":
+        header = f"{header}, ст. {article_number}"
+    return f"- {header}: {reason or 'релевантно к запросу'}"
+
+
+def _render_report(query: str, analysis: Dict[str, Any], docs: List[Document]) -> str:
+    summary = str(analysis.get("summary") or "").strip() or "Недостаточно данных для уверенного вывода."
+    position = str(analysis.get("position") or "").strip() or "Позиция не определена."
+    clarification = str(analysis.get("clarifying_question") or "").strip()
+    confidence = analysis.get("confidence")
+    applicable_articles = analysis.get("applicable_articles") or []
+    conflicts = analysis.get("conflicts") or []
+
+    lines = [
+        "# Sherlock audit",
+        f"Query: {query}",
+        f"Summary: {summary}",
+        f"Position: {position}",
+    ]
+    if confidence is not None:
+        lines.append(f"Confidence: {confidence}")
+
+    if applicable_articles:
+        lines.append("Applicable articles:")
+        for article in applicable_articles[:5]:
+            if isinstance(article, dict):
+                lines.append(_stringify_article(article))
+    elif docs:
+        lines.append("Applicable articles:")
+        for doc in docs[:3]:
+            meta = doc.metadata or {}
+            code_ru = str(meta.get("code_ru") or "Неизвестный источник").strip()
+            article_number = str(meta.get("article_number") or "").strip()
+            source = code_ru if not article_number else f"{code_ru}, ст. {article_number}"
+            lines.append(f"- {source}")
+
+    if conflicts:
+        lines.append("Conflicts:")
+        for item in conflicts[:3]:
+            if isinstance(item, dict):
+                description = str(item.get("description") or "").strip() or "Коллизия не описана"
+                resolution = str(item.get("resolution") or "").strip() or "Не указано"
+                lines.append(f"- {description} -> {resolution}")
+    else:
+        lines.append("Conflicts: none")
+
+    if analysis.get("needs_clarification"):
+        lines.append("Needs clarification: yes")
+        if clarification:
+            lines.append(f"Clarifying question: {clarification}")
+    else:
+        lines.append("Needs clarification: no")
+        if clarification:
+            lines.append(f"Clarifying question: {clarification}")
+
+    return "\n".join(lines).strip()
 
 
 class SherlockEngine:
     def __init__(self):
-        self.llm = rag_chain.get_llm()
-        self.vectorstore = None
+        self.llm = None
+        self.enabled = config.LEGAL_RAG_ENABLE_SHERLOCK
+        self.retriever_top_k = int(
+            getattr(config, "SHERLOCK_RETRIEVER_TOP_K", config.RETRIEVER_WIDE_K)
+        )
 
-    def _get_vs(self):
-        if self.vectorstore is None:
-            self.vectorstore = rag_chain.get_vector_store()
-        return self.vectorstore
-
-    async def classify_and_validate(self, query: str) -> Dict[str, Any]:
-        """Stage 1 & 2: Classify and Validate."""
-        codes_text = "\n".join([f"- {k}: {v}" for k, v in RK_CODES_OFFICIAL.items()])
-        prompt = SHERLOCK_CLASSIFIER_PROMPT.format(codes_list=codes_text, query=query)
-
-        try:
-            resp = self.llm.invoke(prompt)
-            content = resp.content if hasattr(resp, "content") else str(resp)
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            data = json.loads(content[start:end])
-
-            # Stage 2: Validation Loop (Internal Logic)
-            selected = [c.upper() for c in data.get("selected_codes", [])]
-            q_lower = query.lower()
-
-            # Принудительная корректировка типичных ошибок
-            validated_codes = []
-            for code in selected:
-                if (code == "ЗК" or code == "ГК") and (
-                    "зарплат" in q_lower
-                    or "увольн" in q_lower
-                    or "работодател" in q_lower
-                ):
-                    logger.warning(
-                        f"Sherlock Validation: Dropping {code} for labor query, adding ТК"
-                    )
-                    if "ТК" not in validated_codes:
-                        validated_codes.append("ТК")
-                elif code == "ГК" and ("штраф" in q_lower or "полиция" in q_lower):
-                    logger.info("Sherlock Validation: Adding КоАП for penalty query")
-                    if "КоАП" not in validated_codes:
-                        validated_codes.append("КоАП")
-                    validated_codes.append(code)
-                else:
-                    validated_codes.append(code)
-
-            if not validated_codes:
-                validated_codes = ["ГК"]  # Fallback
-
-            data["selected_codes"] = validated_codes[:3]
-            return data
-        except Exception as e:
-            logger.error(f"Sherlock Classification failed: {e}")
-            return {"selected_codes": ["ГК"], "reasoning": "fallback", "facts": {}}
-
-    async def stage_3_targeted_fetch(
-        self, codes: List[str], query: str
-    ) -> List[Document]:
-        """Stage 3: Targeted Fetch within selected codes."""
-        vs = self._get_vs()
-        target_names: list[str] = []
-        for code in codes:
-            target_names.extend(RK_CODE_FILTERS.get(code, [RK_CODES_OFFICIAL.get(code, code)]))
-        target_names = list(dict.fromkeys(target_names))
-
-        # Pinecone $or filter for codes
-        if len(target_names) == 1:
-            search_filter = {"code_ru": target_names[0]}
-        else:
-            search_filter = {"$or": [{"code_ru": name} for name in target_names]}
-
-        docs = vs.similarity_search(query, k=15, filter=search_filter)
-        return docs
-
-    def stage_4_fact_check(
-        self, docs: List[Document], facts: Dict
-    ) -> Tuple[bool, List[Document]]:
-        """Stage 4: Fact Check - matching articles with query facts."""
-        if not docs:
-            return False, []
-
-        important_markers = []
-        if facts.get("time"):
-            # Если в фактах есть время, ищем статьи про время (например 23:00, ночное время)
-            important_markers.extend(["время", "ноч", "23", "22", "8"])
-
-        # Если маркеров нет, полагаемся на семантику (True)
-        if not important_markers:
-            return True, docs
-
-        matched = []
-        for d in docs:
-            text = d.page_content.lower()
-            if any(m in text for m in important_markers):
-                matched.append(d)
-
-        if not matched:
-            return False, docs[:5]  # Return some docs but signal failure
-
-        return True, matched
+    async def _retrieve_context(self, query: str) -> List[Document]:
+        retriever = rag_chain.get_retriever_for_coverage(top_k=self.retriever_top_k)
+        docs = await asyncio.to_thread(retriever.invoke, query)
+        return list(docs or [])
 
     async def run_sherlock_loop(self, query: str) -> Dict[str, Any]:
-        """The core Sherlock Retry Loop (Stages 1-4)."""
         t0 = time.perf_counter()
+        if not self.enabled:
+            return {
+                "deductive_output": None,
+                "meta": {
+                    "enabled": False,
+                    "mode": "disabled",
+                    "stack": "canonical_retriever",
+                    "elapsed_ms": round((time.perf_counter() - t0) * 1000),
+                },
+            }
 
-        # Stage 1 & 2
-        classification = await self.classify_and_validate(query)
-        selected_codes = classification["selected_codes"]
-        facts = classification.get("facts", {})
+        docs: List[Document] = []
+        analysis: Dict[str, Any] = {}
 
-        # Stage 3 & 4 with Retry
-        final_docs = []
-        attempt = 0
-        current_query = query
-
-        while attempt < 2:
-            docs = await self.stage_3_targeted_fetch(selected_codes, current_query)
-            success, checked_docs = self.stage_4_fact_check(docs, facts)
-
-            if success:
-                final_docs = checked_docs
-                break
-            else:
-                attempt += 1
-                logger.info(
-                    f"Sherlock Stage 4 failed, retry {attempt} with broader query"
-                )
-                # Расширяем запрос для второй попытки
-                action = facts.get("action", "")
-                current_query = f"{query} {action}" if action else query
-                final_docs = (
-                    docs  # Fallback to original docs if 2nd attempt also 'fails'
-                )
-
-        # Skills execution
-        skill = SherlockAnalysisSkill(self.llm)
-        position_data = skill.identify_position(query)
-        conflict_data = skill.detect_conflicts(query, final_docs)
-
-        # Generate Final Deduction Output via LLM
-        deduction_report = self._generate_report(
-            query, final_docs, position_data, conflict_data
-        )
+        try:
+            docs = await self._retrieve_context(query)
+            llm = self.llm
+            if llm is None:
+                llm = await asyncio.to_thread(rag_chain.get_llm)
+                self.llm = llm
+            context = "\n\n".join(
+                [
+                    f"[{str((doc.metadata or {}).get('code_ru') or 'Неизвестный источник')} | "
+                    f"ст. {str((doc.metadata or {}).get('article_number') or 'Н/Д')}]\n"
+                    f"{str(doc.page_content or '').strip()[:1000]}"
+                    for doc in docs[: self.retriever_top_k]
+                ]
+            )
+            prompt = (
+                SHERLOCK_AUDIT_PROMPT.replace("__QUERY__", query)
+                .replace("__CONTEXT__", context or "Контекст не найден.")
+            )
+            response = await asyncio.to_thread(llm.invoke, prompt)
+            content = response.content if hasattr(response, "content") else str(response)
+            analysis = _extract_json_block(content)
+            if not analysis:
+                analysis = {
+                    "summary": "Не удалось надёжно распарсить audit output.",
+                    "position": "Позиция не определена.",
+                    "applicable_articles": [],
+                    "conflicts": [],
+                    "needs_clarification": True,
+                    "clarifying_question": "Уточните фактические обстоятельства запроса.",
+                    "confidence": 0.0,
+                }
+        except Exception as exc:
+            logger.error("Sherlock audit failed: %s", exc, exc_info=True)
+            analysis = {
+                "summary": "Sherlock audit unavailable.",
+                "position": "Позиция не определена.",
+                "applicable_articles": [],
+                "conflicts": [],
+                "needs_clarification": True,
+                "clarifying_question": "Уточните фактические обстоятельства запроса.",
+                "confidence": 0.0,
+            }
 
         return {
-            "deductive_output": deduction_report,
+            "deductive_output": _render_report(query, analysis, docs),
             "meta": {
-                "codes": selected_codes,
-                "position": position_data,
-                "conflicts": conflict_data,
-                "time_ms": round((time.perf_counter() - t0) * 1000),
+                "enabled": True,
+                "mode": "canonical_retrieval_audit",
+                "stack": "canonical_retriever",
+                "retriever_top_k": self.retriever_top_k,
+                "docs_count": len(docs),
+                "confidence": analysis.get("confidence", 0.0),
+                "elapsed_ms": round((time.perf_counter() - t0) * 1000),
             },
         }
-
-    def _generate_report(
-        self, query: str, docs: List[Document], position: Dict, conflicts: Dict
-    ) -> str:
-        """Generates the final structured text output for Sherlock block."""
-        context_str = "\n".join(
-            [
-                f"- {d.metadata.get('code_ru')}, ст.{d.metadata.get('article_number')}: {d.page_content[:200]}..."
-                for d in docs[:3]
-            ]
-        )
-
-        prompt = f"{SHERLOCK_SYSTEM_MESSAGE}\n\n"
-        prompt += f"Ситуация: {query}\n"
-        prompt += f"Выявленная позиция: {position}\n"
-        prompt += f"Найденные конфликты: {conflicts}\n"
-        prompt += f"Релевантные статьи:\n{context_str}\n\n"
-        prompt += "Проведи финальный аудит:"
-
-        try:
-            resp = self.llm.invoke(prompt)
-            return resp.content if hasattr(resp, "content") else str(resp)
-        except Exception:
-            return "Ошибка генерации отчета Шерлока."
-
-
-class SherlockAnalysisSkill:
-    def __init__(self, llm):
-        self.llm = llm
-
-    def identify_position(self, query: str) -> Dict:
-        """Step 5 & 6: Client Position & Interactive Bridge."""
-        prompt = f"""Проанализируй ситуацию и определи юридическую роль пользователя.
-Ситуация: "{query}"
-
-Верни JSON:
-{{
-  "role": "Работник/Работодатель/Потерпевший/и др.",
-  "needs_clarification": true/false,
-  "clarification_question": "вопрос, если роль не ясна"
-}}
-"""
-        try:
-            resp = self.llm.invoke(prompt)
-            content = resp.content if hasattr(resp, "content") else str(resp)
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            return json.loads(content[start:end])
-        except Exception:
-            return {"role": "Гражданин", "needs_clarification": False}
-
-    def detect_conflicts(self, query: str, docs: List[Document]) -> Dict:
-        """Step 7: Conflict Detection."""
-        if not docs:
-            return {"has_conflict": False}
-
-        context = "\n".join(
-            [
-                f"[{d.metadata.get('code_ru')}, ст.{d.metadata.get('article_number')}]: {d.page_content[:300]}"
-                for d in docs[:5]
-            ]
-        )
-
-        prompt = f"""Найди противоречия (коллизии) между следующими нормами для ситуации: "{query}"
-Нормы:
-{context}
-
-Иерархия: Конституция > Кодекс > Закон.
-
-Верни JSON:
-{{
-  "has_conflict": true/false,
-  "conflict_block": "Описание коллизии и какая норма сильнее",
-  "affected_articles": ["ст. X", "ст. Y"]
-}}
-"""
-        try:
-            resp = self.llm.invoke(prompt)
-            content = resp.content if hasattr(resp, "content") else str(resp)
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            return json.loads(content[start:end])
-        except Exception:
-            return {"has_conflict": False}

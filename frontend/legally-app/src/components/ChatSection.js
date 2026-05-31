@@ -17,6 +17,7 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import InfoIcon from '@mui/icons-material/Info';
 import { styled } from '@mui/material/styles';
 import welcomeVideo from '../images/welcome_video_gif_legally.mp4';
+import { sendChatMessage } from '../services/chatService';
 
 const OuterContainer = styled(Box)(({ theme }) => ({
   display: 'flex',
@@ -314,11 +315,11 @@ const ChatSection = ({
     setIsTyping(true);
     setError(null);
 
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('Требуется авторизация. Пожалуйста, войдите в систему.');
-      }
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('Требуется авторизация. Пожалуйста, войдите в систему.');
+        }
 
       // Prepare context window (last 15 messages)
       const contextWindow = messages
@@ -329,29 +330,12 @@ const ChatSection = ({
           content: m.content
         }));
 
-      const response = await fetch('http://localhost:8080/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          message,
-          chat_id: activeSession.id,
-          history: contextWindow
-        }),
+      const data = await sendChatMessage({
+        token,
+        message,
+        chatId: activeSession.id,
+        history: contextWindow,
       });
-
-      if (response.status === 401) {
-        throw new Error('Сессия истекла. Пожалуйста, войдите снова.');
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Ошибка при обработке запроса');
-      }
-
-      const data = await response.json();
 
       // Add AI response to session (Detective Mode: confidence_score, missing_fields, clarifying_questions)
       const aiMsg = {

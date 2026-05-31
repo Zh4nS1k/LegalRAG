@@ -139,9 +139,14 @@ User Query
 [Query Augmentation] ─── Key legal terms, article ranges, code names appended
     │
     ▼
-[Hybrid Retriever: 70% Pinecone + 30% BM25]
+[Summary Retriever] ─── Search document-level summaries first, then expand to full articles
+    │   • Summary docs carry jurisdiction, status, type, and topic hints
+    │
+    ▼
+[Hybrid Retriever: Dense + BM25 with RRF fusion]
     │   • Pinecone: semantic vector similarity (intfloat/multilingual-e5-large, 1024-dim)
     │   • BM25: exact keyword match with Snowball Russian stemming
+    │   • RRF: reciprocal-rank fusion keeps exact article hits and semantic hits balanced
     │
     ▼
 [_HeuristicRetriever] ─── Criminal query detection, article range narrowing
@@ -151,7 +156,7 @@ User Query
     │
     ▼
 [BGE-M3 Reranker] ─────── BAAI/bge-reranker-v2-m3, FP16 scores, top-8 select
-    │   (falls back to unranked if disabled or unavailable)
+    │   (skips neural rerank for long/mixed chunks when configured; falls back if disabled/unavailable)
     │
     ▼
 [_TrimRetriever] ──────── Truncate to max 8 docs × 1800 chars each
@@ -187,7 +192,14 @@ All values are loaded via **Pydantic `EngineSettings`** from the root `.env` fil
 | `HF_TOKEN` | `str?` | `None` | HuggingFace token (avoids rate limits) |
 | `LEGAL_RAG_LLM` | `str` | `llama-3.1-8b-instant` | Groq model name |
 | `LEGAL_RAG_LLM_BACKEND` | `str` | `groq` | `groq` or `ollama` |
+| `LEGAL_RAG_ENABLE_SUMMARY_INDEX` | `bool` | `1` | Index and query document-level summaries before full chunks |
+| `LEGAL_RAG_ENABLE_CONTEXTUAL_PREFIX` | `bool` | `1` | Prepend retrieval context to every chunk before embedding |
+| `LEGAL_RAG_USE_LLM_SUMMARIES` | `bool` | `0` | Use the LLM to build document summaries during indexing |
 | `LEGAL_RAG_USE_RERANKER` | `bool` | `1` | Enable BGE-M3 reranker |
+| `LEGAL_RAG_HYBRID_FUSION_METHOD` | `str` | `rrf` | `rrf` or `weighted` hybrid fusion |
+| `LEGAL_RAG_HYBRID_RRF_K` | `int` | `60` | RRF damping constant |
+| `LEGAL_RAG_RERANK_SKIP_LONG_DOCS` | `bool` | `1` | Skip neural rerank when long chunks would swamp short legal chunks |
+| `LEGAL_RAG_RERANK_SKIP_LONG_DOC_CHARS` | `int` | `2400` | Chunk length threshold for long-doc rerank skipping |
 | `LEGAL_RAG_CONTEXT_MAX_DOCS` | `int` | `5` | Max docs sent to LLM |
 | `LEGAL_RAG_CONTEXT_MAX_CHARS_PER_DOC` | `int` | `1200` | Max chars per doc |
 | `HF_HUB_OFFLINE` | `bool` | `0` | Set `1` for cached-model offline mode (faster boot) |
@@ -642,6 +654,20 @@ Outputs an Excel report to `benchmark_results/` with per-question metrics:
 - **Context Recall** — Were the correct articles retrieved?
 - **Context Precision** — Were irrelevant docs included?
 - **Answer Relevance** — Does the answer address the question?
+
+### Evaluation Gate
+
+Use the fixed benchmark set as a release gate before merging retrieval or prompting changes:
+
+```bash
+./venv/bin/python -m ai_service.utils.eval_gate --baseline tests/benchmarks/retrieval_quality_baseline.json
+```
+
+The gate compares the current benchmark summary and fixed-query outcomes against the baseline contract. Update the baseline only from a known-good run.
+
+### Versioned Corpus
+
+Vector ingestion writes a corpus manifest to `benchmark_results/corpus_manifests/` and stamps each chunk with a `corpus_version`. This keeps builds reproducible and auditable across rebuilds.
 
 ### Manual Retrieval Audit
 

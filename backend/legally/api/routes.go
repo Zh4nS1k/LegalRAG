@@ -39,6 +39,7 @@ func SetupRoutes(router *gin.Engine) {
 		public.GET("/validate-token", controllers.ValidateToken)
 		public.GET("/laws", controllers.GetRelevantLaws)
 		public.GET("/stats", controllers.GetSystemStats)
+		public.POST("/chat/public", controllers.HandlePublicChat)
 		// Email OTP verification
 		public.POST("/send-verification", controllers.SendVerificationCode)
 		public.POST("/verify-code", controllers.VerifyEmailCode)

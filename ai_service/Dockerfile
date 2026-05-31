@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -39,4 +39,6 @@ RUN if [ "$PREFETCH_HF_MODEL" = "1" ]; then \
     fi
 
 # Run the FastAPI app
-CMD ["uvicorn", "ai_service.api.api:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8000
+
+CMD ["uvicorn", "ai_service.api.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--timeout-graceful-shutdown", "30"]

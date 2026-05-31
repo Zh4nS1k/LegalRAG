@@ -4,20 +4,32 @@
 
 import pickle
 import os
+import logging
 import sys
 import time
+import json
 from pathlib import Path
 
 # Allow running as script from ai_service: python retrieval/build_vector_db.py
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-
-import sys
 from ai_service.core import config
 from ai_service.utils.connectivity import is_internet_available, is_cache_populated
 from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
-from ai_service.processing.prepare_data import chunks, raw_docs
+from ai_service.processing.prepare_data import CORPUS_VERSION, chunks, raw_docs, summary_chunks
+from ai_service.processing.corpus_quality import validate_corpus_documents
+from ai_service.retrieval.vector_db_utils import clean_metadata
+
+logger = logging.getLogger("ai_service.retrieval.build_vector_db")
+logging.basicConfig(
+    level=getattr(logging, os.environ.get("LEGAL_RAG_LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+
+def print(*args, **kwargs):  # noqa: A001
+    logger.info(" ".join(str(arg) for arg in args))
 
 source_allowlist = {
     part.strip() for part in os.environ.get("SOURCE_ALLOWLIST", "").split(",") if part.strip()
@@ -28,6 +40,15 @@ if append_only_mode:
         "Append-only режим: будут загружены только файлы из SOURCE_ALLOWLIST = "
         + ", ".join(sorted(source_allowlist))
     )
+
+quality_report = validate_corpus_documents(
+    raw_docs,
+    chunks,
+    corpus_version=CORPUS_VERSION,
+)
+print("Corpus quality report:")
+print(json.dumps(quality_report.to_dict(), ensure_ascii=False, indent=2))
+quality_report.assert_clean()
 
 # Проверка до очистки: есть ли ст. 136 УК в распарсенных чанках
 uk_136_chunks = [
@@ -143,63 +164,6 @@ MAX_TEXT_IN_METADATA_BYTES = 30000
 MAX_PAGE_CONTENT_CHARS = 4000
 
 
-# Whitelist + blacklist: только короткие поля, длинные — удалить или обрезать
-def clean_metadata(meta: dict) -> dict:
-    """
-    Очищает метаданные: whitelist коротких полей + blacklist длинных.
-    Гарантирует размер < 2 KB (лимит Pinecone: 40 KB).
-    """
-    blacklist = [
-        "text",
-        "content",
-        "full_text",
-        "raw",
-        "body",
-        "snippet",
-        "notes",
-        "chapter_text",
-        "page_content",
-        "raw_text",
-        "chapter_content",
-        "article_text",
-        "snippets",
-        "full_article",
-        "raw_content",
-    ]
-    allowed = [
-        "source",
-        "code_ru",
-        "code_kz",
-        "article_number",
-        # Legal hierarchy fields (NEW)
-        "chapter_title",
-        "chapter_number",
-        "clause_level",
-        "revision_date",
-        # Legacy fields
-        "chapter",
-        "section",
-    ]
-
-    clean = {}
-    for k, v in meta.items():
-        if k in blacklist:
-            continue  # не добавляем длинные поля вообще
-        if k in allowed:
-            v_str = str(v)
-            clean[k] = v_str[:200] + "..." if len(v_str) > 200 else v_str
-        else:
-            # неизвестное поле — добавляем только если короткое, иначе обрезаем
-            v_str = str(v)
-            size_bytes = len(v_str.encode("utf-8"))
-            if size_bytes < 1000:
-                clean[k] = v_str
-            else:
-                print(f"Предупреждение: поле '{k}' обрезано (было {size_bytes} байт)")
-                clean[k] = v_str[:200] + "..."
-    return clean
-
-
 print("Очистка метаданных (Pinecone limit: 40 KB)...")
 print("Отладка метаданных (ищем превышение):")
 
@@ -240,6 +204,15 @@ for idx, chunk in enumerate(chunks):
 
     clean_chunk = Document(page_content=content, metadata=clean_meta)
     clean_chunks.append(clean_chunk)
+
+clean_summary_chunks = []
+if summary_chunks:
+    print("\nОчистка summary-метаданных:")
+    for idx, chunk in enumerate(summary_chunks):
+        clean_meta = clean_metadata(chunk.metadata)
+        clean_summary_chunks.append(
+            Document(page_content=chunk.page_content, metadata=clean_meta)
+        )
 
 print(f"Максимальный размер метаданных (без text): {max_meta_size} байт (лимит: 40960)")
 if bad_chunk_idx >= 0:
@@ -340,6 +313,28 @@ for i in range(0, total_chunks, BATCH_SIZE):
     # Brief cooldown to avoid free-tier rate limits
     _time.sleep(0.3)
 
+if clean_summary_chunks:
+    print(f"\nЗагрузка {len(clean_summary_chunks)} summary-чанков (пакетами по 50)...")
+    total_summary_chunks = len(clean_summary_chunks)
+    total_summary_batches = (total_summary_chunks + BATCH_SIZE - 1) // BATCH_SIZE
+    for i in range(0, total_summary_chunks, BATCH_SIZE):
+        batch_num = i // BATCH_SIZE + 1
+        batch = clean_summary_chunks[i : i + BATCH_SIZE]
+        print(f"   Summary batch {batch_num}/{total_summary_batches}: documents {i} - {i + len(batch)}")
+        for attempt in range(3):
+            try:
+                vector_store.add_documents(batch, batch_size=32)
+                break
+            except Exception as e:
+                wait = 5 * (2**attempt)
+                print(f"   ⚠️  Summary attempt {attempt + 1}/3 failed: {e}")
+                if attempt < 2:
+                    print(f"   ⏳ Ждём {wait}с перед повтором...")
+                    _time.sleep(wait)
+                else:
+                    print(f"   ❌ Summary batch {batch_num} skipped after 3 attempts.")
+        _time.sleep(0.3)
+
 
 if append_only_mode:
     append_pickle = config.BASE_DIR / "chunks_for_bm25_append_only.pkl"
@@ -354,9 +349,32 @@ else:
         pickle.dump(clean_chunks, f)
     print(f"BM25 pickle обновлён: {config.CHUNKS_PICKLE_PATH}")
 
+versioned_pickle = config.BASE_DIR / f"chunks_for_bm25_{CORPUS_VERSION}.pkl"
+with open(versioned_pickle, "wb") as f:
+    pickle.dump(clean_chunks, f)
+print(f"Версионированный BM25 pickle сохранён: {versioned_pickle}")
+
 print("База Pinecone создана!")
 print(f"Документов: {len(raw_docs)}")
 print(f"Чанков: {len(chunks)}")
+config.CORPUS_MANIFEST_DIR.mkdir(parents=True, exist_ok=True)
+manifest_payload = {
+    "corpus_version": CORPUS_VERSION,
+    "documents": len(raw_docs),
+    "chunks": len(chunks),
+    "summary_chunks": len(clean_summary_chunks),
+    "source_allowlist": sorted(source_allowlist),
+    "chunk_pickle": str(config.CHUNKS_PICKLE_PATH),
+    "summary_chunk_pickle": str(config.SUMMARY_CHUNKS_PICKLE_PATH),
+    "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "quality_report": quality_report.to_dict(),
+}
+manifest_path = config.CORPUS_MANIFEST_DIR / f"corpus_manifest_{CORPUS_VERSION}.json"
+latest_manifest_path = config.CORPUS_MANIFEST_DIR / "corpus_manifest.latest.json"
+for path in (manifest_path, latest_manifest_path):
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(manifest_payload, handle, ensure_ascii=False, indent=2)
+print(f"Corpus manifest written: {manifest_path}")
 
 # Проверка после очистки: есть ли ст. 136 УК РК (баланы ауыстыру) в загружаемых чанках
 uk_136 = [

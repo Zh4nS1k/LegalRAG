@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ai_service.processing.code_names import get_code_name
+from ai_service.core.code_registry import get_code_name
 from ai_service.utils.gold_citations_retrieval_benchmark import (
     _compute_metrics,
     _gold_to_pair,

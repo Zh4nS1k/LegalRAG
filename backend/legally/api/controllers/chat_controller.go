@@ -63,6 +63,12 @@ type PythonChatResponse struct {
 	ClarifyingQuestions []string               `json:"clarifying_questions"`
 }
 
+type PublicChatRequest struct {
+	Query   string           `json:"query"`
+	Message string           `json:"message"`
+	History []HistoryMessage `json:"history"`
+}
+
 // Structs for the Frontend response (matching what ChatSection.js expects)
 // Frontend expects: { answer: string, mode: string, sources: []SourceDetail }
 // Detective Mode adds: confidence_score, missing_fields, clarifying_questions
@@ -126,69 +132,75 @@ func HandleChat(c *gin.Context) {
 	}
 	// ─────────────────────────────────────────────────────────────────────────
 
-	// Prepare request to Python API using server-loaded history
-	pythonPayload := PythonChatRequest{
+	pythonResp, err := callPythonAI(c, PythonChatRequest{
 		Query:   req.Message,
 		History: serverHistory, // ← always from MongoDB, never from client
-	}
-	jsonData, err := json.Marshal(pythonPayload)
+	})
 	if err != nil {
-		utils.LogError(fmt.Sprintf("Failed to marshal python payload: %v", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return
 	}
 
-	// Python API URL (use AI_SERVICE_URL in Docker, e.g. http://ai_service:8000)
-	pythonAPIURL := utils.GetAIServiceBaseURL() + "/api/v1/internal-chat"
+	startDB := time.Now()
+	// Save AI response
+	frontendResp := buildChatResponse(pythonResp)
+	_ = services.SaveChatMessage(userID, req.ChatID, "assistant", frontendResp.Answer, frontendResp.Sources)
+	middleware.RecordMetric(c, "db_cache_overhead", time.Since(startDB))
 
-	startInternal := time.Now()
-	httpReq, err := http.NewRequest("POST", pythonAPIURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		utils.LogError(fmt.Sprintf("Failed to create request: %v", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		return
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if traceID, exists := c.Get("X-Trace-ID"); exists {
-		httpReq.Header.Set("X-Trace-ID", traceID.(string))
-	}
+	finalTraceReport := frontendResp.TraceReport
+	if timerObj, exists := c.Get("latency_timer"); exists {
+		if timer, ok := timerObj.(*middleware.Timer); ok {
+			goProcessing := time.Since(timer.StartTime).Milliseconds()
 
-	// Use the persistent aiHTTPClient — avoids a new TCP handshake on every request
-	resp, err := aiHTTPClient.Do(httpReq)
-	middleware.RecordMetric(c, "internal_service_call", time.Since(startInternal))
-	if err != nil {
-		utils.LogError(fmt.Sprintf("Failed to call Python API: %v", err))
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ИИ-сервис недоступен. Попробуйте позже."})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		errorMsg := string(bodyBytes)
-		utils.LogError(fmt.Sprintf("Python API returned error: %d - %s", resp.StatusCode, errorMsg))
-
-		// Map specific internal errors to user-friendly messages
-		if strings.Contains(errorMsg, "Rate limit reached") {
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": "Превышен лимит запросов к ИИ. Пожалуйста, попробуйте через несколько минут."})
-		} else {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Ошибка ИИ-сервиса при обработке вопроса."})
+			if traceMap, ok := finalTraceReport.(map[string]interface{}); ok {
+				if metricsMs, ok := traceMap["metrics_ms"].(map[string]interface{}); ok {
+					metricsMs["go_processing"] = goProcessing
+					if breakdown, ok := metricsMs["breakdown"].(map[string]interface{}); ok {
+						for k, v := range timer.Metrics {
+							breakdown[k] = v
+						}
+					}
+				}
+				finalTraceReport = traceMap
+			}
 		}
+	}
+
+	response := frontendResp
+	response.TraceReport = finalTraceReport
+
+	c.JSON(http.StatusOK, response)
+}
+
+func HandlePublicChat(c *gin.Context) {
+	var req PublicChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Query is required"})
 		return
 	}
 
-	// Parse Python response
-	var pythonResp PythonChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&pythonResp); err != nil {
-		utils.LogError(fmt.Sprintf("Failed to decode Python response: %v", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process AI response"})
+	query := strings.TrimSpace(req.Query)
+	if query == "" {
+		query = strings.TrimSpace(req.Message)
+	}
+	if query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Query is required"})
 		return
 	}
 
-	// Transform to Frontend format
-	sources := make([]models.SourceDetail, 0)
+	pythonResp, err := callPythonAI(c, PythonChatRequest{
+		Query:   query,
+		History: req.History,
+	})
+	if err != nil {
+		return
+	}
+
+	c.JSON(http.StatusOK, buildChatResponse(pythonResp))
+}
+
+func buildChatResponse(pythonResp PythonChatResponse) ChatResponse {
+	sources := make([]models.SourceDetail, 0, len(pythonResp.SourceDocuments))
 	for _, doc := range pythonResp.SourceDocuments {
-		// Format source string, e.g., "Source Name (Article 123)"
 		sourceTitle := ""
 		if src, ok := doc.Metadata["source"].(string); ok {
 			sourceTitle += src
@@ -205,41 +217,68 @@ func HandleChat(c *gin.Context) {
 		})
 	}
 
-	startDB := time.Now()
-	// Save AI response
-	_ = services.SaveChatMessage(userID, req.ChatID, "assistant", pythonResp.Result, sources)
-	middleware.RecordMetric(c, "db_cache_overhead", time.Since(startDB))
-
-	var finalTraceReport interface{}
-	if timerObj, exists := c.Get("latency_timer"); exists {
-		if timer, ok := timerObj.(*middleware.Timer); ok {
-			goProcessing := time.Since(timer.StartTime).Milliseconds()
-
-			if pythonResp.TraceReport != nil {
-				if metricsMs, ok := pythonResp.TraceReport["metrics_ms"].(map[string]interface{}); ok {
-					metricsMs["go_processing"] = goProcessing
-					if breakdown, ok := metricsMs["breakdown"].(map[string]interface{}); ok {
-						for k, v := range timer.Metrics {
-							breakdown[k] = v
-						}
-					}
-				}
-				finalTraceReport = pythonResp.TraceReport
-			}
-		}
-	}
-
-	response := ChatResponse{
+	return ChatResponse{
 		Answer:              pythonResp.Result,
 		Mode:                "legal_rag",
 		Sources:             sources,
-		TraceReport:         finalTraceReport,
+		TraceReport:         pythonResp.TraceReport,
 		ConfidenceScore:     pythonResp.ConfidenceScore,
 		MissingFields:       pythonResp.MissingFields,
 		ClarifyingQuestions: pythonResp.ClarifyingQuestions,
 	}
+}
 
-	c.JSON(http.StatusOK, response)
+func callPythonAI(c *gin.Context, payload PythonChatRequest) (PythonChatResponse, error) {
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		utils.LogError(fmt.Sprintf("Failed to marshal python payload: %v", err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return PythonChatResponse{}, err
+	}
+
+	pythonAPIURL := utils.GetAIServiceBaseURL() + "/api/v1/internal-chat"
+	startInternal := time.Now()
+	httpReq, err := http.NewRequest("POST", pythonAPIURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		utils.LogError(fmt.Sprintf("Failed to create request: %v", err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return PythonChatResponse{}, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if traceID, exists := c.Get("X-Trace-ID"); exists {
+		httpReq.Header.Set("X-Trace-ID", traceID.(string))
+	}
+
+	resp, err := aiHTTPClient.Do(httpReq)
+	middleware.RecordMetric(c, "internal_service_call", time.Since(startInternal))
+	if err != nil {
+		utils.LogError(fmt.Sprintf("Failed to call Python API: %v", err))
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ИИ-сервис недоступен. Попробуйте позже."})
+		return PythonChatResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		errorMsg := string(bodyBytes)
+		utils.LogError(fmt.Sprintf("Python API returned error: %d - %s", resp.StatusCode, errorMsg))
+
+		if strings.Contains(errorMsg, "Rate limit reached") {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "Превышен лимит запросов к ИИ. Пожалуйста, попробуйте через несколько минут."})
+		} else {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Ошибка ИИ-сервиса при обработке вопроса."})
+		}
+		return PythonChatResponse{}, fmt.Errorf("python api returned status %d", resp.StatusCode)
+	}
+
+	var pythonResp PythonChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pythonResp); err != nil {
+		utils.LogError(fmt.Sprintf("Failed to decode Python response: %v", err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process AI response"})
+		return PythonChatResponse{}, err
+	}
+
+	return pythonResp, nil
 }
 
 func GetChatHistory(c *gin.Context) {

@@ -398,16 +398,22 @@ def _build_comparison(current_summary: dict[str, Any], previous_summary: dict[st
     return comparison
 
 
-def main() -> None:
-    args = _parse_args()
-    queries_path = Path(args.queries)
+def run_retrieval_quality_benchmark(
+    *,
+    queries_path: str | Path,
+    top_k: int = 5,
+    limit: int = 0,
+    output_path: str | Path = "benchmark_results/retrieval_quality_benchmark.json",
+    compare_to: str | Path | None = None,
+) -> dict[str, Any]:
+    queries_path = Path(queries_path)
     if not queries_path.exists():
         raise FileNotFoundError(f"Queries JSON not found: {queries_path}")
 
     from ai_service.retrieval.rag_chain import get_retriever_for_coverage
 
-    queries = _load_queries(queries_path, args.limit)
-    retriever = get_retriever_for_coverage(args.top_k)
+    queries = _load_queries(queries_path, limit)
+    retriever = get_retriever_for_coverage(top_k)
 
     results: list[dict[str, Any]] = []
     for index, item in enumerate(queries, start=1):
@@ -420,8 +426,8 @@ def main() -> None:
             error = str(exc)
         elapsed = round(time.perf_counter() - started, 3)
 
-        predicted_articles = _extract_predicted_articles(docs, args.top_k)
-        predicted_pairs = _extract_predicted_pairs(docs, args.top_k)
+        predicted_articles = _extract_predicted_articles(docs, top_k)
+        predicted_pairs = _extract_predicted_pairs(docs, top_k)
         metrics = _compute_metrics(
             item["relevant_articles"],
             predicted_articles,
@@ -452,7 +458,7 @@ def main() -> None:
             f"elapsed={elapsed}s"
         )
 
-    summary = _build_summary(results, args.top_k)
+    summary = _build_summary(results, top_k)
     payload: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
         "queries_path": str(queries_path),
@@ -460,7 +466,7 @@ def main() -> None:
         "results": results,
     }
 
-    compare_path = Path(args.compare_to).expanduser() if args.compare_to else None
+    compare_path = Path(compare_to).expanduser() if compare_to else None
     if compare_path:
         with open(compare_path, "r", encoding="utf-8") as handle:
             previous = json.load(handle)
@@ -471,16 +477,30 @@ def main() -> None:
             "delta": _build_comparison(summary, previous_summary),
         }
 
-    output_path = Path(args.output)
+    output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+    return payload
+
+
+def main() -> None:
+    args = _parse_args()
+    payload = run_retrieval_quality_benchmark(
+        queries_path=args.queries,
+        top_k=args.top_k,
+        limit=args.limit,
+        output_path=args.output,
+        compare_to=args.compare_to or None,
+    )
+    summary = payload["summary"]
 
     print("\nSummary:")
     print(f"  strict_hit@{args.top_k}: {summary['strict_hit@k']:.3f}")
     print(f"  soft_hit@{args.top_k}: {summary['soft_hit@k']:.3f}")
     print(f"  mrr: {summary['mrr']:.3f}")
-    print(f"Saved: {output_path}")
+    print(f"Saved: {args.output}")
     if "comparison" in payload:
         delta = payload["comparison"]["delta"]
         print("Comparison:")

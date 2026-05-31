@@ -27,6 +27,10 @@ NOT_FOUND_MSG = "Информация не найдена в доступных 
 _reranker_model = None
 
 
+def _escape_format_braces(text: str) -> str:
+    return (text or "").replace("{", "{{").replace("}", "}}")
+
+
 def _get_reranker():
     global _reranker_model
     if _reranker_model is None:
@@ -272,8 +276,10 @@ async def _cove_verify(
         "Вопрос: Соответствует ли ответ приведённому контексту? Ответь одним словом: ДА или НЕТ."
     )
     try:
+        safe_context = _escape_format_braces(context_str)
+        safe_response = _escape_format_braces(response[:2000])
         resp = await asyncio.to_thread(
-            llm.invoke, prompt.format(context=context_str, response=response[:2000])
+            llm.invoke, prompt.format(context=safe_context, response=safe_response)
         )
         ans = (resp.content if hasattr(resp, "content") else str(resp)).strip().upper()
         all_ok = "НЕТ" not in ans[:10]

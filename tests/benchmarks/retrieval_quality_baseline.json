@@ -1,0 +1,14 @@
+{
+  "name": "legal_rag_retrieval_quality_baseline",
+  "queries_path": "tests/benchmarks/test_queries.json",
+  "top_k": 5,
+  "minimum_summary": {
+    "strict_hit@k": 0.75,
+    "soft_hit@k": 0.95,
+    "mrr": 0.65,
+    "map_soft": 0.65,
+    "latency_sec_avg": 12.0,
+    "latency_sec_p95": 20.0
+  },
+  "notes": "Replace this contract with a benchmark snapshot from a known-good run once the live corpus is available."
+}

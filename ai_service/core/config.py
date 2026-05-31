@@ -71,6 +71,7 @@ except Exception as e:
 
 DOCUMENTS_DIR = BASE_DIR / "documents"
 BENCHMARK_DIR = BASE_DIR / "benchmark_results"
+CORPUS_MANIFEST_DIR = BENCHMARK_DIR / "corpus_manifests"
 
 # Adilet ZAN — источник актуальных кодексов (adilet.zan.kz)
 ADILET_BASE_URL = "https://adilet.zan.kz/rus/docs"
@@ -122,6 +123,20 @@ ADILET_SOURCES = [
     ("law_on_microfinance.txt", "Z1200000056"),  # О микрофинансовой деятельности
     ("law_on_citizen_bankruptcy.txt", "Z2200000178"),  # О восстановлении платежеспособности и банкротстве граждан
     ("law_on_rehabilitation_bankruptcy.txt", "Z1400000176"),  # О реабилитации и банкротстве
+    ("law_on_access_to_information.txt", "Z1500000401"),  # Об доступе к информации
+    (
+        "law_on_electronic_document_signature.txt",
+        "Z030000370_",
+    ),  # Об электронном документе и электронной цифровой подписи
+    ("law_on_mass_media.txt", "Z2400000093"),  # О масс-медиа
+    ("law_on_state_secrets.txt", "Z990000349_"),  # О государственных секретах
+    (
+        "law_on_advocacy_and_legal_assistance.txt",
+        "Z1800000176",
+    ),  # Об адвокатской деятельности и юридической помощи
+    ("law_on_informatization.txt", "Z1500000418"),  # Об информатизации
+    ("law_on_migration_of_population.txt", "Z1100000477"),  # О миграции населения
+    ("law_on_languages.txt", "Z970000151_"),  # О языках в РК
 ]
 
 # Pinecone — векторная БД (облако)
@@ -131,6 +146,9 @@ PINECONE_API_KEY = env_settings.PINECONE_API_KEY
 GROQ_API_KEY = env_settings.GROQ_API_KEY
 HF_TOKEN = env_settings.HF_TOKEN
 PINECONE_DIMENSION = 1024  # multilingual-e5-large
+PINECONE_ENRICHMENT_TIMEOUT_SEC = float(
+    os.environ.get("LEGAL_RAG_PINECONE_ENRICHMENT_TIMEOUT_SEC", "2.0")
+)
 
 # Эмбеддинги
 EMBEDDING_MODEL = os.environ.get(
@@ -243,9 +261,25 @@ RETRIEVER_FILTER_ARTICLE_NUMBER = os.environ.get(
 # Hybrid search: BM25 (exact terms e.g. "Article 122") + Dense vectors (semantic). Weights sum to 1.0.
 BM25_WEIGHT = float(os.environ.get("LEGAL_RAG_BM25_WEIGHT", "0.4"))
 VECTOR_WEIGHT = float(os.environ.get("LEGAL_RAG_VECTOR_WEIGHT", "0.6"))
+HYBRID_FUSION_METHOD = os.environ.get("LEGAL_RAG_HYBRID_FUSION_METHOD", "rrf").strip().lower()
+HYBRID_RRF_K = int(os.environ.get("LEGAL_RAG_HYBRID_RRF_K", "60"))
+HYBRID_RRF_SCORE_SCALE = float(
+    os.environ.get("LEGAL_RAG_HYBRID_RRF_SCORE_SCALE", "100.0")
+)
 CHUNKS_PICKLE_PATH = BASE_DIR / "chunks_for_bm25.pkl"
+SUMMARY_CHUNKS_PICKLE_PATH = BASE_DIR / "summary_chunks_for_bm25.pkl"
+# Summary index: search summaries first, then expand to full chunks.
+ENABLE_SUMMARY_INDEX = os.environ.get("LEGAL_RAG_ENABLE_SUMMARY_INDEX", "1") == "1"
+ENABLE_CONTEXTUAL_PREFIX = os.environ.get("LEGAL_RAG_ENABLE_CONTEXTUAL_PREFIX", "1") == "1"
+USE_LLM_CONTEXTUAL_PREFIX = os.environ.get("LEGAL_RAG_USE_LLM_CONTEXTUAL_PREFIX", "0") == "1"
+USE_LLM_SUMMARIES = os.environ.get("LEGAL_RAG_USE_LLM_SUMMARIES", "0") == "1"
+SUMMARY_INDEX_TOP_K = int(os.environ.get("LEGAL_RAG_SUMMARY_INDEX_TOP_K", "4"))
+SUMMARY_EXPANSION_MAX_CODES = int(
+    os.environ.get("LEGAL_RAG_SUMMARY_EXPANSION_MAX_CODES", "3")
+)
 # Reranker
 USE_RERANKER = os.environ.get("LEGAL_RAG_USE_RERANKER", "1") == "1"
+RERANKER_MANDATORY = os.environ.get("LEGAL_RAG_RERANKER_MANDATORY", "1") == "1"
 RERANKER_FALLBACK_MODEL = os.environ.get(
     "LEGAL_RAG_RERANKER_FALLBACK_MODEL", "BAAI/bge-reranker-base"
 )
@@ -258,6 +292,13 @@ RERANK_SKIP_LEXICAL_THRESHOLD = float(
 )
 RERANK_SKIP_MIN_CODE_MATCHES = int(
     os.environ.get("LEGAL_RAG_RERANK_SKIP_MIN_CODE_MATCHES", "2")
+)
+RERANK_SKIP_LONG_DOCS = os.environ.get("LEGAL_RAG_RERANK_SKIP_LONG_DOCS", "1") == "1"
+RERANK_SKIP_LONG_DOC_CHARS = int(
+    os.environ.get("LEGAL_RAG_RERANK_SKIP_LONG_DOC_CHARS", "2400")
+)
+RERANK_SKIP_SHORT_DOC_CHARS = int(
+    os.environ.get("LEGAL_RAG_RERANK_SKIP_SHORT_DOC_CHARS", "700")
 )
 USE_LLM_QUERY_REWRITE = os.environ.get("LEGAL_RAG_USE_LLM_QUERY_REWRITE", "0") == "1"
 EXPERIMENTAL_DEDUP_RETRIEVAL = (
@@ -291,6 +332,12 @@ AGENTIC_QUERY_VARIATIONS = int(
 )
 # CoVe: enable post-response verification against cited articles
 AGENTIC_COVE_ENABLED = os.environ.get("LEGAL_RAG_AGENTIC_COVE_ENABLED", "1") == "1"
+
+# Sherlock audit mode: disabled by default, opt-in only.
+LEGAL_RAG_ENABLE_SHERLOCK = os.environ.get("LEGAL_RAG_ENABLE_SHERLOCK", "0") == "1"
+
+# Offline QA mode: deterministic extractive answer from retrieved docs.
+LEGAL_RAG_OFFLINE_QA = os.environ.get("LEGAL_RAG_OFFLINE_QA", "0") == "1"
 
 # Detective Mode exit strategy: stop asking after threshold or after one round
 DETECTIVE_CONFIDENCE_THRESHOLD = float(

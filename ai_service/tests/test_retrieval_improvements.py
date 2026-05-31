@@ -14,8 +14,10 @@ from ai_service.retrieval.rag_chain import (
     _lexical_overlap_score,
     _looks_like_raw_code_name,
     _normalize_article_number,
+    _fuse_retrieval_candidates,
     _rank_docs_with_legal_scoring,
     _rewrite_query_for_retrieval,
+    _TrimRetriever,
 )
 
 
@@ -32,6 +34,7 @@ def test_build_indexable_text_includes_legal_structure():
 
     result = _build_indexable_text("1. Исполнитель обязан оказать услугу.", meta)
 
+    assert "Context: This chunk is from Chapter 33 Возмездное оказание услуг" in result
     assert "Кодекс: Гражданский кодекс РК (Особенная часть)" in result
     assert "Глава: 33 Возмездное оказание услуг" in result
     assert "Статья: 683. Договор возмездного оказания услуг" in result
@@ -39,14 +42,61 @@ def test_build_indexable_text_includes_legal_structure():
     assert "Текст: 1. Исполнитель обязан оказать услугу." in result
 
 
+def test_build_summary_document_uses_summary_metadata():
+    from ai_service.processing.prepare_data import _build_summary_document
+
+    source_docs = [
+        Document(
+            page_content="Context: This chunk is from Article 1 of the Civil Code.",
+            metadata={
+                "source": "civil_code.txt",
+                "code_ru": "Гражданский кодекс РК",
+                "code_kz": "Қазақстан Республикасының Азаматтық кодексі",
+                "chapter_title": "Общие положения",
+                "chapter_number": "1",
+                "article_number": "1",
+                "article_title": "Предмет регулирования",
+                "clause_level": "article",
+            },
+        ),
+        Document(
+            page_content="Context: This chunk is from Article 2 of the Civil Code.",
+            metadata={
+                "source": "civil_code.txt",
+                "code_ru": "Гражданский кодекс РК",
+                "code_kz": "Қазақстан Республикасының Азаматтық кодексі",
+                "chapter_title": "Общие положения",
+                "chapter_number": "1",
+                "article_number": "2",
+                "article_title": "Отношения, регулируемые гражданским законодательством",
+                "clause_level": "article",
+            },
+        ),
+    ]
+
+    summary = _build_summary_document(
+        "civil_code.txt",
+        source_docs[0].metadata,
+        source_docs,
+        corpus_version="abc123",
+    )
+
+    assert summary.metadata["doc_kind"] == "summary"
+    assert summary.metadata["summary_level"] == "document"
+    assert summary.metadata["summary_source"] == "civil_code.txt"
+    assert summary.metadata["jurisdiction"] == "RK"
+    assert "Summary index entry for retrieval" in summary.page_content
+    assert "Representative articles" in summary.page_content
+
+
 def test_rewrite_query_for_retrieval_adds_legal_terms():
     query = "можно ли платить наличными в дубае за товар для тоо"
 
     rewritten = _rewrite_query_for_retrieval(query)
 
-    assert "Закон о валютном регулировании и валютном контроле" in rewritten
     assert "наличные расчеты" in rewritten
     assert "товарищество с ограниченной ответственностью" in rewritten
+    assert "товариществах с ограниченной и дополнительной ответственностью" in rewritten
 
 
 def test_build_retrieval_queries_is_unique_and_limited():
@@ -173,6 +223,46 @@ def test_dedup_retriever_collapses_same_code_and_article():
     assert [doc.metadata["article_number"] for doc in docs] == ["190", "191"]
 
 
+def test_trim_retriever_uses_parent_article_text_for_short_chunks():
+    class _StaticRetriever:
+        def invoke(self, query):
+            return [
+                Document(
+                    page_content="Пункт 1.",
+                    metadata={
+                        "code_ru": "Уголовный кодекс РК",
+                        "article_number": "190",
+                        "parent_article_text": "Статья 190. Мошенничество. Полный текст статьи с контекстом.",
+                    },
+                )
+            ]
+
+    trimmed = _TrimRetriever(base_retriever=_StaticRetriever(), max_docs=1).invoke(
+        "мошенничество"
+    )
+
+    assert len(trimmed) == 1
+    assert "Пункт 1." not in trimmed[0].page_content
+    assert "Полный текст статьи с контекстом" in trimmed[0].page_content
+
+
+def test_article_splitter_preserves_parent_article_text():
+    from ai_service.processing.prepare_data import ArticleTextSplitter
+
+    splitter = ArticleTextSplitter()
+    docs = splitter.create_documents(
+        [
+            "Статья 1. Тестовая статья с достаточным количеством текста для разбиения.\n"
+            "1. Первый пункт содержит достаточно текста для проверки.\n"
+            "2. Второй пункт также содержит достаточно текста для проверки."
+        ],
+        [{"source": "documents/constitution.txt"}],
+    )
+
+    assert docs
+    assert all(doc.metadata.get("parent_article_text") for doc in docs)
+
+
 def test_apply_legal_score_boosts_matching_article_and_penalizes_wrong_domain():
     query = "статья 190 уголовное мошенничество"
     matched = Document(
@@ -278,3 +368,59 @@ def test_rank_docs_with_legal_scoring_prioritizes_code_and_article_match():
     )
 
     assert ranked[0].metadata["code_ru"] == "Гражданский кодекс РК (Особенная часть)"
+
+
+def test_fused_retrieval_candidates_prioritize_docs_supported_by_both_sources():
+    query = "какая ответственность за кражу"
+    vector_doc = Document(
+        page_content="Статья 188. Кража",
+        metadata={
+            "code_ru": "Уголовный кодекс РК",
+            "article_number": "188",
+            "article_title": "Кража",
+        },
+    )
+    bm25_doc = Document(
+        page_content="Статья 190. Мошенничество",
+        metadata={
+            "code_ru": "Уголовный кодекс РК",
+            "article_number": "190",
+            "article_title": "Мошенничество",
+        },
+    )
+    vector_candidates = {
+        ("Уголовный кодекс РК", "188"): {
+            "doc": vector_doc,
+            "vector_raw": 0.95,
+            "bm25_raw": 0.0,
+        },
+        ("Уголовный кодекс РК", "190"): {
+            "doc": bm25_doc,
+            "vector_raw": 0.10,
+            "bm25_raw": 0.0,
+        },
+    }
+    bm25_candidates = {
+        ("Уголовный кодекс РК", "188"): {
+            "doc": vector_doc,
+            "vector_raw": 0.95,
+            "bm25_raw": 0.90,
+        },
+        ("Уголовный кодекс РК", "190"): {
+            "doc": bm25_doc,
+            "vector_raw": 0.10,
+            "bm25_raw": 0.85,
+        },
+    }
+
+    ranked = _fuse_retrieval_candidates(
+        query,
+        vector_candidates=vector_candidates,
+        bm25_candidates=bm25_candidates,
+        target_codes=["Уголовный кодекс РК"],
+        target_articles=["188"],
+        limit=5,
+    )
+
+    assert ranked[0].metadata["article_number"] == "188"
+    assert ranked[0].metadata["relevance_score"] >= ranked[1].metadata["relevance_score"]

@@ -16,9 +16,22 @@ import (
 
 var ragService = services.NewRAGService()
 
+func rejectLegacyRAG(c *gin.Context) bool {
+	if services.LegacyGoRAGEnabled() {
+		return false
+	}
+	c.JSON(http.StatusServiceUnavailable, gin.H{
+		"error": "Legacy Go RAG is disabled in production. Use the Python AI service.",
+	})
+	return true
+}
+
 // UploadRAGDocument handles uploading a new document to the RAG system
 func UploadRAGDocument(c *gin.Context) {
 	utils.LogAction("Получен запрос на загрузку RAG документа")
+	if rejectLegacyRAG(c) {
+		return
+	}
 
 	// Parse form data
 	var req models.RAGUploadRequest
@@ -57,6 +70,9 @@ func UploadRAGDocument(c *gin.Context) {
 // SearchRAGDocuments handles searching for documents in the RAG system
 func SearchRAGDocuments(c *gin.Context) {
 	utils.LogAction("Получен запрос на поиск RAG документов")
+	if rejectLegacyRAG(c) {
+		return
+	}
 
 	var req models.RAGSearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -93,6 +109,9 @@ func SearchRAGDocuments(c *gin.Context) {
 // GetRAGDocuments retrieves RAG documents with pagination
 func GetRAGDocuments(c *gin.Context) {
 	utils.LogAction("Получен запрос на получение RAG документов")
+	if rejectLegacyRAG(c) {
+		return
+	}
 
 	// Parse query parameters
 	limitStr := c.DefaultQuery("limit", "20")
@@ -132,6 +151,9 @@ func GetRAGDocuments(c *gin.Context) {
 // DeleteRAGDocument deletes a RAG document
 func DeleteRAGDocument(c *gin.Context) {
 	utils.LogAction("Получен запрос на удаление RAG документа")
+	if rejectLegacyRAG(c) {
+		return
+	}
 
 	docID := c.Param("id")
 	if docID == "" {
@@ -162,6 +184,9 @@ func DeleteRAGDocument(c *gin.Context) {
 // GetRAGStats returns statistics about RAG documents
 func GetRAGStats(c *gin.Context) {
 	utils.LogAction("Получен запрос на статистику RAG документов")
+	if rejectLegacyRAG(c) {
+		return
+	}
 
 	// Get statistics
 	stats, err := ragService.GetRAGStats()
@@ -209,6 +234,9 @@ func GetRAGCategories(c *gin.Context) {
 // ReprocessRAGDocument reprocesses a document (regenerates embeddings)
 func ReprocessRAGDocument(c *gin.Context) {
 	utils.LogAction("Получен запрос на переобработку RAG документа")
+	if rejectLegacyRAG(c) {
+		return
+	}
 
 	docID := c.Param("id")
 	if docID == "" {

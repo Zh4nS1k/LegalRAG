@@ -5,8 +5,11 @@ import os
 import re
 import sys
 import threading
+import concurrent.futures
 import time
 import json
+import hashlib
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, List, Optional, Sequence
 
@@ -18,6 +21,8 @@ from langchain_core.retrievers import BaseRetriever
 from pydantic import Field
 
 from ai_service.core import config
+from ai_service.retrieval.core import MinimalLegalRetriever
+from ai_service.utils.circuit_breaker import CircuitBreaker, CircuitBreakerProxy
 from ai_service.lifecycle_hooks import network_sensor
 from ai_service.retrieval.domain import detect_domain, domain_matches_code
 from ai_service.retrieval.query_rewrite import rewrite_query
@@ -93,6 +98,37 @@ _retriever_instance = None
 _llm_instance = None
 _disable_pinecone = os.environ.get("LEGAL_RAG_DISABLE_PINECONE", "0") == "1"
 _context_tokenizer = None
+_groq_breaker = CircuitBreaker(
+    "groq",
+    failure_threshold=int(os.environ.get("LEGAL_RAG_GROQ_BREAKER_THRESHOLD", "5")),
+    reset_timeout=int(os.environ.get("LEGAL_RAG_GROQ_BREAKER_TIMEOUT", "60")),
+)
+_pinecone_breaker = CircuitBreaker(
+    "pinecone",
+    failure_threshold=int(os.environ.get("LEGAL_RAG_PINECONE_BREAKER_THRESHOLD", "3")),
+    reset_timeout=int(os.environ.get("LEGAL_RAG_PINECONE_BREAKER_TIMEOUT", "30")),
+)
+
+
+def _is_connection_failure(exc: Exception) -> bool:
+    name = exc.__class__.__name__
+    return isinstance(exc, ConnectionError) or name.endswith("ConnectionError") or name.endswith("ConnectError")
+
+
+def _similarity_search_with_timeout(
+    store: Any,
+    query: str,
+    *,
+    k: int,
+    filter: dict[str, Any],
+    timeout_sec: float,
+):
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(store.similarity_search, query, k=k, filter=filter)
+    try:
+        return future.result(timeout=timeout_sec)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 class PrefixedEmbeddings:
@@ -123,6 +159,26 @@ def _get_context_tokenizer():
         except Exception:
             _context_tokenizer = False
     return _context_tokenizer
+
+
+def reset_instances() -> None:
+    global _embeddings_instance, _vector_store_instance, _retriever_instance, _llm_instance, _context_tokenizer
+    with _init_lock:
+        _embeddings_instance = None
+        _vector_store_instance = None
+        _retriever_instance = None
+        _llm_instance = None
+        _context_tokenizer = None
+        if hasattr(_ensure_latency_patches, "_done"):
+            _ensure_latency_patches._done = False
+    clear_qa_cache()
+
+
+def get_breaker_states() -> dict[str, str]:
+    return {
+        "groq": _groq_breaker.state,
+        "pinecone": _pinecone_breaker.state,
+    }
 
 
 def _resolve_torch_dtype(value: str):
@@ -451,6 +507,16 @@ def get_vector_store():
                         namespace=config.PINECONE_NAMESPACE or "default",
                         pinecone_api_key=config.PINECONE_API_KEY,
                     )
+                    _vector_store_instance = CircuitBreakerProxy(
+                        _vector_store_instance,
+                        _pinecone_breaker,
+                        sync_methods={
+                            "similarity_search",
+                            "similarity_search_with_score",
+                            "similarity_search_by_vector",
+                            "similarity_search_by_vector_with_relevance_scores",
+                        },
+                    )
                     elapsed = time.perf_counter() - t0
                     logger.info(
                         "[SUCCESS] Pinecone Vector Store Initialization " "(%.2fs)",
@@ -464,6 +530,8 @@ def get_vector_store():
                         e,
                         exc_info=True,
                     )
+                    if _is_connection_failure(e):
+                        reset_instances()
                     raise
     return _vector_store_instance
 
@@ -1459,39 +1527,6 @@ class LazyPineconeRetriever(BaseRetriever):
 _vector_retriever = LazyPineconeRetriever(search_kwargs=_vector_kwargs)
 
 
-class _FilterByCodeRetriever(BaseRetriever):
-    """Оставляет только документы с разрешённым code_ru и/или article_number (убирает шум от BM25)."""
-
-    retriever: Any
-    allowed_code_ru: List[str] | None = None
-    article_number: str | None = None
-
-    def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun | None = None
-    ) -> List[Document]:
-        docs = self.retriever.invoke(query)
-        filtered = docs
-
-        if self.allowed_code_ru:
-            allowed = set(self.allowed_code_ru)
-            filtered = [
-                d
-                for d in filtered
-                if (d.metadata.get("code_ru") or "").strip() in allowed
-            ]
-
-        if self.article_number:
-            filtered = [
-                d
-                for d in filtered
-                if (d.metadata.get("article_number") or "").strip()
-                == self.article_number
-            ]
-
-        # fallback: хоть что-то вернуть
-        return filtered if filtered else docs[:5]
-
-
 def _get_target_code_profile(query: str) -> tuple[list[str], bool]:
     ranked = _score_target_codes(query)
     if not ranked:
@@ -1536,71 +1571,251 @@ def _prioritize_docs(
     return ranked
 
 
-class QueryAwareHybridRetriever(BaseRetriever):
-    vector_retriever: Any | None = None
-    bm25_retriever: Any | None = None
-    default_k: int = 24
+def _normalize_score_series(scores: Sequence[float]) -> list[float]:
+    values = [float(score) for score in scores]
+    if not values:
+        return []
+    min_score = min(values)
+    max_score = max(values)
+    if max_score <= min_score:
+        return [1.0 if score > 0 else 0.0 for score in values]
+    spread = max_score - min_score
+    return [(score - min_score) / spread for score in values]
 
-    def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun | None = None
-    ) -> List[Document]:
-        target_codes, confident_code = _get_target_code_profile(query)
-        target_articles = _extract_query_article_numbers(query)
-        wide_k = _adaptive_wide_k(query, target_codes, target_articles)
-        prefetch_k = min(10, max(6, wide_k // 2))
 
-        merged: list[Document] = []
-        if target_codes:
-            merged = _merge_unique(
-                merged,
-                _search_with_code_filters(
-                    query,
-                    target_codes,
-                    k=prefetch_k,
-                    article_numbers=target_articles[:4],
-                ),
-            )
+def _rank_source_candidates(
+    candidates: dict[tuple[str, str], dict[str, Any]],
+    source: str,
+) -> list[tuple[int, tuple[str, str], dict[str, Any]]]:
+    scored: list[tuple[float, int, tuple[str, str], dict[str, Any]]] = []
+    score_key = f"{source}_raw"
+    for idx, (key, payload) in enumerate(candidates.items()):
+        raw_score = float(payload.get(score_key) or 0.0)
+        if raw_score <= 0:
+            continue
+        scored.append((raw_score, idx, key, payload))
+    scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return [(rank + 1, key, payload) for rank, (_, _, key, payload) in enumerate(scored)]
 
-        if self.vector_retriever is not None and (not confident_code or len(merged) < max(4, wide_k // 3)):
+
+def _rrf_contribution(rank: int, *, k: int) -> float:
+    return 1.0 / float(max(k, 1) + rank)
+
+
+def _candidate_entry(doc: Document, source: str, raw_score: float) -> dict[str, Any]:
+    metadata = dict(doc.metadata or {})
+    metadata.setdefault("fusion_sources", [])
+    metadata["fusion_sources"] = [source]
+    doc_copy = Document(page_content=doc.page_content, metadata=metadata)
+    return {
+        "doc": doc_copy,
+        "vector_raw": raw_score if source == "vector" else 0.0,
+        "bm25_raw": raw_score if source == "bm25" else 0.0,
+    }
+
+
+def _accumulate_candidate(
+    candidates: dict[tuple[str, str], dict[str, Any]],
+    doc: Document,
+    source: str,
+    raw_score: float,
+) -> None:
+    key = _article_doc_key(doc)
+    entry = candidates.get(key)
+    if entry is None:
+        candidates[key] = _candidate_entry(doc, source, raw_score)
+        return
+
+    if source == "vector":
+        entry["vector_raw"] = max(float(entry.get("vector_raw") or 0.0), raw_score)
+    elif source == "bm25":
+        entry["bm25_raw"] = max(float(entry.get("bm25_raw") or 0.0), raw_score)
+
+    fusion_sources = entry["doc"].metadata.setdefault("fusion_sources", [])
+    if source not in fusion_sources:
+        fusion_sources.append(source)
+    current_best = max(float(entry.get("vector_raw") or 0.0), float(entry.get("bm25_raw") or 0.0))
+    if raw_score >= current_best:
+        entry["doc"] = Document(page_content=doc.page_content, metadata=dict(doc.metadata or {}))
+
+
+def _collect_vector_candidates(
+    query: str,
+    *,
+    wide_k: int,
+    target_codes: list[str],
+    target_articles: list[str],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    try:
+        store = get_vector_store()
+    except Exception:
+        return {}
+
+    candidates: dict[tuple[str, str], dict[str, Any]] = {}
+    retrieval_queries = _build_retrieval_queries(query)
+    filters: list[dict[str, Any] | None] = [None]
+    if target_codes:
+        filters = []
+        for code in target_codes:
+            if target_articles:
+                for article in target_articles[:4]:
+                    filters.append({"code_ru": code, "article_number": article})
+            filters.append({"code_ru": code})
+
+    for candidate_query in retrieval_queries:
+        for search_filter in filters:
             try:
-                vector_docs = get_vector_store().similarity_search(query, k=wide_k)
-                merged = _merge_unique(merged, vector_docs)
-            except Exception:
-                pass
-
-        if self.bm25_retriever is not None:
-            try:
-                bm25_docs = list(self.bm25_retriever.invoke(query))
-            except Exception:
-                bm25_docs = []
-            if target_codes:
-                filtered_bm25 = _filter_docs_by_codes(bm25_docs, target_codes)
-                filtered_bm25 = _prioritize_docs(
-                    query,
-                    filtered_bm25,
-                    target_codes=target_codes,
-                    target_articles=target_articles,
-                    limit=wide_k,
+                docs_with_scores = store.similarity_search_with_score(
+                    candidate_query,
+                    k=wide_k,
+                    filter=search_filter,
                 )
-                merged = _merge_unique(merged, filtered_bm25[:wide_k])
-                if not confident_code and len(merged) < wide_k:
-                    merged = _merge_unique(merged, bm25_docs[:wide_k])
-            else:
-                merged = _merge_unique(merged, bm25_docs[:wide_k])
-
-        if not merged and self.vector_retriever is not None:
-            try:
-                merged = list(self.vector_retriever.invoke(query))
             except Exception:
-                merged = []
+                continue
+            for doc, score in docs_with_scores:
+                _accumulate_candidate(candidates, doc, "vector", float(score))
+    return candidates
 
-        return _prioritize_docs(
-            query,
-            merged,
-            target_codes=target_codes,
-            target_articles=target_articles,
-            limit=wide_k,
-        )
+
+def _collect_bm25_candidates(
+    query: str,
+    *,
+    bm25_retriever: Any,
+    wide_k: int,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    if bm25_retriever is None:
+        return {}
+
+    candidates: dict[tuple[str, str], dict[str, Any]] = {}
+    retrieval_queries = _build_retrieval_queries(query)
+    for candidate_query in retrieval_queries:
+        try:
+            docs = list(bm25_retriever.invoke(candidate_query))
+        except Exception:
+            continue
+        total = max(len(docs), 1)
+        for rank, doc in enumerate(docs[:wide_k]):
+            raw_score = 1.0 - (rank / total)
+            _accumulate_candidate(candidates, doc, "bm25", float(raw_score))
+    return candidates
+
+
+def _fuse_retrieval_candidates(
+    query: str,
+    *,
+    vector_candidates: dict[tuple[str, str], dict[str, Any]],
+    bm25_candidates: dict[tuple[str, str], dict[str, Any]],
+    target_codes: list[str],
+    target_articles: list[str],
+    limit: int,
+) -> list[Document]:
+    all_keys = list(dict.fromkeys([*vector_candidates.keys(), *bm25_candidates.keys()]))
+    if not all_keys:
+        return []
+
+    fusion_method = str(getattr(config, "HYBRID_FUSION_METHOD", "rrf") or "rrf").strip().lower()
+    target_article_set = {
+        _normalize_article_number(article)
+        for article in target_articles
+        if _normalize_article_number(article)
+    }
+    vector_scores = _normalize_score_series(
+        [float((vector_candidates.get(key) or {}).get("vector_raw") or 0.0) for key in all_keys]
+    )
+    bm25_scores = _normalize_score_series(
+        [float((bm25_candidates.get(key) or {}).get("bm25_raw") or 0.0) for key in all_keys]
+    )
+
+    fused: list[tuple[float, int, Document]] = []
+    if fusion_method == "rrf":
+        rrf_k = int(getattr(config, "HYBRID_RRF_K", 60))
+        score_scale = float(getattr(config, "HYBRID_RRF_SCORE_SCALE", 100.0))
+        vector_ranked = _rank_source_candidates(vector_candidates, "vector")
+        bm25_ranked = _rank_source_candidates(bm25_candidates, "bm25")
+        ranked_lookup: dict[tuple[str, str], dict[str, Any]] = {}
+        for key in all_keys:
+            vector_payload = vector_candidates.get(key)
+            bm25_payload = bm25_candidates.get(key)
+            if vector_payload and bm25_payload:
+                ranked_lookup[key] = (
+                    vector_payload
+                    if float(vector_payload.get("vector_raw") or 0.0)
+                    >= float(bm25_payload.get("bm25_raw") or 0.0)
+                    else bm25_payload
+                )
+            else:
+                ranked_lookup[key] = vector_payload or bm25_payload
+        rrf_scores: dict[tuple[str, str], float] = {}
+
+        for rank, key, payload in vector_ranked:
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + (
+                float(getattr(config, "VECTOR_WEIGHT", 0.6))
+                * _rrf_contribution(rank, k=rrf_k)
+            )
+            payload["doc"].metadata["vector_rank"] = rank
+        for rank, key, payload in bm25_ranked:
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + (
+                float(getattr(config, "BM25_WEIGHT", 0.4))
+                * _rrf_contribution(rank, k=rrf_k)
+            )
+            payload["doc"].metadata["bm25_rank"] = rank
+
+        for idx, key in enumerate(all_keys):
+            candidate = ranked_lookup.get(key)
+            if not candidate:
+                continue
+            doc = candidate["doc"]
+            vector_score = vector_scores[idx] if idx < len(vector_scores) else 0.0
+            bm25_score = bm25_scores[idx] if idx < len(bm25_scores) else 0.0
+            lexical = _lexical_overlap_score(query, doc)
+            fusion_base = (rrf_scores.get(key, 0.0) * score_scale) + (0.20 * lexical)
+            doc.metadata["vector_score"] = round(vector_score, 4)
+            doc.metadata["bm25_score"] = round(bm25_score, 4)
+            doc.metadata["rrf_score"] = round(rrf_scores.get(key, 0.0), 6)
+            doc.metadata["fusion_base_score"] = round(fusion_base, 4)
+            final_score = _apply_legal_score(
+                query,
+                doc,
+                fusion_base,
+                target_codes=target_codes,
+                target_articles=target_article_set,
+            )
+            doc.metadata["relevance_score"] = final_score
+            fused.append((final_score, idx, doc))
+    else:
+        for idx, key in enumerate(all_keys):
+            candidate = vector_candidates.get(key) or bm25_candidates.get(key)
+            if not candidate:
+                continue
+            doc = candidate["doc"]
+            vector_score = vector_scores[idx] if idx < len(vector_scores) else 0.0
+            bm25_score = bm25_scores[idx] if idx < len(bm25_scores) else 0.0
+            lexical = _lexical_overlap_score(query, doc)
+            # BM25 gets a slightly higher weight to keep exact legal terms dominant.
+            fusion_base = (0.30 * vector_score) + (0.50 * bm25_score) + (0.20 * lexical)
+            doc.metadata["vector_score"] = round(vector_score, 4)
+            doc.metadata["bm25_score"] = round(bm25_score, 4)
+            doc.metadata["fusion_base_score"] = round(fusion_base, 4)
+            final_score = _apply_legal_score(
+                query,
+                doc,
+                fusion_base,
+                target_codes=target_codes,
+                target_articles=target_article_set,
+            )
+            doc.metadata["relevance_score"] = final_score
+            fused.append((final_score, idx, doc))
+
+    fused.sort(key=lambda item: (-item[0], item[1]))
+    ordered = [doc for _, _, doc in fused]
+    ordered = _prioritize_docs(
+        query,
+        ordered,
+        target_codes=target_codes,
+        target_articles=target_articles,
+        limit=limit,
+    )
+    return ordered
 
 
 def _extract_article_range(query: str) -> tuple[int, int] | None:
@@ -2479,164 +2694,6 @@ def _llm_rerank_documents(
     return candidates[:top_n]
 
 
-class _HeuristicRetriever(BaseRetriever):
-    """Лёгкий эвристический слой: расширяет запрос и мягко фильтрует диапазоны статей."""
-
-    base_retriever: Any
-    vector_store: Any
-
-    def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun | None = None
-    ) -> List[Document]:
-        docs = _multi_query_retrieve(self.base_retriever, query)
-        target_codes = _detect_target_codes(query)
-        target_articles = _extract_query_article_numbers(query)
-        if target_codes:
-            filtered = _filter_docs_by_codes(docs, target_codes)
-            if filtered:
-                docs = _merge_unique(filtered, docs)
-            fallback_docs = _multi_query_search_with_code_filters(
-                query,
-                target_codes,
-                k=6,
-                article_numbers=target_articles,
-            )
-            if fallback_docs:
-                docs = _merge_unique(docs, fallback_docs)
-        elif _is_criminal_query(query):
-            filtered = _filter_docs_by_codes(docs, _uk_variants)
-            if filtered:
-                docs = _merge_unique(filtered, docs)
-            fallback_docs = _multi_query_search_with_code_filters(
-                query,
-                _uk_variants,
-                k=6,
-                article_numbers=target_articles,
-            )
-            if fallback_docs:
-                docs = _merge_unique(docs, fallback_docs)
-        range_match = _extract_article_range(query)
-        if range_match:
-            start, end = range_match
-            focused = [
-                d
-                for d in docs
-                if _normalize_article_number(d.metadata.get("article_number")).isdigit()
-                and start
-                <= int(_normalize_article_number(d.metadata.get("article_number")))
-                <= end
-            ]
-            if focused:
-                docs = _merge_unique(focused, docs)
-        focus = _focus_articles_from_query(query)
-        if focus:
-            focused = [
-                d
-                for d in docs
-                if _normalize_article_number(d.metadata.get("article_number")) in focus
-            ]
-            if focused:
-                docs = _merge_unique(focused, docs)
-        docs = _sort_docs_for_coverage(
-            docs,
-            target_codes=target_codes,
-            target_articles=target_articles,
-        )
-        return _rank_docs_with_legal_scoring(
-            query,
-            docs,
-            target_codes=target_codes,
-            target_articles=target_articles,
-        )
-
-
-class _LawAwareRetriever(BaseRetriever):
-    """Жёсткий law-aware слой: для УК — принудительная подвыборка + добор статей."""
-
-    base_retriever: Any
-    vector_store: Any
-    min_k_criminal: int = 10
-
-    def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun | None = None
-    ) -> List[Document]:
-        docs = _multi_query_retrieve(self.base_retriever, query)
-        target_codes = _detect_target_codes(query)
-        target_articles = _extract_query_article_numbers(query)
-        article_number = target_articles[0] if target_articles else None
-        if target_codes:
-            filtered = _filter_docs_by_codes(docs, target_codes)
-            if filtered:
-                docs = _merge_unique(filtered, docs)
-            if len(docs) < min(_hybrid_k, 6):
-                extra = _multi_query_search_with_code_filters(
-                    query,
-                    target_codes,
-                    k=max(_hybrid_k, 8),
-                    article_number=article_number,
-                    article_numbers=target_articles,
-                )
-                if extra:
-                    docs = _merge_unique(docs, extra)
-            elif target_articles:
-                extra = _multi_query_search_with_code_filters(
-                    query,
-                    target_codes,
-                    k=4,
-                    article_numbers=target_articles,
-                )
-                if extra:
-                    docs = _merge_unique(docs, extra)
-        elif _is_criminal_query(query):
-            filtered = _filter_docs_by_codes(docs, _uk_variants)
-            if filtered:
-                docs = _merge_unique(filtered, docs)
-            if len(docs) < self.min_k_criminal:
-                extra = _multi_query_search_with_code_filters(
-                    query,
-                    _uk_variants,
-                    k=self.min_k_criminal,
-                    article_number=article_number,
-                    article_numbers=target_articles,
-                )
-                if extra:
-                    docs = _merge_unique(docs, extra)
-
-        if _needs_circumstances_query(query):
-            uk_filter = {"$or": [{"code_ru": v} for v in _uk_variants]}
-            extra_docs: list[Document] = []
-            for q in (
-                "смягчающие обстоятельства УК РК",
-                "отягчающие обстоятельства УК РК",
-                "жеңілдететін мән-жайлар Қылмыстық кодекс",
-                "ауырлататын мән-жайлар Қылмыстық кодекс",
-            ):
-                try:
-                    extra_docs.extend(
-                        get_vector_store().similarity_search(
-                            q,
-                            k=4,
-                            filter=uk_filter,
-                        )
-                    )
-                except Exception:
-                    continue
-            if extra_docs:
-                docs = _merge_unique(docs, extra_docs)
-
-        docs = _sort_docs_for_coverage(
-            docs,
-            target_codes=target_codes,
-            target_articles=target_articles,
-        )
-        return _rank_docs_with_legal_scoring(
-            query,
-            docs,
-            target_codes=target_codes,
-            target_articles=target_articles,
-        )
-
-
 def _fetch_parent_context_from_store(
     code_ru: str, article_number: str
 ) -> tuple[str, str, str]:
@@ -2650,10 +2707,12 @@ def _fetch_parent_context_from_store(
         return "", "", ""
     try:
         store = get_vector_store()
-        siblings = store.similarity_search(
+        siblings = _similarity_search_with_timeout(
+            store,
             f"Глава статья {article_number} {code_ru}",
             k=5,
             filter={"code_ru": code_ru, "article_number": article_number},
+            timeout_sec=float(getattr(config, "PINECONE_ENRICHMENT_TIMEOUT_SEC", 2.0)),
         )
         best_cn, best_ct, best_at = "", "", ""
         for s in siblings:
@@ -2668,8 +2727,12 @@ def _fetch_parent_context_from_store(
                 break
         return best_cn, best_ct, best_at
     except Exception as e:
-        print(
-            f"Context enrichment: could not fetch parent for {code_ru} ст.{article_number}: {e}"
+        logger.debug(
+            "Context enrichment skipped for %s ст.%s: %s",
+            code_ru,
+            article_number,
+            e,
+            exc_info=True,
         )
     return "", "", ""
 
@@ -2801,6 +2864,9 @@ class _TrimRetriever(BaseRetriever):
         doc_suffix = "\n[...текст обрезан...]"
         for d in docs[: self.max_docs]:
             content = str(d.page_content or "")
+            parent_article_text = str((d.metadata or {}).get("parent_article_text") or "")
+            if parent_article_text and len(content) < 300:
+                content = parent_article_text
             if len(content) > self.max_chars_per_doc:
                 content = content[: self.max_chars_per_doc].rstrip() + doc_suffix
             if self.max_tokens_per_doc > 0:
@@ -2970,24 +3036,35 @@ def _resolve_reranker_backend() -> str:
 
 
 def _should_skip_neural_rerank(query: str, documents: Sequence[Document]) -> bool:
-    if not getattr(config, "RERANK_DYNAMIC_SKIP", False):
-        return False
-    target_codes = _detect_target_codes(query)
-    if not target_codes:
-        return False
-    codes_set = set(target_codes)
     top_k = min(4, len(documents))
     if top_k < 1:
         return False
-    matches = sum(
-        1
-        for d in documents[:top_k]
-        if (d.metadata.get("code_ru") or "").strip() in codes_set
-    )
-    thresh = float(getattr(config, "RERANK_SKIP_LEXICAL_THRESHOLD", 0.35))
-    min_m = int(getattr(config, "RERANK_SKIP_MIN_CODE_MATCHES", 2))
-    best_lex = max(_lexical_overlap_score(query, d) for d in documents[:top_k])
-    return matches >= min_m and best_lex >= thresh
+
+    if getattr(config, "RERANK_DYNAMIC_SKIP", False):
+        target_codes = _detect_target_codes(query)
+        if target_codes:
+            codes_set = set(target_codes)
+            matches = sum(
+                1
+                for d in documents[:top_k]
+                if (d.metadata.get("code_ru") or "").strip() in codes_set
+            )
+            thresh = float(getattr(config, "RERANK_SKIP_LEXICAL_THRESHOLD", 0.35))
+            min_m = int(getattr(config, "RERANK_SKIP_MIN_CODE_MATCHES", 2))
+            best_lex = max(_lexical_overlap_score(query, d) for d in documents[:top_k])
+            if matches >= min_m and best_lex >= thresh:
+                return True
+
+    if not getattr(config, "RERANK_SKIP_LONG_DOCS", False):
+        return False
+
+    long_threshold = int(getattr(config, "RERANK_SKIP_LONG_DOC_CHARS", 2400))
+    short_threshold = int(getattr(config, "RERANK_SKIP_SHORT_DOC_CHARS", 700))
+    lengths = [len((d.page_content or "").strip()) for d in documents[: max(4, top_k)]]
+    long_docs = sum(length >= long_threshold for length in lengths)
+    short_docs = sum(length <= short_threshold for length in lengths)
+    # Large chunks can swamp short but exact statutory chunks in cross-encoder reranking.
+    return bool(long_docs and short_docs >= 2)
 
 
 def _rank_docs_by_legal_only(
@@ -3099,6 +3176,167 @@ def _load_bm25_chunks() -> list[Document] | None:
     return None
 
 
+def _load_summary_chunks() -> list[Document] | None:
+    """Load summary index chunks from pickle (preferred) or prepare_data."""
+    try:
+        import pickle  # local import: keep module import fast
+
+        _pkl = getattr(config, "SUMMARY_CHUNKS_PICKLE_PATH", None) or (
+            config.BASE_DIR / "summary_chunks_for_bm25.pkl"
+        )
+        if _pkl and _pkl.exists():
+            with open(_pkl, "rb") as f:
+                chunks = pickle.load(f)
+            if chunks:
+                print(f"Summary чанки: {len(chunks)} из {_pkl.name}")
+                return chunks
+    except Exception as e:
+        print(f"Не удалось загрузить summary_chunks_for_bm25.pkl: {e}")
+    try:
+        if config.DOCUMENTS_DIR.exists():
+            from ai_service.processing import prepare_data as _pd
+
+            chunks = getattr(_pd, "summary_chunks", None)
+            if chunks:
+                print(f"Summary чанки из prepare_data: {len(chunks)}")
+                return chunks
+    except Exception as e:
+        print(f"prepare_data summary не загружен: {e}")
+    return None
+
+
+def _build_minimal_legal_retriever() -> MinimalLegalRetriever:
+    bm25_retriever: Any | None = None
+    summary_retriever: Any | None = None
+    summary_docs: list[Document] = []
+
+    def hybrid_tokenizer(text: str):
+        if _is_kz_query(text):
+            import nltk
+
+            return [t for t in nltk.word_tokenize(text.lower()) if t.isalnum()]
+        return bm25_preprocess_func(text) or []
+
+    try:
+        from langchain_community.retrievers import BM25Retriever
+
+        chunks = _load_bm25_chunks()
+        if chunks:
+            if _ensure_nltk():
+                bm25_retriever = BM25Retriever.from_documents(
+                    chunks, preprocess_func=hybrid_tokenizer, k=max(40, _hybrid_k)
+                )
+                print("BM25 инициализирован для MinimalLegalRetriever.")
+            else:
+                bm25_retriever = BM25Retriever.from_documents(
+                    chunks, k=max(40, _hybrid_k)
+                )
+
+        summary_chunks = _load_summary_chunks()
+        if summary_chunks:
+            summary_docs = list(summary_chunks)
+            if _ensure_nltk():
+                summary_retriever = BM25Retriever.from_documents(
+                    summary_docs, preprocess_func=hybrid_tokenizer, k=max(8, _hybrid_k // 4)
+                )
+            else:
+                summary_retriever = BM25Retriever.from_documents(
+                    summary_docs, k=max(8, _hybrid_k // 4)
+                )
+    except Exception as e:
+        print(f"BM25 не запустился для MinimalLegalRetriever: {e}")
+
+    def _collect_summary_hints(query: str) -> tuple[list[Document], list[str]]:
+        hints: list[Document] = []
+        if summary_retriever is not None:
+            try:
+                hints.extend(list(summary_retriever.invoke(query) or [])[: _hybrid_k])
+            except Exception as exc:
+                logger.warning("Summary BM25 search failed in MinimalLegalRetriever: %s", exc)
+
+        if not _disable_pinecone and summary_docs:
+            try:
+                vs = get_vector_store()
+                summary_hits = vs.similarity_search_with_score(
+                    query,
+                    k=min(8, max(4, _hybrid_k // 4)),
+                    filter={"doc_kind": "summary"},
+                )
+                hints.extend([doc for doc, _ in summary_hits or []])
+            except Exception as exc:
+                logger.warning("Summary dense search failed in MinimalLegalRetriever: %s", exc)
+
+        hints = _merge_unique(hints, [])
+        codes: list[str] = []
+        for doc in hints:
+            code = str(doc.metadata.get("code_ru") or "").strip()
+            if code and code not in codes:
+                codes.append(code)
+        return hints, codes[: int(getattr(config, "SUMMARY_EXPANSION_MAX_CODES", 3))]
+
+    def _bm25_search(query: str) -> Sequence[Document]:
+        if bm25_retriever is None:
+            return []
+        try:
+            docs = list(bm25_retriever.invoke(query) or [])
+            _, summary_codes = _collect_summary_hints(query)
+            if summary_codes:
+                preferred = _filter_docs_by_codes(docs, summary_codes)
+                if preferred:
+                    docs = _merge_unique(preferred, docs)
+            return docs
+        except Exception as exc:
+            logger.warning("BM25 search failed in MinimalLegalRetriever: %s", exc)
+            return []
+
+    def _dense_search(query: str) -> Sequence[tuple[Document, float]]:
+        if _disable_pinecone:
+            return []
+        try:
+            vs = get_vector_store()
+            _, summary_codes = _collect_summary_hints(query)
+            search_kwargs = {"k": max(40, _hybrid_k)}
+            if summary_codes:
+                search_kwargs["filter"] = {
+                    "$or": [{"code_ru": code} for code in summary_codes]
+                }
+            docs_with_scores = vs.similarity_search_with_score(
+                query, **search_kwargs
+            )
+            filtered = [
+                (doc, score)
+                for doc, score in docs_with_scores or []
+                if (doc.metadata.get("doc_kind") or "chunk") != "summary"
+            ]
+            if not filtered and summary_codes and "filter" in search_kwargs:
+                docs_with_scores = vs.similarity_search_with_score(
+                    query, k=max(40, _hybrid_k)
+                )
+                filtered = [
+                    (doc, score)
+                    for doc, score in docs_with_scores or []
+                    if (doc.metadata.get("doc_kind") or "chunk") != "summary"
+                ]
+            return filtered
+        except Exception as exc:
+            logger.warning("Dense search failed in MinimalLegalRetriever: %s", exc)
+            return []
+
+    if bm25_retriever is None and summary_retriever is None and _disable_pinecone:
+        raise RuntimeError(
+            "Retriever initialization failed: Pinecone disabled and BM25 chunks unavailable."
+        )
+
+    return MinimalLegalRetriever(
+        bm25_search=_bm25_search,
+        dense_search=_dense_search,
+        bm25_weight=0.55,
+        dense_weight=0.45,
+        candidate_k=max(40, _hybrid_k),
+        final_k=max(40, _hybrid_k),
+    )
+
+
 def get_retriever():
     """Build retriever lazily (Pinecone + optional BM25 + optional reranker)."""
     global _retriever_instance
@@ -3109,86 +3347,17 @@ def get_retriever():
         if _retriever_instance is not None:
             return _retriever_instance
 
-        base_retriever: Any | None = None
-        bm25_retriever: Any | None = None
-
-        # Optional BM25 hybrid: build only when first request comes in.
-        try:
-            from langchain_community.retrievers import BM25Retriever
-
-            chunks = _load_bm25_chunks()
-            if chunks:
-                # Basic tokenization wrapper that skips stemming for Kazakh text
-                def hybrid_tokenizer(text):
-                    if _is_kz_query(text):
-                        import nltk
-
-                        return [
-                            t for t in nltk.word_tokenize(text.lower()) if t.isalnum()
-                        ]
-                    return bm25_preprocess_func(text) or []
-
-                if _ensure_nltk():
-                    bm25_retriever = BM25Retriever.from_documents(
-                        chunks, preprocess_func=hybrid_tokenizer, k=_hybrid_k
-                    )
-                    print("BM25 инициализирован со стеммингом (Russian/Kazakh hybrid).")
-                else:
-                    bm25_retriever = BM25Retriever.from_documents(chunks, k=_hybrid_k)
-
-                if _disable_pinecone:
-                    base_retriever = QueryAwareHybridRetriever(
-                        vector_retriever=None,
-                        bm25_retriever=bm25_retriever,
-                        default_k=_hybrid_k,
-                    )
-                    print("BM25-only режим включён (Pinecone отключён).")
-        except Exception as e:
-            # Don't block startup: hybrid is optional.
-            print(f"BM25 не запустился: {e}. Используется только Pinecone.")
-        if not _disable_pinecone:
-            base_retriever = QueryAwareHybridRetriever(
-                vector_retriever=_vector_retriever,
-                bm25_retriever=bm25_retriever,
-                default_k=_hybrid_k,
-            )
-            if bm25_retriever is not None:
-                print("Гибридный RAG готов! (adaptive BM25 + Pinecone, k=%d)" % _hybrid_k)
-            else:
-                print("Vector-first RAG готов! (adaptive Pinecone only, k=%d)" % _hybrid_k)
-        if base_retriever is None:
-            raise RuntimeError(
-                "Retriever initialization failed: Pinecone disabled and BM25 chunks unavailable."
-            )
-
-        # Post-filtering layer if enabled
-        if _allowed_code_ru_for_filter or _filter_article:
-            base_retriever = _FilterByCodeRetriever(
-                retriever=base_retriever,
-                allowed_code_ru=_allowed_code_ru_for_filter,
-                article_number=_filter_article,
-            )
-            print(
-                "Включён пост-фильтр по кодексу/статье (только разрешённые code_ru/article_number)."
-            )
-
-        # Heuristic + law-aware layers
-        heuristic_retriever = _HeuristicRetriever(
-            base_retriever=base_retriever, vector_store=None
+        base_retriever: Any = _build_minimal_legal_retriever()
+        print(
+            "MinimalLegalRetriever готов: query rewrite -> BM25 -> dense -> fusion -> legal prior."
         )
-        law_aware_retriever = _LawAwareRetriever(
-            base_retriever=heuristic_retriever,
-            vector_store=None,
-            min_k_criminal=getattr(config, "RETRIEVER_MIN_K_CRIMINAL", 10),
-        )
-        retr: Any = law_aware_retriever
 
-        retr = _DedupRetriever(base_retriever=retr)
+        retr: Any = _DedupRetriever(base_retriever=base_retriever)
         if getattr(config, "EXPERIMENTAL_DEDUP_RETRIEVAL", False):
             print("Включён experimental dedup retrieval layer.")
 
         # Optional reranker (very heavy) — build lazily on first request.
-        if config.USE_RERANKER:
+        if config.USE_RERANKER or getattr(config, "RERANKER_MANDATORY", True):
             try:
                 try:
                     from langchain.retrievers import ContextualCompressionRetriever
@@ -3432,6 +3601,8 @@ def get_retriever():
                     e,
                     exc_info=True,
                 )
+                if getattr(config, "RERANKER_MANDATORY", True):
+                    raise
 
         # Trim context before LLM
         retr = _TrimRetriever(
@@ -3605,7 +3776,17 @@ def get_llm():
                         e,
                         exc_info=True,
                     )
+                    if _is_connection_failure(e):
+                        reset_instances()
                     raise
+                if not isinstance(_llm_instance, CircuitBreakerProxy):
+                    _llm_instance = CircuitBreakerProxy(
+                        _llm_instance,
+                        _groq_breaker,
+                        sync_methods={"invoke", "batch"},
+                        async_methods={"ainvoke", "abatch"},
+                        stream_methods={"stream", "astream"},
+                    )
     return _llm_instance
 
 
@@ -3870,9 +4051,6 @@ RANGE_PROMPT_TEMPLATE = """Ты — точный ассистент по УК Р
 
 Ответ (перечисли статьи из диапазона, если они есть, цитируй дословно):"""
 
-GENERAL_PROMPT_TEMPLATE = "GENERAL_PROMPT_TEMPLATE_PLACEHOLDER"
-CASE_PROMPT_TEMPLATE = "CASE_PROMPT_TEMPLATE_PLACEHOLDER"
-
 GENERAL_PROMPT = PromptTemplate.from_template(
     "Дай краткую справку по теории права РК на основе {context}."
 )
@@ -3982,6 +4160,169 @@ def _history_str(history: Optional[List[dict]] = None) -> str:
     return s + "\n"
 
 
+def _history_cache_key(history: Optional[List[dict]] = None) -> tuple[tuple[str, str], ...]:
+    if not history:
+        return ()
+    return tuple(
+        (
+            str(msg.get("role") or ""),
+            str(msg.get("content") or ""),
+        )
+        for msg in history
+    )
+
+
+def _cache_key_digest(query: str, history_key: tuple[tuple[str, str], ...], intent: str | None) -> str:
+    payload = json.dumps(
+        {
+            "query": query.strip(),
+            "history": history_key,
+            "intent": intent or "",
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _offline_query_terms(query: str) -> list[str]:
+    terms = [
+        token
+        for token in re.findall(r"[0-9A-Za-zА-Яа-яӘәҒғҚқҢңӨөҰұҮүҺһІі]+", str(query or "").lower())
+        if len(token) > 2
+    ]
+    return list(dict.fromkeys(terms))
+
+
+def _score_offline_doc(query_terms: list[str], doc: Document) -> float:
+    meta = doc.metadata or {}
+    haystack = " ".join(
+        [
+            str(meta.get("code_ru") or ""),
+            str(meta.get("article_number") or ""),
+            str(meta.get("article_title") or ""),
+            str(doc.page_content or ""),
+        ]
+    ).lower()
+    score = 0.0
+    for term in query_terms:
+        if term in haystack:
+            score += 1.0
+    article_number = str(meta.get("article_number") or "").strip()
+    if article_number and article_number in query_terms:
+        score += 1.5
+    if any(keyword in haystack for keyword in ("ответствен", "наказан", "краж", "штраф", "преступлен")):
+        score += 0.25
+    return score
+
+
+def _build_offline_extractive_answer(
+    query: str,
+    docs: List[Document],
+    history: Optional[List[dict]] = None,
+    intent: str | None = None,
+) -> dict:
+    docs = _fill_missing_metadata(list(docs))
+    query_terms = _offline_query_terms(query)
+    ranked_docs = sorted(
+        docs,
+        key=lambda doc: _score_offline_doc(query_terms, doc),
+        reverse=True,
+    )
+    top_docs = ranked_docs[: min(3, len(ranked_docs))]
+
+    if not top_docs:
+        return {
+            "result": (
+                "Офлайн-режим: релевантные статьи не найдены в локальном корпусе. "
+                "Уточните вопрос или проверьте корпус данных."
+            ),
+            "source_documents": [],
+            "retrieval_method": "offline_extractive",
+        }
+
+    intent_label = {
+        "CRIMINAL": "криминальный",
+        "GENERAL_LEGAL": "правовой",
+        "PROCEDURAL": "процессуальный",
+    }.get(str(intent or "").upper(), "правовой")
+
+    lines = [
+        f"Офлайн-{intent_label} ответ на основе локального корпуса:",
+        "Наиболее релевантные статьи:",
+    ]
+    for doc in top_docs:
+        meta = doc.metadata or {}
+        code_ru = str(meta.get("code_ru") or "Неизвестный источник").strip()
+        article_number = str(meta.get("article_number") or "Н/Д").strip()
+        snippet = _truncate_text_to_token_budget(
+            str(doc.page_content or "").strip().replace("\n", " "),
+            90,
+            suffix="...",
+        )
+        lines.append(f"- [{code_ru} | ст. {article_number}] {snippet}")
+
+    if history:
+        lines.append("Контекст диалога учтён, но ответ построен без LLM.")
+
+    return {
+        "result": "\n".join(lines).strip(),
+        "source_documents": top_docs,
+        "retrieval_method": "offline_extractive",
+    }
+
+
+def _build_offline_bm25_retriever(top_k: int):
+    from langchain_community.retrievers import BM25Retriever
+
+    chunks = _load_bm25_chunks() or []
+    if not chunks:
+        return None
+
+    if _ensure_nltk():
+
+        def hybrid_tokenizer(text):
+            if _is_kz_query(text):
+                import nltk
+
+                return [t for t in nltk.word_tokenize(text.lower()) if t.isalnum()]
+            return bm25_preprocess_func(text) or []
+
+        return BM25Retriever.from_documents(
+            chunks,
+            preprocess_func=hybrid_tokenizer,
+            k=top_k,
+        )
+
+    return BM25Retriever.from_documents(chunks, k=top_k)
+
+
+def _offline_focus_article_docs(query: str) -> list[Document]:
+    focus_articles = {
+        _normalize_article_number(article)
+        for article in _focus_articles_from_query(query)
+        if _normalize_article_number(article)
+    }
+    target_codes = set(_detect_target_codes(query))
+    if not focus_articles:
+        return []
+
+    chunks = _load_bm25_chunks() or []
+    if not chunks:
+        return []
+
+    docs = [
+        doc
+        for doc in chunks
+        if _normalize_article_number((doc.metadata or {}).get("article_number")) in focus_articles
+        and (
+            not target_codes
+            or str((doc.metadata or {}).get("code_ru") or "").strip() in target_codes
+        )
+    ]
+    return docs
+
+
 def invoke_qa_with_context(
     query: str,
     context_docs: List[Document],
@@ -4026,13 +4367,51 @@ def invoke_qa_with_context(
     return {"result": res, "source_documents": docs}
 
 
-def invoke_qa(
-    query: str, history: Optional[List[dict]] = None, intent: str = None
+@lru_cache(maxsize=512)
+def _invoke_qa_impl(
+    query: str,
+    history: Optional[List[dict]],
+    intent: str | None,
 ) -> dict:
+    if config.LEGAL_RAG_OFFLINE_QA:
+        try:
+            docs = _offline_focus_article_docs(query)
+            if docs:
+                docs = _prioritize_docs(
+                    query,
+                    docs,
+                    target_articles=list(_focus_articles_from_query(query)),
+                    target_codes=_detect_target_codes(query),
+                    limit=getattr(config, "RETRIEVER_WIDE_K", 10),
+                )
+            else:
+                retriever = _build_offline_bm25_retriever(
+                    getattr(config, "RETRIEVER_WIDE_K", 10)
+                )
+                docs = (
+                    _multi_query_retrieve(retriever, query)
+                    if retriever is not None
+                    else []
+                )
+                docs = _prioritize_docs(
+                    query,
+                    docs,
+                    target_articles=list(_focus_articles_from_query(query)),
+                    target_codes=_detect_target_codes(query),
+                    limit=getattr(config, "RETRIEVER_WIDE_K", 10),
+                )
+        except Exception as exc:
+            logger.warning(
+                "[OFFLINE] Retrieval failed in offline QA mode: %s",
+                exc,
+                exc_info=True,
+            )
+            docs = []
+        return _build_offline_extractive_answer(query, docs, history, intent)
+
     _ensure_latency_patches()
 
     if intent == "SOCIAL":
-        # No RAG, just LLM with history
         llm = get_llm()
         s_history = _history_str(history)
         prompt_text = (
@@ -4055,18 +4434,52 @@ def invoke_qa(
     else:
         chain = _get_qa_chains()["universal"]
 
-    res = chain.invoke(
-        {
-            "input": query,
-            "chat_history": _history_str(history),
-        }
-    )
+    try:
+        res = chain.invoke(
+            {
+                "input": query,
+                "chat_history": _history_str(history),
+            }
+        )
+    except Exception as exc:
+        if _is_connection_failure(exc):
+            logger.warning(
+                "[OFFLINE] LLM-backed QA failed, falling back to extractive answer: %s",
+                exc,
+                exc_info=True,
+            )
+            try:
+                docs = _offline_focus_article_docs(query)
+                if not docs:
+                    offline_retriever = _build_offline_bm25_retriever(
+                        getattr(config, "RETRIEVER_WIDE_K", 10)
+                    )
+                    docs = (
+                        _multi_query_retrieve(offline_retriever, query)
+                        if offline_retriever is not None
+                        else []
+                    )
+                    docs = _prioritize_docs(
+                        query,
+                        docs,
+                        target_articles=list(_focus_articles_from_query(query)),
+                        target_codes=_detect_target_codes(query),
+                        limit=getattr(config, "RETRIEVER_WIDE_K", 10),
+                    )
+            except Exception as retrieval_exc:
+                logger.warning(
+                    "[OFFLINE] Fallback retrieval also failed: %s",
+                    retrieval_exc,
+                    exc_info=True,
+                )
+                docs = []
+            return _build_offline_extractive_answer(query, docs, history, intent)
+        raise
 
     answer = res.get("answer", "")
     source_documents = res.get("context", [])
 
     if not source_documents:
-        # Fallback to internal knowledge
         logger.warning(
             "[FALLBACK] No documents retrieved, using internal knowledge "
             "for query: %s",
@@ -4091,6 +4504,27 @@ def invoke_qa(
         "source_documents": source_documents,
         "retrieval_method": retrieval_method,
     }
+
+
+@lru_cache(maxsize=512)
+def _invoke_qa_cached(
+    query_hash: str,
+    query: str,
+    intent: str | None,
+) -> dict:
+    _ = query_hash
+    return _invoke_qa_impl(query, None, intent)
+
+
+def invoke_qa(
+    query: str, history: Optional[List[dict]] = None, intent: str = None
+) -> dict:
+    _ensure_latency_patches()
+    if history:
+        return _invoke_qa_impl(query, history, intent)
+    history_key = _history_cache_key(history)
+    query_hash = _cache_key_digest(query, history_key, intent)
+    return _invoke_qa_cached(query_hash, query, intent)
 
 
 _KZ_CHARS = set("әғқңөұүһі")
@@ -4185,14 +4619,7 @@ def validate_answer(question: str, response: str, sources: List[Document]) -> st
         if not has_uk:
             return fallback
 
-    allowed = _extract_article_numbers_from_docs(sources)
     mentioned = _extract_article_numbers_from_text(response or "")
-    if allowed and mentioned and not mentioned.issubset(allowed):
-        return fallback
-
-    if _is_subsidy_query(question):
-        if "190" not in mentioned and "218" not in mentioned:
-            return fallback
 
     if _is_illegal_business_query(question):
         if "214" not in mentioned and "245" not in mentioned:
@@ -4210,6 +4637,45 @@ def validate_answer(question: str, response: str, sources: List[Document]) -> st
             return fallback
 
     return response
+
+
+def clear_qa_cache() -> None:
+    _invoke_qa_cached.cache_clear()
+
+
+def build_streaming_qa_prompt(
+    query: str,
+    history: Optional[List[dict]] = None,
+    intent: str | None = None,
+) -> dict[str, Any]:
+    _ensure_latency_patches()
+
+    if intent == "SOCIAL":
+        llm = get_llm()
+        prompt_text = (
+            "Ты — дружелюбный юридический ассистент Legally / Сіз Legally мейірімді заң көмекшісісіз. "
+            "Ответь на приветствие или общий вопрос / Сәлемдесуге немесе жалпы сұраққа жауап беріңіз.\n"
+            "Отвечай на том языке, на котором задан вопрос (қазақша немесе орысша).\n\n"
+            f"{_history_str(history)}Вопрос/Сұрақ: {query}\nОтвет/Жауап:"
+        )
+        return {"prompt_text": prompt_text, "source_documents": [], "llm": llm}
+
+    prompt = _select_prompt(query, intent=intent)
+    if prompt is RANGE_PROMPT:
+        _get_qa_chains()["range"]
+    elif prompt is CRIMINAL_PROMPT:
+        _get_qa_chains()["criminal"]
+    else:
+        _get_qa_chains()["universal"]
+
+    docs = _fill_missing_metadata(get_retriever().invoke(query))
+    context = "\n\n".join(_format_doc_for_prompt(doc) for doc in docs)
+    prompt_text = prompt.format(
+        input=query,
+        chat_history=_history_str(history),
+        context=context,
+    )
+    return {"prompt_text": prompt_text, "source_documents": docs, "llm": get_llm()}
 
 
 def analyze_text(text: str) -> str:

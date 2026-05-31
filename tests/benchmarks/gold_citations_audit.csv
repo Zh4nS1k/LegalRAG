@@ -1,0 +1,786 @@
+row_number,query_id,issue,citation
+5,kz_legalrag_0004,missing_act_name,ст. 240
+30,kz_legalrag_0035,missing_act_name,п. 5 ст. 2
+30,kz_legalrag_0035,missing_act_name,ст. 2
+35,kz_legalrag_0040,missing_act_name,ст. 12
+36,kz_legalrag_0041,structural_unit_without_article_or_act,подп. 29
+36,kz_legalrag_0041,missing_act_name,ст. 1
+54,kz_legalrag_0062,missing_act_name,ст. 13
+59,kz_legalrag_0067,missing_act_name,п. 2 ст. 122
+59,kz_legalrag_0067,missing_act_name,п. 3 ст. 122
+59,kz_legalrag_0067,missing_act_name,п. 3 ст. 132
+59,kz_legalrag_0067,missing_act_name,"ст. 121, 122"
+59,kz_legalrag_0067,multiple_articles_in_one_token,"ст. 121, 122"
+59,kz_legalrag_0067,missing_act_name,ст. 122
+59,kz_legalrag_0067,missing_act_name,ст. 132
+61,kz_legalrag_0070,missing_act_name,ст. 1060
+65,kz_legalrag_0074,missing_act_name,ст. 18
+65,kz_legalrag_0074,missing_act_name,ст. 26
+65,kz_legalrag_0074,missing_act_name,ст. 189
+67,kz_legalrag_0076,missing_act_name,ст. 683
+67,kz_legalrag_0076,missing_act_name,ст. 35.
+67,kz_legalrag_0076,trailing_period,ст. 35.
+67,kz_legalrag_0076,missing_act_name,ст. 99.
+67,kz_legalrag_0076,trailing_period,ст. 99.
+69,kz_legalrag_0078,missing_act_name,п. 1 ст. 11
+69,kz_legalrag_0078,missing_act_name,п. 1 ст. 47
+69,kz_legalrag_0078,missing_act_name,п. 2 ст. 48
+69,kz_legalrag_0078,missing_act_name,ст. 11
+69,kz_legalrag_0078,missing_act_name,ст. 47
+69,kz_legalrag_0078,missing_act_name,ст. 48
+73,kz_legalrag_0083,missing_act_name,ст. 36
+74,kz_legalrag_0084,missing_act_name,п. 5 ст. 69
+74,kz_legalrag_0084,missing_act_name,п. 4 ст. 69
+74,kz_legalrag_0084,missing_act_name,ст. 69
+74,kz_legalrag_0084,missing_act_name,ст. 67
+84,kz_legalrag_0095,missing_act_name,п.1 ст. 129
+84,kz_legalrag_0095,missing_act_name,п.22 ст. 1
+84,kz_legalrag_0095,missing_act_name,п.3 ст. 122
+84,kz_legalrag_0095,missing_act_name,ст. 119
+84,kz_legalrag_0095,missing_act_name,ст. 130
+84,kz_legalrag_0095,missing_act_name,ст. 1
+84,kz_legalrag_0095,missing_act_name,ст. 122
+84,kz_legalrag_0095,missing_act_name,ст. 129
+93,kz_legalrag_0105,missing_act_name,ст. 14
+95,kz_legalrag_0108,missing_act_name,ст. 2
+106,kz_legalrag_0121,missing_act_name,п. 4 ст. 32
+106,kz_legalrag_0121,missing_act_name,п. 4 ст. 71
+113,kz_legalrag_0130,structural_unit_without_article_or_act,подп. 4
+114,kz_legalrag_0132,missing_act_name,п.1 ст. 52
+114,kz_legalrag_0132,missing_act_name,ст. 53
+114,kz_legalrag_0132,missing_act_name,ст. 52
+122,kz_legalrag_0141,missing_act_name,ст. 14
+122,kz_legalrag_0141,missing_act_name,ст. 25
+128,kz_legalrag_0148,missing_act_name,ст. 492
+130,kz_legalrag_0150,missing_act_name,ст. 342
+139,kz_legalrag_0159,missing_act_name,ст. 138
+146,kz_legalrag_0168,missing_act_name,ст. 33
+159,kz_legalrag_0185,missing_act_name,п.1 ст. 7
+159,kz_legalrag_0185,missing_act_name,ст. 7
+161,kz_legalrag_0187,missing_act_name,ст. 22
+164,kz_legalrag_0191,missing_act_name,ст. 113
+166,kz_legalrag_0195,missing_act_name,СТ 23342-2012
+166,kz_legalrag_0195,missing_act_name,СТ 9479-2011
+167,kz_legalrag_0196,missing_act_name,ст. 43
+187,kz_legalrag_0219,missing_act_name,"ст. 103, 106 и 107"
+187,kz_legalrag_0219,multiple_articles_in_one_token,"ст. 103, 106 и 107"
+190,kz_legalrag_0222,missing_act_name,п. 1 ст. 965
+190,kz_legalrag_0222,missing_act_name,ст. 964
+190,kz_legalrag_0222,missing_act_name,ст. 965
+196,kz_legalrag_0229,missing_act_name,п. 1 ст. 138
+196,kz_legalrag_0229,missing_act_name,ст. 138
+196,kz_legalrag_0229,missing_act_name,ст. 138 и 139
+196,kz_legalrag_0229,missing_act_name,ст. 139
+197,kz_legalrag_0230,missing_act_name,п. 1 ст. 490
+197,kz_legalrag_0230,missing_act_name,п. 4 ст. 490
+197,kz_legalrag_0230,missing_act_name,ст. 490
+201,kz_legalrag_0234,missing_act_name,ст. 47
+207,kz_legalrag_0240,missing_act_name,ст. 47
+210,kz_legalrag_0243,missing_act_name,п.1 ст. 44
+210,kz_legalrag_0243,missing_act_name,ст. 44
+211,kz_legalrag_0244,trailing_period,статье 22.
+212,kz_legalrag_0245,missing_act_name,п. 1 ст. 1
+212,kz_legalrag_0245,missing_act_name,п. 2 ст. 122
+212,kz_legalrag_0245,missing_act_name,ст. 1
+212,kz_legalrag_0245,missing_act_name,ст. 122
+217,kz_legalrag_0250,missing_act_name,п.1 ст. 35
+217,kz_legalrag_0250,missing_act_name,п.1 ст. 42
+217,kz_legalrag_0250,missing_act_name,п.1 ст. 683
+217,kz_legalrag_0250,missing_act_name,ст. 35
+217,kz_legalrag_0250,missing_act_name,ст. 42
+217,kz_legalrag_0250,missing_act_name,ст. 683
+221,kz_legalrag_0254,missing_act_name,ст. 127
+222,kz_legalrag_0255,missing_act_name,ст. 127
+227,kz_legalrag_0263,missing_act_name,ст. 47
+228,kz_legalrag_0264,missing_act_name,ст. 350
+229,kz_legalrag_0265,missing_act_name,ст. 16
+233,kz_legalrag_0269,missing_act_name,ст. 43
+233,kz_legalrag_0269,missing_act_name,ст. 50
+239,kz_legalrag_0276,missing_act_name,ст. 87
+245,kz_legalrag_0282,missing_act_name,ст. 136
+249,kz_legalrag_0288,missing_act_name,п.3 ст. 39
+249,kz_legalrag_0288,missing_act_name,ст. 39
+253,kz_legalrag_0292,missing_act_name,ст. 138
+263,kz_legalrag_0305,missing_act_name,ст. 122
+264,kz_legalrag_0307,trailing_period,п. 2 ст. 82 Приказ Министра по чрезвычайным ситуациям Республики Казахстан от 21 февраля 2022 года № 55.
+264,kz_legalrag_0307,trailing_period,ст. 82 Приказ Министра по чрезвычайным ситуациям Республики Казахстан от 21 февраля 2022 года № 55.
+269,kz_legalrag_0316,missing_act_name,ст. 47
+269,kz_legalrag_0316,missing_act_name,ст. 23
+275,kz_legalrag_0322,missing_act_name,п. 1 ст. 1
+275,kz_legalrag_0322,missing_act_name,п. 1 ст. 44
+275,kz_legalrag_0322,missing_act_name,п. 2 ст. 401
+275,kz_legalrag_0322,missing_act_name,п. 4 ст. 12
+275,kz_legalrag_0322,missing_act_name,п. 5 ст. 12
+275,kz_legalrag_0322,missing_act_name,п. 5 ст. 403
+275,kz_legalrag_0322,missing_act_name,п. 9 ст. 43
+275,kz_legalrag_0322,missing_act_name,ст. 1
+275,kz_legalrag_0322,missing_act_name,ст. 12
+275,kz_legalrag_0322,missing_act_name,ст. 401
+275,kz_legalrag_0322,missing_act_name,ст. 403
+275,kz_legalrag_0322,missing_act_name,ст. 43
+275,kz_legalrag_0322,missing_act_name,ст. 44
+287,kz_legalrag_0334,missing_act_name,п. 1 ст. 282
+287,kz_legalrag_0334,missing_act_name,ст. 127
+287,kz_legalrag_0334,missing_act_name,ст. 282
+288,kz_legalrag_0335,missing_act_name,п. 1 ст. 70
+288,kz_legalrag_0335,missing_act_name,ст. 70
+290,kz_legalrag_0337,missing_act_name,ст. 11
+290,kz_legalrag_0337,missing_act_name,ст. 3
+293,kz_legalrag_0340,missing_act_name,п. 3 ст. 92
+293,kz_legalrag_0340,missing_act_name,п. 3 ст. 94
+293,kz_legalrag_0340,missing_act_name,ст. 92
+293,kz_legalrag_0340,missing_act_name,ст. 94
+293,kz_legalrag_0340,missing_act_name,ст. 242
+307,kz_legalrag_0355,missing_act_name,п.1 ст. 330
+307,kz_legalrag_0355,missing_act_name,ст. 330
+308,kz_legalrag_0356,missing_act_name,п.1 ст. 330
+308,kz_legalrag_0356,missing_act_name,ст. 330
+318,kz_legalrag_0367,missing_act_name,п.1 ст. 380
+318,kz_legalrag_0367,missing_act_name,ст. 380
+324,kz_legalrag_0375,missing_act_name,п. 1 ст. 18
+324,kz_legalrag_0375,missing_act_name,ст. 13
+324,kz_legalrag_0375,missing_act_name,ст. 18
+324,kz_legalrag_0375,missing_act_name,ст. 7
+327,kz_legalrag_0380,missing_act_name,ст. 2
+332,kz_legalrag_0388,missing_act_name,п. 10 ст. 139
+332,kz_legalrag_0388,missing_act_name,п.1 ст. 161
+332,kz_legalrag_0388,missing_act_name,ст. 139
+332,kz_legalrag_0388,missing_act_name,ст. 161
+341,kz_legalrag_0398,missing_act_name,п.1 ст. 52
+341,kz_legalrag_0398,missing_act_name,п.3 ст. 22
+341,kz_legalrag_0398,missing_act_name,ст. 148
+341,kz_legalrag_0398,missing_act_name,ст. 22
+341,kz_legalrag_0398,missing_act_name,ст. 52
+344,kz_legalrag_0401,missing_act_name,п.1 ст. 134
+344,kz_legalrag_0401,missing_act_name,п.1 ст. 408
+344,kz_legalrag_0401,missing_act_name,п.2 ст. 136
+344,kz_legalrag_0401,missing_act_name,ст. 134
+344,kz_legalrag_0401,missing_act_name,ст. 136
+344,kz_legalrag_0401,missing_act_name,ст. 408
+359,kz_legalrag_0418,missing_act_name,п. 3 ст. 22
+359,kz_legalrag_0418,missing_act_name,ст. 22
+361,kz_legalrag_0420,missing_act_name,ст. 22
+361,kz_legalrag_0420,missing_act_name,ст. 240
+361,kz_legalrag_0420,missing_act_name,ст. 3
+362,kz_legalrag_0421,missing_act_name,ст. 148
+362,kz_legalrag_0421,missing_act_name,ст. 16
+362,kz_legalrag_0421,missing_act_name,ст. 35
+362,kz_legalrag_0421,missing_act_name,ст. 947
+365,kz_legalrag_0424,missing_act_name,п.1 ст. 23
+365,kz_legalrag_0424,missing_act_name,ст. 23
+367,kz_legalrag_0426,missing_act_name,п.1 ст. 386
+367,kz_legalrag_0426,missing_act_name,ст. 386
+369,kz_legalrag_0428,structural_unit_without_article_or_act,подп. 12
+373,kz_legalrag_0432,missing_act_name,п.1 ст. 149
+373,kz_legalrag_0432,missing_act_name,п.2 ст. 148
+373,kz_legalrag_0432,missing_act_name,п.3 ст. 240
+373,kz_legalrag_0432,missing_act_name,п.5 ст. 103
+373,kz_legalrag_0432,missing_act_name,п.8 ст. 131
+373,kz_legalrag_0432,missing_act_name,ст. 43
+373,kz_legalrag_0432,missing_act_name,ст. 103
+373,kz_legalrag_0432,missing_act_name,ст. 131
+373,kz_legalrag_0432,missing_act_name,ст. 135
+373,kz_legalrag_0432,missing_act_name,ст. 148
+373,kz_legalrag_0432,missing_act_name,ст. 149
+373,kz_legalrag_0432,missing_act_name,ст. 240
+373,kz_legalrag_0432,missing_act_name,ст. 28
+373,kz_legalrag_0432,missing_act_name,ст. 31
+385,kz_legalrag_0444,missing_act_name,п.1 ст. 8
+385,kz_legalrag_0444,missing_act_name,п.2 ст. 148
+385,kz_legalrag_0444,missing_act_name,п.2 ст. 36
+385,kz_legalrag_0444,missing_act_name,п.2 ст. 63
+385,kz_legalrag_0444,missing_act_name,п.5 ст. 8
+385,kz_legalrag_0444,missing_act_name,ст. 148
+385,kz_legalrag_0444,missing_act_name,ст. 264
+385,kz_legalrag_0444,missing_act_name,ст. 36
+385,kz_legalrag_0444,missing_act_name,ст. 63
+385,kz_legalrag_0444,missing_act_name,ст. 8
+387,kz_legalrag_0446,missing_act_name,п.1 ст. 35
+387,kz_legalrag_0446,missing_act_name,п.2 ст. 38
+387,kz_legalrag_0446,missing_act_name,ст. 35
+387,kz_legalrag_0446,missing_act_name,ст. 38
+390,kz_legalrag_0449,missing_act_name,ст. 39
+391,kz_legalrag_0450,missing_act_name,п.1 ст. 180
+391,kz_legalrag_0450,missing_act_name,п.1 ст. 917
+391,kz_legalrag_0450,missing_act_name,ст. 419
+391,kz_legalrag_0450,missing_act_name,ст. 148
+391,kz_legalrag_0450,missing_act_name,ст. 149
+391,kz_legalrag_0450,missing_act_name,ст. 180
+391,kz_legalrag_0450,missing_act_name,ст. 181
+391,kz_legalrag_0450,missing_act_name,ст. 917
+393,kz_legalrag_0452,missing_act_name,п.1 ст. 134
+393,kz_legalrag_0452,missing_act_name,п.1 ст. 152
+393,kz_legalrag_0452,missing_act_name,п.1 ст. 350
+393,kz_legalrag_0452,missing_act_name,п.2 ст. 10
+393,kz_legalrag_0452,missing_act_name,п.2 ст. 136
+393,kz_legalrag_0452,missing_act_name,п.2 ст. 277
+393,kz_legalrag_0452,missing_act_name,ст. 10
+393,kz_legalrag_0452,missing_act_name,ст. 134
+393,kz_legalrag_0452,missing_act_name,ст. 136
+393,kz_legalrag_0452,missing_act_name,ст. 152
+393,kz_legalrag_0452,missing_act_name,ст. 272
+393,kz_legalrag_0452,missing_act_name,ст. 277
+393,kz_legalrag_0452,missing_act_name,ст. 350
+401,kz_legalrag_0460,missing_act_name,п.1 ст. 49
+401,kz_legalrag_0460,missing_act_name,п.1 ст. 109
+401,kz_legalrag_0460,missing_act_name,ст. 49
+401,kz_legalrag_0460,missing_act_name,ст. 109
+401,kz_legalrag_0460,missing_act_name,ст. 4
+403,kz_legalrag_0462,missing_act_name,ст. 34
+417,kz_legalrag_0480,missing_act_name,ст. 170
+425,kz_legalrag_0490,missing_act_name,п. 2 ст. 48
+425,kz_legalrag_0490,missing_act_name,ст. 2
+425,kz_legalrag_0490,missing_act_name,ст. 48
+426,kz_legalrag_0491,missing_act_name,п.1 ст. 159
+426,kz_legalrag_0491,missing_act_name,п.1 ст. 191
+426,kz_legalrag_0491,missing_act_name,п.2 ст. 78
+426,kz_legalrag_0491,missing_act_name,ст. 79
+426,kz_legalrag_0491,missing_act_name,ст. 159
+426,kz_legalrag_0491,missing_act_name,ст. 191
+426,kz_legalrag_0491,missing_act_name,ст. 192
+426,kz_legalrag_0491,missing_act_name,ст. 78
+427,kz_legalrag_0492,missing_act_name,п.3 ст. 26
+427,kz_legalrag_0492,missing_act_name,ст. 26
+429,kz_legalrag_0494,missing_act_name,п. 6 ст. 37
+429,kz_legalrag_0494,missing_act_name,п.1 ст. 24
+429,kz_legalrag_0494,missing_act_name,п.10 ст. 26
+429,kz_legalrag_0494,missing_act_name,п.3 ст. 26
+429,kz_legalrag_0494,missing_act_name,п.6 ст. 37
+429,kz_legalrag_0494,missing_act_name,ст. 37
+429,kz_legalrag_0494,missing_act_name,ст. 24
+429,kz_legalrag_0494,missing_act_name,ст. 26
+431,kz_legalrag_0497,missing_act_name,п.1 ст. 725
+431,kz_legalrag_0497,missing_act_name,ст. 6
+431,kz_legalrag_0497,missing_act_name,ст. 7
+431,kz_legalrag_0497,missing_act_name,ст. 725
+433,kz_legalrag_0499,missing_act_name,ст. 119
+437,kz_legalrag_0503,missing_act_name,п.1 ст. 90
+437,kz_legalrag_0503,missing_act_name,п.1 ст. 92
+437,kz_legalrag_0503,missing_act_name,ст. 135
+437,kz_legalrag_0503,missing_act_name,ст. 87
+437,kz_legalrag_0503,missing_act_name,ст. 90
+437,kz_legalrag_0503,missing_act_name,ст. 92
+446,kz_legalrag_0512,missing_act_name,п. 1 ст. 178
+446,kz_legalrag_0512,missing_act_name,п. 1 ст. 180
+446,kz_legalrag_0512,missing_act_name,п. 2 ст. 178
+446,kz_legalrag_0512,missing_act_name,ст. 178
+446,kz_legalrag_0512,missing_act_name,ст. 180
+451,kz_legalrag_0518,missing_act_name,ст. 369
+453,kz_legalrag_0520,missing_act_name,п. 3 ст. 35
+453,kz_legalrag_0520,missing_act_name,ст. 148
+453,kz_legalrag_0520,missing_act_name,ст. 35
+456,kz_legalrag_0524,missing_act_name,ст. 543
+463,kz_legalrag_0535,missing_act_name,ст. 35
+463,kz_legalrag_0535,missing_act_name,ст. 91
+467,kz_legalrag_0543,missing_act_name,ст. 86
+471,kz_legalrag_0547,missing_act_name,п.1 ст. 226
+471,kz_legalrag_0547,missing_act_name,п.2 ст. 225
+471,kz_legalrag_0547,missing_act_name,ст. 288
+471,kz_legalrag_0547,missing_act_name,ст. 225
+471,kz_legalrag_0547,missing_act_name,ст. 226
+471,kz_legalrag_0547,missing_act_name,ст. 325
+473,kz_legalrag_0549,missing_act_name,п.1 ст. 30
+473,kz_legalrag_0549,missing_act_name,п.1 ст. 686
+473,kz_legalrag_0549,missing_act_name,п.35 ст. 1
+474,kz_legalrag_0550,missing_act_name,п.1 ст. 137
+474,kz_legalrag_0550,missing_act_name,ст. 137
+476,kz_legalrag_0552,missing_act_name,п.1 ст. 167
+476,kz_legalrag_0552,missing_act_name,п.1 ст. 181
+476,kz_legalrag_0552,missing_act_name,ст. 167
+476,kz_legalrag_0552,missing_act_name,ст. 181
+483,kz_legalrag_0565,missing_act_name,ст. 141
+489,kz_legalrag_0571,missing_act_name,п.3 ст. 38
+489,kz_legalrag_0571,missing_act_name,п.4 ст. 38
+489,kz_legalrag_0571,missing_act_name,ст. 38
+491,kz_legalrag_0573,missing_act_name,п.1 ст. 43
+491,kz_legalrag_0573,missing_act_name,п.3 ст. 34
+491,kz_legalrag_0573,missing_act_name,п.4 ст. 517
+492,kz_legalrag_0574,missing_act_name,п.1 ст. 47
+492,kz_legalrag_0574,missing_act_name,п.3 ст. 47
+492,kz_legalrag_0574,missing_act_name,ст. 49
+492,kz_legalrag_0574,missing_act_name,ст. 47
+505,kz_legalrag_0592,missing_act_name,п. 1 ст. 18
+505,kz_legalrag_0592,missing_act_name,п. 1 ст. 686
+505,kz_legalrag_0592,missing_act_name,п. 2 ст. 35
+505,kz_legalrag_0592,missing_act_name,ст. 18
+505,kz_legalrag_0592,missing_act_name,ст. 35
+505,kz_legalrag_0592,missing_act_name,ст. 686
+507,kz_legalrag_0595,missing_act_name,ст. 839
+508,kz_legalrag_0596,missing_act_name,п.6 ст. 8
+508,kz_legalrag_0596,missing_act_name,ст. 8
+513,kz_legalrag_0602,missing_act_name,п.2 ст. 62
+513,kz_legalrag_0602,missing_act_name,п.2 ст. 168
+513,kz_legalrag_0602,missing_act_name,ст. 62
+513,kz_legalrag_0602,missing_act_name,ст. 168
+518,kz_legalrag_0607,missing_act_name,п.1 ст. 183
+518,kz_legalrag_0607,missing_act_name,п.1 ст. 225
+518,kz_legalrag_0607,missing_act_name,п.2 ст. 183
+518,kz_legalrag_0607,missing_act_name,ст. 183
+518,kz_legalrag_0607,missing_act_name,ст. 225
+527,kz_legalrag_0617,missing_act_name,ст. 9
+528,kz_legalrag_0618,missing_act_name,ст. 9
+532,kz_legalrag_0622,missing_act_name,ст. 803
+532,kz_legalrag_0622,missing_act_name,ст. 827
+551,kz_legalrag_0644,missing_act_name,ст. 62
+551,kz_legalrag_0644,missing_act_name,ст. 741
+551,kz_legalrag_0644,missing_act_name,ст. 802
+556,kz_legalrag_0650,missing_act_name,п.2 ст. 118
+556,kz_legalrag_0650,missing_act_name,п.2 ст. 120
+556,kz_legalrag_0650,missing_act_name,п.4 ст. 144
+556,kz_legalrag_0650,missing_act_name,ст. 118
+556,kz_legalrag_0650,missing_act_name,ст. 120
+556,kz_legalrag_0650,missing_act_name,ст. 144
+568,kz_legalrag_0663,missing_act_name,ст. 155
+568,kz_legalrag_0663,missing_act_name,ст. 34
+572,kz_legalrag_0667,missing_act_name,ст. 139
+572,kz_legalrag_0667,missing_act_name,ст. 165
+578,kz_legalrag_0674,missing_act_name,п.1 ст. 138
+578,kz_legalrag_0674,missing_act_name,ст. 138
+590,kz_legalrag_0701,missing_act_name,ст. 380
+591,kz_legalrag_0703,missing_act_name,п.1 ст. 5
+591,kz_legalrag_0703,missing_act_name,п.1 ст. 64
+591,kz_legalrag_0703,missing_act_name,п.6 ст. 19
+591,kz_legalrag_0703,missing_act_name,ст. 19
+591,kz_legalrag_0703,missing_act_name,ст. 5
+591,kz_legalrag_0703,missing_act_name,ст. 64
+601,kz_legalrag_0716,missing_act_name,ст. 18
+601,kz_legalrag_0716,missing_act_name,ст. 21
+602,kz_legalrag_0717,missing_act_name,ст. 1
+608,kz_legalrag_0728,missing_act_name,п. 1 ст. 273
+608,kz_legalrag_0728,missing_act_name,ст. 273
+619,kz_legalrag_0739,missing_act_name,п.1 ст. 42
+619,kz_legalrag_0739,missing_act_name,п.3 ст. 42
+619,kz_legalrag_0739,missing_act_name,ст. 148 и 149
+619,kz_legalrag_0739,missing_act_name,ст. 35
+619,kz_legalrag_0739,missing_act_name,ст. 42
+619,kz_legalrag_0739,missing_act_name,ст. 635
+623,kz_legalrag_0744,missing_act_name,п.1 ст. 114
+623,kz_legalrag_0744,missing_act_name,п.1 ст. 124
+623,kz_legalrag_0744,missing_act_name,ст. 114
+623,kz_legalrag_0744,missing_act_name,ст. 124
+623,kz_legalrag_0744,missing_act_name,ст. 47
+623,kz_legalrag_0744,missing_act_name,ст. 48
+625,kz_legalrag_0746,missing_act_name,п.2 ст. 16
+625,kz_legalrag_0746,missing_act_name,ст. 16
+625,kz_legalrag_0746,missing_act_name,ст. 7
+636,kz_legalrag_0759,missing_act_name,п.1 ст. 149
+636,kz_legalrag_0759,missing_act_name,п.1 ст. 917
+636,kz_legalrag_0759,missing_act_name,ст. 149
+636,kz_legalrag_0759,missing_act_name,ст. 917
+637,kz_legalrag_0760,missing_act_name,п.3 ст. 1
+637,kz_legalrag_0760,missing_act_name,ст. 1
+638,kz_legalrag_0761,missing_act_name,п.1 ст. 63
+639,kz_legalrag_0762,missing_act_name,ст. 13
+648,kz_legalrag_0774,missing_act_name,ст. 1044
+656,kz_legalrag_0784,missing_act_name,ст. 241
+676,kz_legalrag_0808,missing_act_name,п.1 ст. 106
+676,kz_legalrag_0808,missing_act_name,п.1 ст. 4
+676,kz_legalrag_0808,missing_act_name,п.2 ст. 129
+676,kz_legalrag_0808,missing_act_name,п.3 ст. 92
+676,kz_legalrag_0808,missing_act_name,п.5 ст. 91
+676,kz_legalrag_0808,missing_act_name,ст. 106
+676,kz_legalrag_0808,missing_act_name,ст. 129
+676,kz_legalrag_0808,missing_act_name,ст. 132
+676,kz_legalrag_0808,missing_act_name,ст. 4
+676,kz_legalrag_0808,missing_act_name,ст. 84
+676,kz_legalrag_0808,missing_act_name,ст. 91
+676,kz_legalrag_0808,missing_act_name,ст. 92
+676,kz_legalrag_0808,missing_act_name,ст. 96
+682,kz_legalrag_0814,missing_act_name,п.1 ст. 30
+682,kz_legalrag_0814,missing_act_name,ст. 30
+685,kz_legalrag_0820,missing_act_name,ст. 24
+685,kz_legalrag_0820,missing_act_name,ст. 26
+687,kz_legalrag_0823,missing_act_name,ст. 299
+687,kz_legalrag_0823,missing_act_name,ст. 399
+691,kz_legalrag_0828,missing_act_name,ст. 216
+691,kz_legalrag_0828,missing_act_name,ст. 252
+692,kz_legalrag_0829,missing_act_name,ст. 216
+692,kz_legalrag_0829,missing_act_name,ст. 252
+694,kz_legalrag_0832,missing_act_name,ст. 22
+695,kz_legalrag_0834,missing_act_name,п.1 ст. 51
+695,kz_legalrag_0834,missing_act_name,п.3 ст. 47
+698,kz_legalrag_0842,missing_act_name,п.4 ст. 36
+698,kz_legalrag_0842,missing_act_name,ст. 36
+702,kz_legalrag_0846,missing_act_name,п. 1 ст. 175
+702,kz_legalrag_0846,missing_act_name,ст. 138
+702,kz_legalrag_0846,missing_act_name,ст. 139
+702,kz_legalrag_0846,missing_act_name,ст. 175
+702,kz_legalrag_0846,missing_act_name,ст. 68
+708,kz_legalrag_0854,missing_act_name,ст. 16
+708,kz_legalrag_0854,missing_act_name,ст. 31
+708,kz_legalrag_0854,missing_act_name,ст. 42
+711,kz_legalrag_0857,missing_act_name,п.1 ст. 47
+711,kz_legalrag_0857,missing_act_name,п.1 ст. 48
+711,kz_legalrag_0857,missing_act_name,п.1 ст. 50
+711,kz_legalrag_0857,missing_act_name,п.2 ст. 47
+711,kz_legalrag_0857,missing_act_name,ст. 47
+711,kz_legalrag_0857,missing_act_name,ст. 48
+711,kz_legalrag_0857,missing_act_name,ст. 50
+711,kz_legalrag_0857,missing_act_name,ст. 36
+713,kz_legalrag_0859,missing_act_name,п.5 ст. 55
+713,kz_legalrag_0859,missing_act_name,ст. 55
+713,kz_legalrag_0859,missing_act_name,ст. 74
+716,kz_legalrag_0862,missing_act_name,п.1 ст. 149
+716,kz_legalrag_0862,missing_act_name,п.1 ст. 148
+716,kz_legalrag_0862,missing_act_name,п.1 ст. 610
+716,kz_legalrag_0862,missing_act_name,п.2 ст. 10
+716,kz_legalrag_0862,missing_act_name,п.3 ст. 42
+716,kz_legalrag_0862,missing_act_name,п.9 ст. 25
+716,kz_legalrag_0862,missing_act_name,ст. 149
+716,kz_legalrag_0862,missing_act_name,ст. 10
+716,kz_legalrag_0862,missing_act_name,ст. 148
+716,kz_legalrag_0862,missing_act_name,ст. 25
+716,kz_legalrag_0862,missing_act_name,ст. 42
+716,kz_legalrag_0862,missing_act_name,ст. 610
+720,kz_legalrag_0867,missing_act_name,п.2 ст. 101
+720,kz_legalrag_0867,missing_act_name,ст. 101
+729,kz_legalrag_0877,missing_act_name,п.2 ст. 160
+729,kz_legalrag_0877,missing_act_name,ст. 160
+730,kz_legalrag_0878,missing_act_name,ст. 53
+737,kz_legalrag_0887,missing_act_name,ст. 8
+737,kz_legalrag_0887,missing_act_name,ст. 9
+753,kz_legalrag_0904,missing_act_name,п.1 ст. 31
+753,kz_legalrag_0904,missing_act_name,ст. 27
+753,kz_legalrag_0904,missing_act_name,ст. 31
+754,kz_legalrag_0905,missing_act_name,п.1 ст. 31
+754,kz_legalrag_0905,missing_act_name,ст. 27
+754,kz_legalrag_0905,missing_act_name,ст. 31
+761,kz_legalrag_0913,missing_act_name,п.1 ст. 47
+761,kz_legalrag_0913,missing_act_name,п.12 ст. 27
+761,kz_legalrag_0913,missing_act_name,п.2 ст. 47
+761,kz_legalrag_0913,missing_act_name,ст. 27
+761,kz_legalrag_0913,missing_act_name,ст. 47
+763,kz_legalrag_0915,missing_act_name,п.1 ст. 44
+763,kz_legalrag_0915,missing_act_name,п.1 ст. 50
+763,kz_legalrag_0915,missing_act_name,ст. 32
+763,kz_legalrag_0915,missing_act_name,ст. 44
+763,kz_legalrag_0915,missing_act_name,ст. 50
+770,kz_legalrag_0923,missing_act_name,п. 1 ст. 15
+770,kz_legalrag_0923,missing_act_name,ст. 15
+770,kz_legalrag_0923,missing_act_name,ст. 30
+771,kz_legalrag_0924,missing_act_name,ст. 38
+776,kz_legalrag_0934,missing_act_name,п.1 ст. 320
+776,kz_legalrag_0934,missing_act_name,п.1 ст. 331
+776,kz_legalrag_0934,missing_act_name,п.1 ст. 646
+776,kz_legalrag_0934,missing_act_name,п.1 ст. 7
+776,kz_legalrag_0934,missing_act_name,п.2 ст. 319
+776,kz_legalrag_0934,missing_act_name,ст. 320
+776,kz_legalrag_0934,missing_act_name,ст. 319
+776,kz_legalrag_0934,missing_act_name,ст. 331
+776,kz_legalrag_0934,missing_act_name,ст. 646
+776,kz_legalrag_0934,missing_act_name,ст. 7
+777,kz_legalrag_0935,missing_act_name,п.1 ст. 159
+777,kz_legalrag_0935,missing_act_name,п.1 ст. 30
+777,kz_legalrag_0935,missing_act_name,ст. 159
+777,kz_legalrag_0935,missing_act_name,ст. 30
+777,kz_legalrag_0935,missing_act_name,ст. 65
+780,kz_legalrag_0938,structural_unit_without_article_or_act,подп. 2
+780,kz_legalrag_0938,missing_act_name,п. 1 ст. 30
+780,kz_legalrag_0938,missing_act_name,ст. 30
+780,kz_legalrag_0938,missing_act_name,ст. 33
+780,kz_legalrag_0938,missing_act_name,ст. 51
+782,kz_legalrag_0941,missing_act_name,ст. 29
+786,kz_legalrag_0948,missing_act_name,п.1 ст. 346
+786,kz_legalrag_0948,missing_act_name,п.1 ст. 348
+786,kz_legalrag_0948,missing_act_name,п.2 ст. 346
+786,kz_legalrag_0948,missing_act_name,ст. 340
+786,kz_legalrag_0948,missing_act_name,ст. 346
+786,kz_legalrag_0948,missing_act_name,ст. 348
+791,kz_legalrag_0953,missing_act_name,п.1 ст. 157
+791,kz_legalrag_0953,missing_act_name,п.9 ст. 645
+791,kz_legalrag_0953,missing_act_name,ст. 157
+791,kz_legalrag_0953,missing_act_name,ст. 645
+800,kz_legalrag_0963,missing_act_name,п.1 ст. 44
+800,kz_legalrag_0963,missing_act_name,ст. 44
+805,kz_legalrag_0974,missing_act_name,ст. 705
+814,kz_legalrag_0986,missing_act_name,п.1 ст. 8
+814,kz_legalrag_0986,missing_act_name,п.2 ст. 8
+814,kz_legalrag_0986,missing_act_name,п.3 ст. 42
+814,kz_legalrag_0986,missing_act_name,ст. 103
+814,kz_legalrag_0986,missing_act_name,ст. 149
+814,kz_legalrag_0986,missing_act_name,ст. 29
+814,kz_legalrag_0986,missing_act_name,ст. 42
+814,kz_legalrag_0986,missing_act_name,ст. 8
+814,kz_legalrag_0986,missing_act_name,ст. 9
+816,kz_legalrag_0988,missing_act_name,п.1 ст. 148
+816,kz_legalrag_0988,missing_act_name,п.1 ст. 149
+816,kz_legalrag_0988,missing_act_name,п.1 ст. 93
+816,kz_legalrag_0988,missing_act_name,п.1 ст. 95
+816,kz_legalrag_0988,missing_act_name,п.1 ст. 251
+816,kz_legalrag_0988,missing_act_name,п.2 ст. 149
+816,kz_legalrag_0988,missing_act_name,п.2 ст. 93
+816,kz_legalrag_0988,missing_act_name,ст. 127
+816,kz_legalrag_0988,missing_act_name,ст. 148
+816,kz_legalrag_0988,missing_act_name,ст. 149
+816,kz_legalrag_0988,missing_act_name,ст. 93
+816,kz_legalrag_0988,missing_act_name,ст. 95
+816,kz_legalrag_0988,missing_act_name,ст. 251
+822,kz_legalrag_0994,missing_act_name,ст. 24
+822,kz_legalrag_0994,missing_act_name,ст. 28
+823,kz_legalrag_0995,missing_act_name,п.2 ст. 14
+823,kz_legalrag_0995,missing_act_name,п.2 ст. 25
+823,kz_legalrag_0995,missing_act_name,п.3 ст. 25
+823,kz_legalrag_0995,missing_act_name,п.8 ст. 30
+823,kz_legalrag_0995,missing_act_name,ст. 14
+823,kz_legalrag_0995,missing_act_name,ст. 25
+823,kz_legalrag_0995,missing_act_name,ст. 30
+824,kz_legalrag_0996,missing_act_name,п.2 ст. 39
+824,kz_legalrag_0996,missing_act_name,ст. 39
+825,kz_legalrag_0997,missing_act_name,п.1 ст. 331
+825,kz_legalrag_0997,missing_act_name,п.1 ст. 316
+825,kz_legalrag_0997,missing_act_name,п.5 ст. 331
+825,kz_legalrag_0997,missing_act_name,ст. 331
+825,kz_legalrag_0997,missing_act_name,ст. 316
+825,kz_legalrag_0997,missing_act_name,ст. 320
+829,kz_legalrag_1001,missing_act_name,п.1 ст. 148
+829,kz_legalrag_1001,missing_act_name,п.1 ст. 149
+829,kz_legalrag_1001,missing_act_name,п.1 ст. 158
+829,kz_legalrag_1001,missing_act_name,п.2 ст. 149
+829,kz_legalrag_1001,missing_act_name,п.2 ст. 220
+829,kz_legalrag_1001,missing_act_name,п.3 ст. 220
+829,kz_legalrag_1001,missing_act_name,ст. 148
+829,kz_legalrag_1001,missing_act_name,ст. 149
+829,kz_legalrag_1001,missing_act_name,ст. 158
+829,kz_legalrag_1001,missing_act_name,ст. 220
+830,kz_legalrag_1002,missing_act_name,п. 1 ст. 953
+830,kz_legalrag_1002,missing_act_name,п.1 ст. 29
+830,kz_legalrag_1002,missing_act_name,п.1 ст. 190
+830,kz_legalrag_1002,missing_act_name,п.5 ст. 28
+830,kz_legalrag_1002,missing_act_name,ст. 29
+830,kz_legalrag_1002,missing_act_name,ст. 953
+830,kz_legalrag_1002,missing_act_name,ст. 190
+830,kz_legalrag_1002,missing_act_name,ст. 28
+839,kz_legalrag_1011,missing_act_name,п.2 ст. 21
+839,kz_legalrag_1011,missing_act_name,ст. 21
+843,kz_legalrag_1016,missing_act_name,п. 2 ст. 408
+843,kz_legalrag_1016,missing_act_name,ст. 408
+843,kz_legalrag_1016,missing_act_name,ст. 417
+855,kz_legalrag_1030,structural_unit_without_article_or_act,подп. 2)
+855,kz_legalrag_1030,missing_act_name,п. 1 ст. 29
+855,kz_legalrag_1030,missing_act_name,ст. 29
+857,kz_legalrag_1034,missing_act_name,ст. 105
+857,kz_legalrag_1034,missing_act_name,ст. 46
+861,kz_legalrag_1039,missing_act_name,ст. 100
+867,kz_legalrag_1045,missing_act_name,"п.1 данного Перечня: «алименты удерживаются со всех видов пенсионных выплат, с государственных социальных пособий, за исключением пособий,"
+867,kz_legalrag_1045,structural_unit_without_article_or_act,"п.1 данного Перечня: «алименты удерживаются со всех видов пенсионных выплат, с государственных социальных пособий, за исключением пособий,"
+868,kz_legalrag_1046,missing_act_name,"п.1 данного Перечня: «алименты удерживаются со всех видов пенсионных выплат, с государственных социальных пособий, за исключением пособий,"
+868,kz_legalrag_1046,structural_unit_without_article_or_act,"п.1 данного Перечня: «алименты удерживаются со всех видов пенсионных выплат, с государственных социальных пособий, за исключением пособий,"
+870,kz_legalrag_1049,missing_act_name,п. 1 ст. 644
+870,kz_legalrag_1049,missing_act_name,п. 1 ст. 646
+870,kz_legalrag_1049,missing_act_name,ст. 217
+870,kz_legalrag_1049,missing_act_name,ст. 13
+870,kz_legalrag_1049,missing_act_name,ст. 644
+870,kz_legalrag_1049,missing_act_name,ст. 646
+870,kz_legalrag_1049,missing_act_name,ст. 658
+871,kz_legalrag_1050,missing_act_name,п.5 ст. 84
+871,kz_legalrag_1050,missing_act_name,п.5 ст. 75
+871,kz_legalrag_1050,missing_act_name,ст. 84
+871,kz_legalrag_1050,missing_act_name,ст. 108
+871,kz_legalrag_1050,missing_act_name,ст. 109
+871,kz_legalrag_1050,missing_act_name,ст. 110
+871,kz_legalrag_1050,missing_act_name,ст. 68
+871,kz_legalrag_1050,missing_act_name,ст. 75
+871,kz_legalrag_1050,missing_act_name,ст. 77
+873,kz_legalrag_1052,missing_act_name,п.2 ст. 3
+873,kz_legalrag_1052,missing_act_name,п.2 ст. 49
+873,kz_legalrag_1052,missing_act_name,ст. 3
+873,kz_legalrag_1052,missing_act_name,ст. 49
+874,kz_legalrag_1053,missing_act_name,п.1 ст. 25
+874,kz_legalrag_1053,missing_act_name,п.2 ст. 25
+874,kz_legalrag_1053,missing_act_name,ст. 25
+874,kz_legalrag_1053,missing_act_name,ст. 22
+879,kz_legalrag_1058,missing_act_name,п.1 ст. 52
+879,kz_legalrag_1058,missing_act_name,п.2 ст. 152
+879,kz_legalrag_1058,missing_act_name,п.2 ст. 33
+879,kz_legalrag_1058,missing_act_name,п.2 ст. 54
+879,kz_legalrag_1058,missing_act_name,п.3 ст. 33
+879,kz_legalrag_1058,missing_act_name,ст. 152
+879,kz_legalrag_1058,missing_act_name,ст. 33
+879,kz_legalrag_1058,missing_act_name,ст. 52
+879,kz_legalrag_1058,missing_act_name,ст. 54
+886,kz_legalrag_1067,missing_act_name,ст. 33
+887,kz_legalrag_1068,missing_act_name,ст. 6
+893,kz_legalrag_1074,missing_act_name,п.1 ст. 68
+893,kz_legalrag_1074,missing_act_name,п.15 ст. 616
+893,kz_legalrag_1074,missing_act_name,п.2 ст. 131
+893,kz_legalrag_1074,missing_act_name,п.4 ст. 136
+893,kz_legalrag_1074,missing_act_name,п.5 ст. 55
+893,kz_legalrag_1074,missing_act_name,ст. 127
+893,kz_legalrag_1074,missing_act_name,ст. 131
+893,kz_legalrag_1074,missing_act_name,ст. 136
+893,kz_legalrag_1074,missing_act_name,ст. 55
+893,kz_legalrag_1074,missing_act_name,ст. 616
+893,kz_legalrag_1074,missing_act_name,ст. 68
+894,kz_legalrag_1075,missing_act_name,п. 2 ст. 102
+894,kz_legalrag_1075,missing_act_name,п.2 ст. 49
+894,kz_legalrag_1075,missing_act_name,ст. 102
+894,kz_legalrag_1075,missing_act_name,ст. 107
+894,kz_legalrag_1075,missing_act_name,ст. 49
+894,kz_legalrag_1075,missing_act_name,ст. 97
+895,kz_legalrag_1076,missing_act_name,п.3 ст. 35
+895,kz_legalrag_1076,missing_act_name,ст. 35
+898,kz_legalrag_1079,missing_act_name,ст. 106
+898,kz_legalrag_1079,missing_act_name,ст. 108 и 109
+898,kz_legalrag_1079,missing_act_name,ст. 78
+898,kz_legalrag_1079,missing_act_name,ст. 99
+904,kz_legalrag_1089,missing_act_name,п. 2 ст. 69
+904,kz_legalrag_1089,missing_act_name,п.1 ст. 67
+904,kz_legalrag_1089,missing_act_name,п.10 ст. 13
+904,kz_legalrag_1089,missing_act_name,ст. 69
+904,kz_legalrag_1089,missing_act_name,ст. 13
+904,kz_legalrag_1089,missing_act_name,ст. 67
+904,kz_legalrag_1089,missing_act_name,ст. 68
+915,kz_legalrag_1105,missing_act_name,п.2 ст. 73
+915,kz_legalrag_1105,missing_act_name,п.4 ст. 30
+915,kz_legalrag_1105,missing_act_name,ст. 73
+915,kz_legalrag_1105,missing_act_name,ст. 139
+915,kz_legalrag_1105,missing_act_name,ст. 30
+916,kz_legalrag_1106,missing_act_name,п.2 ст. 73
+916,kz_legalrag_1106,missing_act_name,п.4 ст. 30
+916,kz_legalrag_1106,missing_act_name,ст. 73
+916,kz_legalrag_1106,missing_act_name,ст. 139
+916,kz_legalrag_1106,missing_act_name,ст. 30
+917,kz_legalrag_1107,missing_act_name,ст. 78
+917,kz_legalrag_1107,missing_act_name,ст. 99
+918,kz_legalrag_1108,missing_act_name,п.1 ст. 95
+918,kz_legalrag_1108,missing_act_name,п.3 ст. 95
+918,kz_legalrag_1108,missing_act_name,ст. 112
+918,kz_legalrag_1108,missing_act_name,ст. 95
+918,kz_legalrag_1108,missing_act_name,ст. 110
+918,kz_legalrag_1108,missing_act_name,ст. 111
+918,kz_legalrag_1108,missing_act_name,ст. 251
+920,kz_legalrag_1110,missing_act_name,п.1 ст. 20
+920,kz_legalrag_1110,missing_act_name,п.1 ст. 40
+920,kz_legalrag_1110,missing_act_name,п.4 ст. 8
+920,kz_legalrag_1110,missing_act_name,ст. 2
+920,kz_legalrag_1110,missing_act_name,ст. 20
+920,kz_legalrag_1110,missing_act_name,ст. 148
+920,kz_legalrag_1110,missing_act_name,ст. 40
+920,kz_legalrag_1110,missing_act_name,ст. 8
+922,kz_legalrag_1112,missing_act_name,П.3 ст. 44
+922,kz_legalrag_1112,missing_act_name,п.1 ст. 42
+922,kz_legalrag_1112,missing_act_name,п.1 ст. 43
+922,kz_legalrag_1112,missing_act_name,п.1 ст. 44
+922,kz_legalrag_1112,missing_act_name,п.10 ст. 42
+922,kz_legalrag_1112,missing_act_name,п.2 ст. 42
+922,kz_legalrag_1112,missing_act_name,п.3 ст. 42
+922,kz_legalrag_1112,missing_act_name,п.3 ст. 43
+922,kz_legalrag_1112,missing_act_name,п.5 ст. 42
+922,kz_legalrag_1112,missing_act_name,п.8 ст. 42
+922,kz_legalrag_1112,missing_act_name,ст. 42
+922,kz_legalrag_1112,missing_act_name,ст. 43
+922,kz_legalrag_1112,missing_act_name,ст. 44
+922,kz_legalrag_1112,missing_act_name,ст. 6
+927,kz_legalrag_1117,missing_act_name,п.1 ст. 68
+927,kz_legalrag_1117,missing_act_name,п.1 ст. 70
+927,kz_legalrag_1117,missing_act_name,ст. 68
+927,kz_legalrag_1117,missing_act_name,ст. 70
+933,kz_legalrag_1124,missing_act_name,ст. 76
+939,kz_legalrag_1133,missing_act_name,п.2 ст. 12
+939,kz_legalrag_1133,missing_act_name,ст. 12
+942,kz_legalrag_1138,missing_act_name,п. 1 ст. 33
+942,kz_legalrag_1138,missing_act_name,п.5 ст. 27
+942,kz_legalrag_1138,missing_act_name,ст. 27
+942,kz_legalrag_1138,missing_act_name,ст. 33
+942,kz_legalrag_1138,missing_act_name,ст. 34
+947,kz_legalrag_1144,missing_act_name,п. 3 ст. 169
+947,kz_legalrag_1144,missing_act_name,п.3 ст. 169
+947,kz_legalrag_1144,missing_act_name,ст. 139
+947,kz_legalrag_1144,missing_act_name,ст. 169
+948,kz_legalrag_1145,missing_act_name,ст. 82
+954,kz_legalrag_1151,missing_act_name,п.1 ст. 26
+954,kz_legalrag_1151,missing_act_name,п.2 ст. 37
+954,kz_legalrag_1151,missing_act_name,ст. 163
+954,kz_legalrag_1151,missing_act_name,ст. 26
+954,kz_legalrag_1151,missing_act_name,ст. 37
+955,kz_legalrag_1153,missing_act_name,п. 1 ст. 11
+955,kz_legalrag_1153,missing_act_name,п.1 ст. 25
+955,kz_legalrag_1153,missing_act_name,п.1 ст. 618
+955,kz_legalrag_1153,missing_act_name,п.13 ст. 616
+955,kz_legalrag_1153,missing_act_name,п.2 ст. 346
+955,kz_legalrag_1153,missing_act_name,п.2 ст. 526
+955,kz_legalrag_1153,missing_act_name,п.3 ст. 490
+955,kz_legalrag_1153,missing_act_name,п.4 ст. 617
+955,kz_legalrag_1153,missing_act_name,п.5 ст. 620
+955,kz_legalrag_1153,missing_act_name,п.5 ст. 622
+955,kz_legalrag_1153,missing_act_name,ст. 11
+955,kz_legalrag_1153,missing_act_name,ст. 25
+955,kz_legalrag_1153,missing_act_name,ст. 346
+955,kz_legalrag_1153,missing_act_name,ст. 490
+955,kz_legalrag_1153,missing_act_name,ст. 526
+955,kz_legalrag_1153,missing_act_name,ст. 616
+955,kz_legalrag_1153,missing_act_name,ст. 617
+955,kz_legalrag_1153,missing_act_name,ст. 618
+955,kz_legalrag_1153,missing_act_name,ст. 620
+955,kz_legalrag_1153,missing_act_name,ст. 622
+957,kz_legalrag_1155,missing_act_name,п. 1 ст. 42
+957,kz_legalrag_1155,missing_act_name,п. 3 ст. 42
+957,kz_legalrag_1155,missing_act_name,п.1 ст. 454
+957,kz_legalrag_1155,missing_act_name,ст. 42
+957,kz_legalrag_1155,missing_act_name,ст. 454
+958,kz_legalrag_1156,missing_act_name,п.1 ст. 34
+958,kz_legalrag_1156,missing_act_name,п.2 ст. 62
+958,kz_legalrag_1156,missing_act_name,ст. 34
+958,kz_legalrag_1156,missing_act_name,ст. 62
+960,kz_legalrag_1158,missing_act_name,п.1 ст. 33
+960,kz_legalrag_1158,missing_act_name,п.17 ст. 12
+960,kz_legalrag_1158,missing_act_name,п.3 ст. 47
+960,kz_legalrag_1158,missing_act_name,п.3 ст. 52
+960,kz_legalrag_1158,missing_act_name,ст. 12
+960,kz_legalrag_1158,missing_act_name,ст. 33
+960,kz_legalrag_1158,missing_act_name,ст. 47
+960,kz_legalrag_1158,missing_act_name,ст. 52
+962,kz_legalrag_1160,missing_act_name,п.13 ст. 58
+962,kz_legalrag_1160,missing_act_name,п.7 ст. 61
+962,kz_legalrag_1160,missing_act_name,ст. 58
+962,kz_legalrag_1160,missing_act_name,ст. 61
+963,kz_legalrag_1161,missing_act_name,п. 1 ст. 190
+963,kz_legalrag_1161,missing_act_name,ст. 190
+964,kz_legalrag_1162,missing_act_name,п.1 ст. 64
+964,kz_legalrag_1162,missing_act_name,п.2 ст. 38
+964,kz_legalrag_1162,missing_act_name,п.2 ст. 64
+964,kz_legalrag_1162,missing_act_name,п.2 ст. 65
+964,kz_legalrag_1162,missing_act_name,п.2 ст. 66
+964,kz_legalrag_1162,missing_act_name,ст. 38
+964,kz_legalrag_1162,missing_act_name,ст. 63
+964,kz_legalrag_1162,missing_act_name,ст. 64
+964,kz_legalrag_1162,missing_act_name,ст. 65
+964,kz_legalrag_1162,missing_act_name,ст. 66
+966,kz_legalrag_1164,missing_act_name,п.1 ст. 75
+966,kz_legalrag_1164,missing_act_name,п.3 ст. 16
+966,kz_legalrag_1164,missing_act_name,ст. 16
+966,kz_legalrag_1164,missing_act_name,ст. 75
+967,kz_legalrag_1165,missing_act_name,п.1 ст. 75
+967,kz_legalrag_1165,missing_act_name,п.3 ст. 16
+967,kz_legalrag_1165,missing_act_name,ст. 16
+967,kz_legalrag_1165,missing_act_name,ст. 75
+969,kz_legalrag_1167,missing_act_name,п.1 ст. 18
+969,kz_legalrag_1167,missing_act_name,п.1 ст. 23
+969,kz_legalrag_1167,missing_act_name,п.1 ст. 26
+969,kz_legalrag_1167,missing_act_name,п.2 ст. 1
+969,kz_legalrag_1167,missing_act_name,ст. 1
+969,kz_legalrag_1167,missing_act_name,ст. 18
+969,kz_legalrag_1167,missing_act_name,ст. 23
+969,kz_legalrag_1167,missing_act_name,ст. 26
+969,kz_legalrag_1167,missing_act_name,ст. 38
+970,kz_legalrag_1168,missing_act_name,п.1 ст. 152
+970,kz_legalrag_1168,missing_act_name,п.1 ст. 159
+970,kz_legalrag_1168,missing_act_name,п.1 ст. 170
+970,kz_legalrag_1168,missing_act_name,п.5 ст. 165
+970,kz_legalrag_1168,missing_act_name,ст. 152
+970,kz_legalrag_1168,missing_act_name,ст. 159
+970,kz_legalrag_1168,missing_act_name,ст. 165
+970,kz_legalrag_1168,missing_act_name,ст. 170
+975,kz_legalrag_1173,missing_act_name,п. 2 ст. 181
+975,kz_legalrag_1173,missing_act_name,ст. 181
+981,kz_legalrag_1179,missing_act_name,ст. 28
+989,kz_legalrag_1190,structural_unit_without_article_or_act,п. 6 условий SONY PlayStation
+991,kz_legalrag_1192,missing_act_name,п.3 ст. 35
+991,kz_legalrag_1192,missing_act_name,ст. 35
+994,kz_legalrag_1198,missing_act_name,п.1 ст. 31
+994,kz_legalrag_1198,missing_act_name,п.12 ст. 31
+994,kz_legalrag_1198,missing_act_name,п.2 ст. 28
+994,kz_legalrag_1198,missing_act_name,п.6 ст. 23
+994,kz_legalrag_1198,missing_act_name,ст. 23
+994,kz_legalrag_1198,missing_act_name,ст. 28
+994,kz_legalrag_1198,missing_act_name,ст. 31

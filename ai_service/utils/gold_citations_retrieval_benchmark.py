@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from ai_service.processing.code_names import get_code_name
+from ai_service.core.code_registry import get_code_name
 
 
 def _parse_args() -> argparse.Namespace:

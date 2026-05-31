@@ -6,176 +6,23 @@
 import os
 import re
 import sys
+import pickle
+from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 
 # Allow running as script from ai_service: python processing/prepare_data.py
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from ai_service.core import config
+from ai_service.core.code_registry import get_code_name
+from ai_service.processing.corpus_quality import (
+    compute_corpus_version,
+    sorted_documents_by_source,
+)
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import TextSplitter
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Code name mapping: filename -> (Russian name, Kazakh name)
-# ──────────────────────────────────────────────────────────────────────────────
-CODE_NAMES = {
-    "constitution.txt": ("Конституция РК", "ҚР Конституциясы"),
-    "civil_code.txt": (
-        "Гражданский кодекс РК (Общая часть)",
-        "Азаматтық кодекс (Жалпы бөлім)",
-    ),
-    "civil_code2.txt": (
-        "Гражданский кодекс РК (Особенная часть)",
-        "Азаматтық кодекс (Ерекше бөлім)",
-    ),
-    "labor_code.txt": ("Трудовой кодекс РК", "Еңбек кодексі"),
-    "tax_code.txt": ("Налоговый кодекс РК", "Салық кодексі"),
-    "code_of_administrative_offenses.txt": (
-        "Кодекс об административных правонарушениях РК",
-        "Әкімшілік құқық бұзушылық туралы кодекс",
-    ),
-    "criminal_code.txt": ("Уголовный кодекс РК", "Қылмыстық кодекс"),
-    "code_on_marriage_and_family.txt": (
-        "Кодекс о браке и семье РК",
-        "Неке және отбасы туралы кодекс",
-    ),
-    "code_on_public_health.txt": (
-        "Кодекс о здоровье народа РК",
-        "Халық денсаулығы туралы кодекс",
-    ),
-    "entrepreneurial_code.txt": ("Предпринимательский кодекс РК", "Кәсіпкерлік кодекс"),
-    "code_on_administrative_procedures.txt": (
-        "Кодекс об административных процедурах РК",
-        "Әкімшілік рәсімдер туралы кодекс",
-    ),
-    "social_code.txt": ("Социальный кодекс РК", "Әлеуметтік кодекс"),
-    "civil_procedure_code.txt": (
-        "Гражданский процессуальный кодекс РК",
-        "Азаматтық іс жүргізу кодексі",
-    ),
-    "criminal_procedure_code.txt": (
-        "Уголовно-процессуальный кодекс РК",
-        "Қылмыстық іс жүргізу кодексі",
-    ),
-    "law_on_public_procurement.txt": (
-        "Закон о государственных закупках РК",
-        "Мемлекеттік сатып алу туралы заң",
-    ),
-    "law_on_anticorruption.txt": (
-        "Закон о противодействии коррупции РК",
-        "Коррупцияға қарсы күрес туралы заң",
-    ),
-    "law_on_enforcement.txt": (
-        "Закон об исполнительном производстве РК",
-        "Орындау өндірісі туралы заң",
-    ),
-    "law_on_personal_data.txt": (
-        "Закон о персональных данных РК",
-        "Жеке деректер туралы заң",
-    ),
-    "law_on_ai.txt": (
-        "Закон об искусственном интеллекте РК",
-        "Жасанды интеллект туралы заң",
-    ),
-    "law_on_consumer_protection.txt": (
-        "Закон о защите прав потребителей РК",
-        "Тұтынушылардың құқықтарын қорғау туралы заң",
-    ),
-    "law_on_housing_relations.txt": (
-        "Закон о жилищных отношениях РК",
-        "Тұрғын үй қатынастары туралы заң",
-    ),
-    "law_on_banks.txt": (
-        "Закон о банках и банковской деятельности РК",
-        "Банктер және банк қызметі туралы заң",
-    ),
-    "land_code.txt": (
-        "Земельный кодекс РК",
-        "Жер кодексі",
-    ),
-    "law_on_military_service.txt": (
-        "Закон о воинской службе и статусе военнослужащих РК",
-        "Әскери қызмет және әскери қызметшілердің мәртебесі туралы заң",
-    ),
-    "law_on_llp.txt": (
-        "Закон о товариществах с ограниченной и дополнительной ответственностью РК",
-        "Жауапкершілігі шектеулі және қосымша жауапкершілігі бар серіктестіктер туралы заң",
-    ),
-    "law_on_notariat.txt": (
-        "Закон о нотариате РК",
-        "Нотариат туралы заң",
-    ),
-    "law_on_real_estate_registration.txt": (
-        "Закон о государственной регистрации прав на недвижимое имущество РК",
-        "Жылжымайтын мүлікке құқықтарды мемлекеттік тіркеу туралы заң",
-    ),
-    "law_on_vehicle_liability_insurance.txt": (
-        "Закон об обязательном страховании гражданско-правовой ответственности владельцев транспортных средств РК",
-        "Көлік құралдары иелерінің азаматтық-құқықтық жауапкершілігін міндетті сақтандыру туралы заң",
-    ),
-    "law_on_education.txt": (
-        "Закон об образовании РК",
-        "Білім туралы заң",
-    ),
-    "law_on_public_service.txt": (
-        "Закон о государственной службе Республики Казахстан",
-        "Қазақстан Республикасының мемлекеттік қызметі туралы заң",
-    ),
-    "law_on_child_rights.txt": (
-        "Закон о правах ребенка РК",
-        "Баланың құқықтары туралы заң",
-    ),
-    "law_on_advertising.txt": (
-        "Закон о рекламе РК",
-        "Жарнама туралы заң",
-    ),
-    "law_on_collection_activity.txt": (
-        "Закон о коллекторской деятельности РК",
-        "Коллекторлық қызмет туралы заң",
-    ),
-    "law_on_road_traffic.txt": (
-        "Закон о дорожном движении РК",
-        "Жол жүрісі туралы заң",
-    ),
-    "law_on_valuation_activity.txt": (
-        "Закон об оценочной деятельности в Республике Казахстан",
-        "Қазақстан Республикасындағы бағалау қызметі туралы заң",
-    ),
-    "law_on_legal_entities_registration.txt": (
-        "Закон о государственной регистрации юридических лиц и учетной регистрации филиалов и представительств",
-        "Заңды тұлғаларды мемлекеттік тіркеу және филиалдар мен өкілдіктерді есептік тіркеу туралы заң",
-    ),
-    "law_on_currency_regulation.txt": (
-        "Закон о валютном регулировании и валютном контроле",
-        "Валюталық реттеу және валюталық бақылау туралы заң",
-    ),
-    "law_on_digital_assets.txt": (
-        "Закон о цифровых активах",
-        "Цифрлық активтер туралы заң",
-    ),
-    "law_on_personal_data_protection.txt": (
-        "Закон о персональных данных и их защите",
-        "Дербес деректер және оларды қорғау туралы заң",
-    ),
-    "law_on_credit_bureaus.txt": (
-        "Закон о кредитных бюро и формировании кредитных историй",
-        "Кредиттік бюролар және кредиттік тарихты қалыптастыру туралы заң",
-    ),
-    "law_on_microfinance.txt": (
-        "Закон о микрофинансовой деятельности",
-        "Микроқаржылық қызмет туралы заң",
-    ),
-    "law_on_citizen_bankruptcy.txt": (
-        "Закон о восстановлении платежеспособности и банкротстве граждан Республики Казахстан",
-        "Қазақстан Республикасы азаматтарының төлем қабілеттілігін қалпына келтіру және банкроттығы туралы заң",
-    ),
-    "law_on_rehabilitation_bankruptcy.txt": (
-        "Закон о реабилитации и банкротстве",
-        "Оңалту және банкроттық туралы заң",
-    ),
-}
-
 
 def _parse_source_allowlist() -> set[str]:
     raw = os.environ.get("SOURCE_ALLOWLIST", "").strip()
@@ -256,26 +103,9 @@ _MONTH_MAP = {
 
 # Minimum chunk length (avoid tiny fragments); no max — hierarchy-only splitting
 MIN_CHUNK_LEN = 30
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-def get_code_name(source_path: str) -> tuple[str, str]:
-    name = Path(source_path).name
-    if name in CODE_NAMES:
-        return CODE_NAMES[name]
-
-    # KZ files are stored as "<base>_kz.txt" but should share the same canonical
-    # legal names as the corresponding RU file metadata.
-    if name.endswith("_kz.txt"):
-        base_name = name.replace("_kz.txt", ".txt")
-        if base_name in CODE_NAMES:
-            return CODE_NAMES[base_name]
-
-    return (name.replace(".txt", ""), name.replace(".txt", ""))
+SOURCE_REVISION_DATE_FALLBACKS: dict[str, str] = {
+    "law_on_mass_media.txt": "2024-06-19",
+}
 
 
 def get_article_number(chunk_text: str) -> str | None:
@@ -504,6 +334,9 @@ def _split_article_by_hierarchy(article_text: str) -> list[dict[str, str]]:
             if sub["text"].strip() and len(sub["text"].strip()) >= MIN_CHUNK_LEN:
                 result.append(sub)
     if result:
+        parent_article_text = article_text[:2000]
+        for item in result:
+            item["parent_article_text"] = parent_article_text
         return result
     if article_text.strip() and len(article_text.strip()) >= MIN_CHUNK_LEN:
         article_number = get_article_number(article_text) or ""
@@ -514,6 +347,7 @@ def _split_article_by_hierarchy(article_text: str) -> list[dict[str, str]]:
                 "clause_number": "",
                 "subclause_number": "",
                 "path": _build_chunk_path(article_number),
+                "parent_article_text": article_text[:2000],
             }
         ]
     return []
@@ -573,6 +407,7 @@ def _is_bad_chunk_text(text: str) -> bool:
 
 
 def _build_indexable_text(chunk_text: str, meta: dict) -> str:
+    prefix = _build_contextual_prefix(meta, chunk_text)
     parts: list[str] = []
     code_ru = str(meta.get("code_ru") or "").strip()
     article_number = str(meta.get("article_number") or "").strip()
@@ -605,9 +440,188 @@ def _build_indexable_text(chunk_text: str, meta: dict) -> str:
             parts.append(f"Подпункт: {subclause_number}")
 
     if not parts:
-        return chunk_text
+        return f"{prefix}\nТекст: {chunk_text.strip()}".strip()
     header = "\n".join(parts).strip()
-    return f"{header}\nТекст: {chunk_text.strip()}".strip()
+    return f"{prefix}\n{header}\nТекст: {chunk_text.strip()}".strip()
+
+
+def _infer_jurisdiction(meta: dict) -> str:
+    return str(meta.get("jurisdiction") or "RK").strip() or "RK"
+
+
+def _infer_document_type(meta: dict) -> str:
+    doc_type = str(meta.get("document_type") or "").strip().lower()
+    if doc_type:
+        return doc_type
+    code_ru = str(meta.get("code_ru") or "").lower()
+    if "кодекс" in code_ru:
+        return "code"
+    return "law"
+
+
+def _infer_status(text: str, meta: dict) -> str:
+    status = str(meta.get("status") or "").strip()
+    if status:
+        return status
+    normalized = re.sub(r"\s+", " ", (text or "").lower())
+    if any(
+        marker in normalized
+        for marker in (
+            "утратил силу",
+            "признать утратившим силу",
+            "признан утратившим силу",
+            "остановил действие",
+        )
+    ):
+        return "утратил силу"
+    return "действует"
+
+
+def _build_contextual_prefix(meta: dict, chunk_text: str) -> str:
+    if not getattr(config, "ENABLE_CONTEXTUAL_PREFIX", True):
+        return ""
+
+    code_ru = str(meta.get("code_ru") or "").strip()
+    code_kz = str(meta.get("code_kz") or "").strip()
+    article_number = str(meta.get("article_number") or "").strip()
+    article_title = str(meta.get("article_title") or "").strip()
+    chapter_number = str(meta.get("chapter_number") or "").strip()
+    chapter_title = str(meta.get("chapter_title") or "").strip()
+    clause_level = str(meta.get("clause_level") or "").strip()
+    clause_number = str(meta.get("clause_number") or "").strip()
+    subclause_number = str(meta.get("subclause_number") or "").strip()
+    jurisdiction = _infer_jurisdiction(meta)
+    document_type = _infer_document_type(meta)
+    status = _infer_status(chunk_text, meta)
+
+    scope_bits: list[str] = []
+    if chapter_number or chapter_title:
+        scope_bits.append(
+            "Chapter "
+            + " ".join(part for part in (chapter_number, chapter_title) if part).strip()
+        )
+    if article_number:
+        article_label = f"Article {article_number}"
+        if article_title:
+            article_label += f" ({article_title})"
+        scope_bits.append(article_label)
+    if clause_level == "clause" and clause_number:
+        scope_bits.append(f"Clause {clause_number}")
+    elif clause_level == "subclause":
+        if clause_number:
+            scope_bits.append(f"Clause {clause_number}")
+        if subclause_number:
+            scope_bits.append(f"Subclause {subclause_number}")
+
+    scope = ", ".join(scope_bits) if scope_bits else "document-level legal text"
+    source_bits = [f"{code_ru or 'unknown legal source'}"]
+    if code_kz:
+        source_bits.append(code_kz)
+
+    return (
+        "Context: This chunk is from "
+        f"{scope} of {' / '.join(source_bits)}. "
+        f"Jurisdiction: {jurisdiction}. "
+        f"Document type: {document_type}. "
+        f"Status: {status}."
+    )
+
+
+@lru_cache(maxsize=128)
+def _generate_llm_context_summary(summary_seed: str) -> str:
+    if not getattr(config, "USE_LLM_SUMMARIES", False):
+        return ""
+    try:
+        from ai_service.retrieval.rag_chain import get_llm
+
+        llm = get_llm()
+        prompt = (
+            "You are writing a compact legal retrieval summary for embedding. "
+            "Return one concise paragraph in English only. Include the legal document name, jurisdiction, "
+            "current status, main chapters or topics, and the main legal scope. "
+            "Do not add citations or bullet points. Text:\n"
+            f"{summary_seed}"
+        )
+        response = llm.invoke(prompt)
+        text = response.content if hasattr(response, "content") else str(response)
+        cleaned = " ".join(str(text).split())
+        return cleaned[:900]
+    except Exception:
+        return ""
+
+
+def _build_summary_document(
+    source_short: str,
+    base_meta: dict,
+    source_chunks: list[Document],
+    *,
+    corpus_version: str = "",
+) -> Document:
+    code_ru = str(base_meta.get("code_ru") or "").strip()
+    code_kz = str(base_meta.get("code_kz") or "").strip()
+    jurisdiction = _infer_jurisdiction(base_meta)
+    document_type = _infer_document_type(base_meta)
+    status = _infer_status(" ".join(doc.page_content for doc in source_chunks[:3]), base_meta)
+    chapter_titles = [
+        str(meta.get("chapter_title") or "").strip()
+        for meta in (doc.metadata or {} for doc in source_chunks)
+        if str(meta.get("chapter_title") or "").strip()
+    ]
+    article_pairs = [
+        (
+            str((doc.metadata or {}).get("article_number") or "").strip(),
+            str((doc.metadata or {}).get("article_title") or "").strip(),
+        )
+        for doc in source_chunks
+        if str((doc.metadata or {}).get("article_number") or "").strip()
+    ]
+    article_counter = Counter(article for article, _ in article_pairs if article)
+    top_articles = [article for article, _ in article_counter.most_common(8)]
+    top_titles = [title for _, title in article_pairs if title][:8]
+
+    summary_seed = (
+        f"Document: {code_ru or source_short}\n"
+        f"Source: {source_short}\n"
+        f"Jurisdiction: {jurisdiction}\n"
+        f"Type: {document_type}\n"
+        f"Status: {status}\n"
+        f"Chapters: {', '.join(dict.fromkeys(chapter_titles[:8]))}\n"
+        f"Articles: {', '.join(dict.fromkeys(top_articles))}\n"
+        f"Article titles: {', '.join(dict.fromkeys(top_titles))}\n"
+    )
+    llm_summary = _generate_llm_context_summary(summary_seed)
+    summary_text = llm_summary or (
+        "Summary index entry for retrieval.\n"
+        f"This document is {code_ru or source_short} and is classified as {document_type} in {jurisdiction}.\n"
+        f"Current status: {status}.\n"
+        f"Observed chapters: {', '.join(dict.fromkeys(chapter_titles[:5])) or 'n/a'}.\n"
+        f"Representative articles: {', '.join(top_articles) or 'n/a'}.\n"
+        f"Representative article titles: {', '.join(top_titles) or 'n/a'}.\n"
+        "Use this summary only to route retrieval to the full article-level chunks."
+    )
+
+    meta = {
+        "source": source_short,
+        "code_ru": code_ru,
+        "code_kz": code_kz,
+        "revision_date": str(base_meta.get("revision_date") or ""),
+        "jurisdiction": jurisdiction,
+        "document_type": document_type,
+        "status": status,
+        "doc_kind": "summary",
+        "summary_level": "document",
+        "summary_title": f"{code_ru or source_short} summary",
+        "summary_source": source_short,
+        "summary_source_count": str(len(source_chunks)),
+        "summary_article_count": str(len(article_counter)),
+        "clause_level": "summary",
+        "article_number": "",
+        "corpus_version": corpus_version,
+        "contextual_prefix": "Context: Summary index entry for legal document retrieval.",
+    }
+    meta["page_count"] = str(len(source_chunks))
+    meta["summary_articles"] = ", ".join(top_articles[:10])
+    return Document(page_content=summary_text.strip(), metadata=meta)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -675,7 +689,11 @@ class ArticleTextSplitter(TextSplitter):
         return chunks
 
     def create_documents(
-        self, texts: list[str], metadatas: list[dict] = None
+        self,
+        texts: list[str],
+        metadatas: list[dict] = None,
+        *,
+        corpus_version: str = "",
     ) -> list[Document]:
         """
         Creates Documents with mandatory lineage metadata for Pinecone hard filtering:
@@ -692,7 +710,10 @@ class ArticleTextSplitter(TextSplitter):
             source_short = Path(source).name if source else ""
 
             # Lineage: revision date once per source (mandatory; empty if not found)
-            revision_date = _extract_revision_date(text) or ""
+            revision_date = _extract_revision_date(text) or SOURCE_REVISION_DATE_FALLBACKS.get(
+                source_short,
+                "",
+            )
 
             # Track chapter context as we scan the raw text
             current_chapter_number: str = ""
@@ -724,6 +745,10 @@ class ArticleTextSplitter(TextSplitter):
                     "article_number": str(art_num) if art_num is not None else "",
                     "revision_date": revision_date,
                     "clause_level": clause_level,
+                    "jurisdiction": "RK",
+                    "document_type": _infer_document_type(base_meta | {"code_ru": code_ru}),
+                    "status": _infer_status(chunk, base_meta),
+                    "doc_kind": "chunk",
                 }
                 if chunk_info.get("clause_number"):
                     meta["clause_number"] = chunk_info["clause_number"]
@@ -731,12 +756,18 @@ class ArticleTextSplitter(TextSplitter):
                     meta["subclause_number"] = chunk_info["subclause_number"]
                 if chunk_info.get("path"):
                     meta["path"] = chunk_info["path"]
+                parent_article_text = chunk_info.get("parent_article_text", "")
+                if parent_article_text:
+                    meta["parent_article_text"] = parent_article_text[:2000]
                 if current_chapter_title:
                     meta["chapter_title"] = current_chapter_title[:150]
                 if current_chapter_number:
                     meta["chapter_number"] = current_chapter_number[:20]
                 if article_title:
                     meta["article_title"] = article_title
+                meta["contextual_prefix"] = _build_contextual_prefix(meta, chunk)
+                if corpus_version:
+                    meta["corpus_version"] = corpus_version
 
                 documents.append(
                     Document(
@@ -779,14 +810,45 @@ if not raw_docs:
         f"В {config.DOCUMENTS_DIR} нет .txt файлов. Запустите: python fetch_adilet.py"
     )
 
+raw_docs = sorted_documents_by_source(raw_docs)
+CORPUS_VERSION = compute_corpus_version(raw_docs)
 article_splitter = ArticleTextSplitter()
 chunks = article_splitter.create_documents(
     [doc.page_content for doc in raw_docs],
     [doc.metadata for doc in raw_docs],
+    corpus_version=CORPUS_VERSION,
 )
+
+summary_chunks: list[Document] = []
+if getattr(config, "ENABLE_SUMMARY_INDEX", True):
+    chunks_by_source: dict[str, list[Document]] = {}
+    source_meta_by_source: dict[str, dict] = {}
+    for raw_doc in raw_docs:
+        source_short = Path(raw_doc.metadata.get("source", "")).name
+        source_meta_by_source[source_short] = dict(raw_doc.metadata or {})
+    for chunk in chunks:
+        source_short = str(chunk.metadata.get("source") or "").strip()
+        if not source_short:
+            continue
+        chunks_by_source.setdefault(source_short, []).append(chunk)
+
+    for source_short, source_docs in chunks_by_source.items():
+        if not source_docs:
+            continue
+        base_meta = source_meta_by_source.get(source_short, {}).copy()
+        summary_chunks.append(
+            _build_summary_document(
+                source_short,
+                base_meta,
+                source_docs,
+                corpus_version=CORPUS_VERSION,
+            )
+        )
 
 print(f"Всего документов: {len(raw_docs)}")
 print(f"Всего чанков (статей): {len(chunks)}")
+print(f"Всего summary-чанков: {len(summary_chunks)}")
+print(f"Версия корпуса: {CORPUS_VERSION}")
 
 # Debug: show hierarchy metadata coverage
 chapter_chunks = [c for c in chunks if c.metadata.get("chapter_title")]
@@ -802,3 +864,13 @@ if chunks:
     print("\nПример чанка:")
     print(chunks[0].page_content[:300], "...")
     print("Метаданные:", chunks[0].metadata)
+
+if summary_chunks:
+    print("\nПример summary-чанка:")
+    print(summary_chunks[0].page_content[:300], "...")
+    print("Метаданные:", summary_chunks[0].metadata)
+
+if summary_chunks:
+    with open(config.SUMMARY_CHUNKS_PICKLE_PATH, "wb") as f:
+        pickle.dump(summary_chunks, f)
+    print(f"Summary pickle сохранён: {config.SUMMARY_CHUNKS_PICKLE_PATH}")

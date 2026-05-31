@@ -13,7 +13,7 @@ import pandas as pd
 from pinecone import Pinecone
 
 from ai_service.core import config
-from ai_service.processing.code_names import get_code_name
+from ai_service.core.code_registry import get_code_name
 from ai_service.retrieval.domain import detect_domain, domain_matches_code
 
 

@@ -1,15 +1,17 @@
 # app.py — Streamlit чат для Legal RAG (RU/KZ, дисклеймер, прозрачность AI-закон РК)
 
 import json
+import os
 import uuid
 from datetime import datetime
 
+import requests
 import streamlit as st
 
 from ai_service.core import config
-from ai_service.retrieval.rag_chain import invoke_qa, validate_answer
 
 CHAT_STORE_PATH = "chat_history.json"
+BACKEND_CHAT_URL = os.environ.get("LEGAL_RAG_BACKEND_URL", "http://localhost:8080").rstrip("/") + "/api/chat/public"
 
 
 def _now_iso() -> str:
@@ -61,6 +63,32 @@ def _title_from_prompt(prompt: str) -> str:
         return "Новый чат"
     words = cleaned.split(" ")
     return " ".join(words[:4]).strip()
+
+
+def _doc_get(doc, key, default=None):
+    if isinstance(doc, dict):
+        return doc.get(key, default)
+    return getattr(doc, key, default)
+
+
+def _call_backend_chat(query: str, history: list[dict]) -> dict:
+    response = requests.post(
+        BACKEND_CHAT_URL,
+        json={"query": query, "history": history},
+        timeout=180,
+    )
+    if response.ok:
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("Некорректный ответ backend")
+        return payload
+
+    try:
+        error_payload = response.json()
+        error_message = error_payload.get("error") or error_payload.get("detail") or response.text
+    except Exception:
+        error_message = response.text or f"HTTP {response.status_code}"
+    raise RuntimeError(error_message)
 
 
 # Настройки страницы (должно быть первым вызовом Streamlit)
@@ -355,12 +383,9 @@ if prompt:
         else "Заң мәтінінде іздеймін..."
     ):
         try:
-            result = invoke_qa(prompt)
-            response = result["result"]
-            sources = result["source_documents"]
-            response = validate_answer(prompt, response, sources)
-            if response == "Информация не найдена в доступных текстах законов.":
-                sources = []
+            result = _call_backend_chat(prompt, messages[:-1])
+            response = result.get("answer") or result.get("result") or ""
+            sources = result.get("sources") or result.get("source_documents") or []
         except Exception as e:
             response = f"Ошибка при обработке вопроса: {str(e)}"
             sources = []
@@ -374,11 +399,13 @@ if prompt:
             )
             st.markdown('<div class="sources-footer">', unsafe_allow_html=True)
             for i, doc in enumerate(sources, 1):
-                src = doc.metadata.get("source", "неизвестно")
+                metadata = _doc_get(doc, "metadata", {}) or {}
+                page_content = _doc_get(doc, "page_content", "")
+                src = metadata.get("source", "неизвестно")
                 filename = src.split("/")[-1] if "/" in src else src
-                code_ru = doc.metadata.get("code_ru", "")
-                art = doc.metadata.get("article_number", "")
-                preview = doc.page_content[:280].replace("\n", " ").strip()
+                code_ru = metadata.get("code_ru", "")
+                art = metadata.get("article_number", "")
+                preview = str(page_content)[:280].replace("\n", " ").strip()
                 title_bits = []
                 if code_ru:
                     title_bits.append(f"**{code_ru}**")
@@ -396,12 +423,14 @@ if prompt:
                 )
             st.markdown("</div>", unsafe_allow_html=True)
     if sources:
-        sources_text = "\n".join(
-            [
-                f"{j + 1}. {doc.metadata.get('source', '')} — {doc.metadata.get('code_ru', '')} ст.{doc.metadata.get('article_number', '')} — {doc.page_content[:200].replace(chr(10), ' ')}..."
-                for j, doc in enumerate(sources)
-            ]
-        )
+        source_lines = []
+        for j, doc in enumerate(sources, 1):
+            metadata = _doc_get(doc, "metadata", {}) or {}
+            page_content = str(_doc_get(doc, "page_content", ""))
+            source_lines.append(
+                f"{j}. {metadata.get('source', '')} — {metadata.get('code_ru', '')} ст.{metadata.get('article_number', '')} — {page_content[:200].replace(chr(10), ' ')}..."
+            )
+        sources_text = "\n".join(source_lines)
         full_text = f"{response}\n\nИсточники:\n{sources_text}"
         st.download_button(
             label=DOWNLOAD_LABEL[st.session_state.lang],

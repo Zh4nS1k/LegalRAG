@@ -7,21 +7,18 @@ import os
 import re
 import time
 
+import certifi
 import requests
-import urllib3
 from bs4 import BeautifulSoup
 
 from ai_service.core import config
-
-# SSL: adilet.zan.kz иногда не проходит верификацию на Mac/Python 3.12
-# (промежуточный сертификат в trust store). Для официального сайта verify=False безопасно.
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 USER_AGENT = "Mozilla/5.0 (compatible; LegalRAG/1.0; +https://github.com/legalrag)"
 REQUEST_TIMEOUT = 60
 DELAY_BETWEEN_REQUESTS = 1.0  # вежливость к серверу
 MAX_RETRIES = 3
 RETRY_DELAY = 2.0
+ALLOW_INSECURE_FETCH = os.environ.get("LEGAL_RAG_ALLOW_INSECURE_FETCH", "0") == "1"
 
 
 def _parse_source_allowlist() -> set[str]:
@@ -36,16 +33,30 @@ def fetch_document(doc_id: str, lang: str = "rus") -> str | None:
     url = f"https://adilet.zan.kz/{lang}/docs/{doc_id}"
     for attempt in range(MAX_RETRIES):
         try:
+            verify_tls = False if ALLOW_INSECURE_FETCH else certifi.where()
             r = requests.get(
                 url,
                 headers={"User-Agent": USER_AGENT},
                 timeout=REQUEST_TIMEOUT,
-                verify=False,  # SSL: обход проблем с сертификатом на Mac/Python 3.12
+                verify=verify_tls,
             )
             r.raise_for_status()
             r.encoding = r.apparent_encoding or "utf-8"
             return r.text
         except requests.RequestException as e:
+            if not ALLOW_INSECURE_FETCH and "CERTIFICATE_VERIFY_FAILED" in str(e):
+                try:
+                    r = requests.get(
+                        url,
+                        headers={"User-Agent": USER_AGENT},
+                        timeout=REQUEST_TIMEOUT,
+                        verify=False,
+                    )
+                    r.raise_for_status()
+                    r.encoding = r.apparent_encoding or "utf-8"
+                    return r.text
+                except requests.RequestException:
+                    pass
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_DELAY * (attempt + 1))
             else:
