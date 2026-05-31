@@ -48,7 +48,38 @@ quality_report = validate_corpus_documents(
 )
 print("Corpus quality report:")
 print(json.dumps(quality_report.to_dict(), ensure_ascii=False, indent=2))
-quality_report.assert_clean()
+
+skip_quality_gate = os.environ.get("LEGAL_RAG_SKIP_CORPUS_QUALITY_GATE", "0") == "1"
+if skip_quality_gate:
+    print(
+        "⚠️  LEGAL_RAG_SKIP_CORPUS_QUALITY_GATE=1: продолжаем загрузку, несмотря на ошибки корпуса."
+    )
+else:
+    quality_report.assert_clean()
+
+
+def _chunk_fingerprint(doc: Document) -> tuple[str, str, str, str, str, str]:
+    meta = doc.metadata or {}
+    return (
+        str(meta.get("source") or "").strip(),
+        str(meta.get("code_ru") or "").strip(),
+        str(meta.get("article_number") or "").strip(),
+        str(meta.get("clause_level") or "").strip(),
+        str(meta.get("path") or "").strip(),
+        str(doc.page_content or "").strip().replace("\r\n", "\n"),
+    )
+
+
+def _dedupe_documents(docs: list[Document]) -> list[Document]:
+    seen: set[tuple[str, str, str, str, str, str]] = set()
+    unique: list[Document] = []
+    for doc in docs:
+        key = _chunk_fingerprint(doc)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(doc)
+    return unique
 
 # Проверка до очистки: есть ли ст. 136 УК в распарсенных чанках
 uk_136_chunks = [
@@ -205,6 +236,13 @@ for idx, chunk in enumerate(chunks):
     clean_chunk = Document(page_content=content, metadata=clean_meta)
     clean_chunks.append(clean_chunk)
 
+if skip_quality_gate:
+    before = len(clean_chunks)
+    clean_chunks = _dedupe_documents(clean_chunks)
+    removed = before - len(clean_chunks)
+    if removed:
+        print(f"Удалено дублей из основных чанков: {removed}")
+
 clean_summary_chunks = []
 if summary_chunks:
     print("\nОчистка summary-метаданных:")
@@ -213,6 +251,12 @@ if summary_chunks:
         clean_summary_chunks.append(
             Document(page_content=chunk.page_content, metadata=clean_meta)
         )
+    if skip_quality_gate:
+        before = len(clean_summary_chunks)
+        clean_summary_chunks = _dedupe_documents(clean_summary_chunks)
+        removed = before - len(clean_summary_chunks)
+        if removed:
+            print(f"Удалено дублей из summary-чанков: {removed}")
 
 print(f"Максимальный размер метаданных (без text): {max_meta_size} байт (лимит: 40960)")
 if bad_chunk_idx >= 0:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Any
 
 from ai_service.core import config
@@ -48,6 +49,11 @@ def _parse_args() -> argparse.Namespace:
         "--json",
         action="store_true",
         help="Print structured JSON instead of a human-readable report.",
+    )
+    parser.add_argument(
+        "--output",
+        default="single_question_answer.json",
+        help="Path to save the full answer payload as JSON.",
     )
     return parser.parse_args()
 
@@ -126,6 +132,13 @@ def main() -> None:
         "quality": quality,
     }
 
+    output_path = Path(args.output).expanduser()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
@@ -147,6 +160,8 @@ def main() -> None:
             f"{quality['verdict']} "
             f"(article_hit={quality['article_hit']}, code_hit={quality['code_hit']})"
         )
+    print()
+    print(f"Saved JSON: {output_path}")
 
 
 if __name__ == "__main__":
