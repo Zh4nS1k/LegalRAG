@@ -1,5 +1,9 @@
+import asyncio
+
+import pytest
 from langchain_core.documents import Document
 
+from ai_service.retrieval import agentic_workflow as aw
 from ai_service.processing.prepare_data import _build_indexable_text
 from ai_service.retrieval.domain import detect_domain
 from ai_service.retrieval.rag_chain import (
@@ -424,3 +428,95 @@ def test_fused_retrieval_candidates_prioritize_docs_supported_by_both_sources():
 
     assert ranked[0].metadata["article_number"] == "188"
     assert ranked[0].metadata["relevance_score"] >= ranked[1].metadata["relevance_score"]
+
+
+def test_crag_evaluator_flags_missing_revision_date_for_temporal_query():
+    query = "Действует ли статья 50 на 2024 год?"
+    doc = Document(
+        page_content="Статья 50. Общие положения.",
+        metadata={
+            "code_ru": "Закон РК о публичной службе",
+            "article_number": "50",
+            "status": "действует",
+        },
+    )
+
+    evaluation = aw._evaluate_context_quality(query, [doc], [0.31])
+
+    assert evaluation["action"] == "rewrite"
+    assert "missing_revision_date" in evaluation["missing_reasons"]
+    assert evaluation["context_score"] < aw.CRAG_MIN_CONTEXT_SCORE
+
+
+def test_crag_builder_generates_rewrite_and_decomposition_candidates():
+    query = "Проверь статью 50 и скажи, действует ли она сейчас"
+    top_docs = [
+        Document(
+            page_content="Статья 50. Общие положения.",
+            metadata={
+                "code_ru": "Закон РК о публичной службе",
+                "article_number": "50",
+                "revision_date": "2024-01-01",
+            },
+        )
+    ]
+    evaluator = {
+        "action": "decompose",
+        "missing_reasons": ["missing_revision_date", "missing_status"],
+        "contradictions": [],
+    }
+
+    corrective_queries = aw._build_corrective_queries(query, top_docs, evaluator, "trace-crag")
+
+    assert corrective_queries[0] == query
+    assert any("действующая редакция" in item.lower() for item in corrective_queries)
+    assert any("действует утратил силу" in item.lower() for item in corrective_queries)
+    assert any(item != query for item in corrective_queries[1:])
+
+
+def test_corrective_retrieve_rewrites_then_accepts(monkeypatch):
+    query = "Действует ли статья 50 на 2024 год?"
+    bad_doc = Document(
+        page_content="Статья 50. Общие положения.",
+        metadata={
+            "code_ru": "Закон РК о публичной службе",
+            "article_number": "50",
+            "status": "действует",
+        },
+    )
+    good_doc = Document(
+        page_content="Статья 50. Общие положения.",
+        metadata={
+            "code_ru": "Закон РК о публичной службе",
+            "article_number": "50",
+            "status": "действует",
+            "revision_date": "2024-01-01",
+        },
+    )
+    seen_queries: list[list[str]] = []
+
+    async def fake_retrieve(queries, hyde_doc, trace_id):
+        seen_queries.append(list(queries))
+        if any(q.strip() != query for q in queries):
+            return [good_doc], [0.93], {"retrieval_candidates_ms": 1, "n_candidates": 1}
+        return [bad_doc], [0.22], {"retrieval_candidates_ms": 1, "n_candidates": 1}
+
+    async def fake_rerank(query_arg, candidates, candidate_scores, trace_id):
+        return candidates[:5], candidate_scores[:5], {"censor_rerank_ms": 0}
+
+    monkeypatch.setattr(aw, "_retrieve_candidates", fake_retrieve)
+    monkeypatch.setattr(aw, "_censor_rerank", fake_rerank)
+
+    top_docs, top_scores, metrics = asyncio.run(
+        aw._corrective_retrieve(query, None, "trace-crag", [query], "")
+    )
+
+    assert any(
+        "действующая редакция" in q.lower() or "дата" in q.lower()
+        for batch in seen_queries
+        for q in batch
+    )
+    assert metrics["crag_rounds"] >= 1
+    assert metrics["crag_last_action"] in {"rewrite", "accept"}
+    assert top_docs[0].metadata["revision_date"] == "2024-01-01"
+    assert top_scores[0] == pytest.approx(0.93)
