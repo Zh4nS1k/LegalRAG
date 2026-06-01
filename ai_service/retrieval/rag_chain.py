@@ -3790,6 +3790,16 @@ def get_llm():
     return _llm_instance
 
 
+def _get_llm_runnable():
+    """Return the underlying Runnable LLM for LCEL chain composition.
+
+    `get_llm()` may return a CircuitBreakerProxy, which is fine for direct
+    `invoke()` calls but is not itself a Runnable for `PromptTemplate | llm`.
+    """
+    llm = get_llm()
+    return llm._target if isinstance(llm, CircuitBreakerProxy) else llm
+
+
 def _ensure_latency_patches() -> None:
     # Patch once, when heavy components exist. Add diagnostic logging for each step.
     if getattr(_ensure_latency_patches, "_done", False):
@@ -4125,7 +4135,7 @@ def _make_qa_chain(prompt: PromptTemplate) -> Any:
 
     # LCEL pipeline: Retriever -> Document Chain -> Retrieval Chain
     question_answer_chain = create_stuff_documents_chain(
-        get_llm(), prompt, document_prompt=document_prompt
+        _get_llm_runnable(), prompt, document_prompt=document_prompt
     )
 
     # Wrap retriever to ensure metadata exists before docs hit the document chain
@@ -4355,7 +4365,7 @@ def invoke_qa_with_context(
         template="[{code_ru} | ст. {article_number} | {source}]\n{page_content}",
     )
     question_answer_chain = create_stuff_documents_chain(
-        get_llm(), prompt, document_prompt=document_prompt
+        _get_llm_runnable(), prompt, document_prompt=document_prompt
     )
     res = question_answer_chain.invoke(
         {
@@ -4493,7 +4503,7 @@ def _invoke_qa_impl(
             "Республики Казахстан. Будьте точны и ссылайтесь на "
             "релевантные статьи."
         )
-        fallback_chain = fallback_prompt | get_llm()
+        fallback_chain = fallback_prompt | _get_llm_runnable()
         answer = fallback_chain.invoke({"input": query})
         retrieval_method = "internal_fallback"
     else:
@@ -4681,7 +4691,7 @@ def build_streaming_qa_prompt(
 def analyze_text(text: str) -> str:
     """Analyses the provided text using the configured LLM."""
     _ensure_latency_patches()
-    chain = ANALYSIS_PROMPT | get_llm()
+    chain = ANALYSIS_PROMPT | _get_llm_runnable()
     result = chain.invoke({"text": text})
     # Extract content string if it's an AIMessage
     return result.content if hasattr(result, "content") else str(result)

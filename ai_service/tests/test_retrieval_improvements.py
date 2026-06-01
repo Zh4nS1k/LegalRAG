@@ -21,8 +21,10 @@ from ai_service.retrieval.rag_chain import (
     _fuse_retrieval_candidates,
     _rank_docs_with_legal_scoring,
     _rewrite_query_for_retrieval,
+    _get_llm_runnable,
     _TrimRetriever,
 )
+from ai_service.utils.circuit_breaker import CircuitBreaker, CircuitBreakerProxy
 
 
 def test_build_indexable_text_includes_legal_structure():
@@ -520,3 +522,22 @@ def test_corrective_retrieve_rewrites_then_accepts(monkeypatch):
     assert metrics["crag_last_action"] in {"rewrite", "accept"}
     assert top_docs[0].metadata["revision_date"] == "2024-01-01"
     assert top_scores[0] == pytest.approx(0.93)
+
+
+def test_get_llm_runnable_unwraps_circuit_breaker_proxy():
+    class DummyLLM:
+        def invoke(self, prompt):
+            return "ok"
+
+    proxy = CircuitBreakerProxy(DummyLLM(), CircuitBreaker("dummy"))
+
+    from ai_service.retrieval import rag_chain
+
+    original = rag_chain.get_llm
+    try:
+        rag_chain.get_llm = lambda: proxy
+        runnable = _get_llm_runnable()
+    finally:
+        rag_chain.get_llm = original
+
+    assert runnable is proxy._target

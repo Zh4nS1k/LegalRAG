@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from ai_service.core import config
+
+logger = logging.getLogger("ai_service.single_question_cli")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -19,9 +23,9 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=("offline", "live"),
+        choices=("offline", "live", "agentic"),
         default="offline",
-        help="offline: deterministic extractive answer from local corpus; live: full QA stack.",
+        help="offline: deterministic extractive answer from local corpus; live: full QA stack; agentic: CRAG + Self-RAG + CoVe.",
     )
     parser.add_argument(
         "--top-k",
@@ -110,27 +114,60 @@ def _evaluate_top_docs(
 
 def main() -> None:
     args = _parse_args()
-    config.LEGAL_RAG_OFFLINE_QA = args.mode == "offline"
-    config.USE_RERANKER = False if args.mode == "offline" else config.USE_RERANKER
-
-    from ai_service.retrieval import rag_chain
-
-    rag_chain._invoke_qa_impl.cache_clear()
-
     intent = args.intent.strip() or None
-    result = rag_chain.invoke_qa(args.query, intent=intent)
-    docs = result.get("source_documents", []) or []
+
+    if args.mode == "agentic":
+        from ai_service.retrieval import agentic_workflow
+
+        try:
+            config.LEGAL_RAG_OFFLINE_QA = False
+            config.USE_RERANKER = True
+            result = asyncio.run(
+                agentic_workflow.invoke_agentic_qa(args.query, history=None, trace_id=None)
+            )
+            payload_result = {
+                "result": result.get("result", ""),
+                "source_documents": result.get("source_documents", []) or [],
+                "retrieval_method": "agentic",
+                "trace_report": result.get("trace_report", {}),
+            }
+        except Exception as exc:
+            logger.warning("Agentic mode failed, falling back to offline QA: %s", exc)
+            config.LEGAL_RAG_OFFLINE_QA = True
+            config.USE_RERANKER = False
+            from ai_service.retrieval import rag_chain
+
+            rag_chain._invoke_qa_impl.cache_clear()
+            fallback = rag_chain.invoke_qa(args.query, intent=intent)
+            payload_result = {
+                **fallback,
+                "retrieval_method": "agentic_fallback_offline",
+                "agentic_error": str(exc),
+            }
+    else:
+        config.LEGAL_RAG_OFFLINE_QA = args.mode == "offline"
+        config.USE_RERANKER = False if args.mode == "offline" else config.USE_RERANKER
+
+        from ai_service.retrieval import rag_chain
+
+        rag_chain._invoke_qa_impl.cache_clear()
+        result = rag_chain.invoke_qa(args.query, intent=intent)
+        payload_result = result
+
+    docs = payload_result.get("source_documents", []) or []
     docs = docs[: args.top_k]
     quality = _evaluate_top_docs(docs, args.expected_article, args.expected_code)
 
     payload = {
         "query": args.query,
         "mode": args.mode,
-        "retrieval_method": result.get("retrieval_method", ""),
-        "answer": result.get("result", ""),
+        "retrieval_method": payload_result.get("retrieval_method", ""),
+        "answer": payload_result.get("result", ""),
         "top_documents": [_format_doc(doc) for doc in docs],
         "quality": quality,
     }
+    if "trace_report" in payload_result:
+        payload["trace_report"] = payload_result["trace_report"]
 
     output_path = Path(args.output).expanduser()
     output_path.parent.mkdir(parents=True, exist_ok=True)
