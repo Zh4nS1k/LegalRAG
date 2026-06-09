@@ -236,7 +236,7 @@ def _select_hf_runtime() -> str:
 
 
 def _make_hf_generation_pipeline():
-    logger.info("[START] HF/PEFT Pipeline Initialization")
+    logger.info("🚀 [START] HF/PEFT Pipeline Initialization")
     t0 = time.perf_counter()
     config.configure_hf_hub()
 
@@ -344,7 +344,7 @@ def _make_hf_generation_pipeline():
     llm = HuggingFacePipeline(pipeline=text_generation_pipeline)
     elapsed = time.perf_counter() - t0
     logger.info(
-        "[SUCCESS] HF/PEFT Pipeline Initialization (base=%s, source=%s, adapter=%s) (%.2fs)",
+        "✅ [SUCCESS] HF/PEFT Pipeline Initialization (base=%s, source=%s, adapter=%s) (%.2fs)",
         base_model,
         model_source,
         adapter_path or "<none>",
@@ -401,7 +401,7 @@ def _format_doc_for_prompt(doc: Document, content: str | None = None) -> str:
 def _make_embeddings() -> PrefixedEmbeddings:
     """Hybrid Connectivity Hook: internet first, local fallback,
     fail-safe if neither."""
-    logger.info("[START] Model Initialization (embeddings)")
+    logger.info("🚀 [START] Model Initialization (embeddings)")
     t0 = time.perf_counter()
     config.configure_hf_hub()
     logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
@@ -458,13 +458,13 @@ def _make_embeddings() -> PrefixedEmbeddings:
         elapsed = time.perf_counter() - t0
         mode = "local cache" if local_only else "internet"
         logger.info(
-            "[SUCCESS] Model Initialization (embeddings, %s) (%.2fs)", mode, elapsed
+            "✅ [SUCCESS] Model Initialization (embeddings, %s) (%.2fs)", mode, elapsed
         )
         return emb
     except Exception as exc:
         elapsed = time.perf_counter() - t0
         logger.error(
-            "[FAIL] Model Initialization (embeddings) (%.2fs): %s",
+            "❌ [FAIL] Model Initialization (embeddings) (%.2fs): %s",
             elapsed,
             exc,
             exc_info=True,
@@ -496,7 +496,7 @@ def get_vector_store():
     if _vector_store_instance is None:
         with _init_lock:
             if _vector_store_instance is None:
-                logger.info("[START] Pinecone Vector Store Initialization")
+                logger.info("🚀 [START] Pinecone Vector Store Initialization")
                 t0 = time.perf_counter()
                 try:
                     from langchain_pinecone import PineconeVectorStore
@@ -519,13 +519,13 @@ def get_vector_store():
                     )
                     elapsed = time.perf_counter() - t0
                     logger.info(
-                        "[SUCCESS] Pinecone Vector Store Initialization " "(%.2fs)",
+                        "✅ [SUCCESS] Pinecone Vector Store Initialization " "(%.2fs)",
                         elapsed,
                     )
                 except Exception as e:
                     elapsed = time.perf_counter() - t0
                     logger.error(
-                        "[FAIL] Pinecone Vector Store Initialization " "(%.2fs): %s",
+                        "❌ [FAIL] Pinecone Vector Store Initialization " "(%.2fs): %s",
                         elapsed,
                         e,
                         exc_info=True,
@@ -3374,7 +3374,7 @@ def get_retriever():
 
                 config.configure_hf_hub()
                 logger.info(
-                    "[START] Reranker initialization (%s)", config.RERANKER_MODEL
+                    "🚀 [START] Reranker initialization (%s)", config.RERANKER_MODEL
                 )
                 t_rerank = time.perf_counter()
                 _backend_resolved = _resolve_reranker_backend()
@@ -3440,7 +3440,7 @@ def get_retriever():
                         _reranker_model = CrossEncoder(config.RERANKER_FALLBACK_MODEL)
 
                 logger.info(
-                    "[SUCCESS] Reranker initialized via %s (%.2fs)",
+                    "✅ [SUCCESS] Reranker initialized via %s (%.2fs)",
                     _reranker_backend,
                     time.perf_counter() - t_rerank,
                 )
@@ -3644,7 +3644,7 @@ def get_llm():
     if _llm_instance is None:
         with _init_lock:
             if _llm_instance is None:
-                logger.info("[START] LLM Initialization")
+                logger.info("🚀 [START] LLM Initialization")
                 t0 = time.perf_counter()
                 try:
                     _llm_backend = getattr(config, "LLM_BACKEND", "groq").lower()
@@ -3671,7 +3671,7 @@ def get_llm():
                             max_tokens=config.LLM_MAX_TOKENS,
                         )
                         logger.info(
-                            "[SUCCESS] LLM Initialization (Groq, model=%s) (%.2fs)",
+                            "✅ [SUCCESS] LLM Initialization (Groq, model=%s) (%.2fs)",
                             config.LLM_MODEL,
                             time.perf_counter() - t0,
                         )
@@ -3721,7 +3721,7 @@ def get_llm():
                             default_headers=default_headers or None,
                         )
                         logger.info(
-                            "[SUCCESS] LLM Initialization (OpenRouter, model=%s, base_url=%s) (%.2fs)",
+                            "✅ [SUCCESS] LLM Initialization (OpenRouter, model=%s, base_url=%s) (%.2fs)",
                             config.LLM_MODEL,
                             base_url,
                             time.perf_counter() - t0,
@@ -3748,7 +3748,7 @@ def get_llm():
                             max_tokens=config.LLM_MAX_TOKENS,
                         )
                         logger.info(
-                            "[SUCCESS] LLM Initialization (Ollama Cloud, model=%s) (%.2fs)",
+                            "✅ [SUCCESS] LLM Initialization (Ollama Cloud, model=%s) (%.2fs)",
                             config.LLM_MODEL,
                             time.perf_counter() - t0,
                         )
@@ -3764,14 +3764,14 @@ def get_llm():
                             num_predict=config.LLM_MAX_TOKENS,
                         )
                         logger.info(
-                            "[SUCCESS] LLM Initialization (Ollama, model=%s) (%.2fs)",
+                            "✅ [SUCCESS] LLM Initialization (Ollama, model=%s) (%.2fs)",
                             config.LLM_MODEL,
                             time.perf_counter() - t0,
                         )
                 except Exception as e:
                     elapsed = time.perf_counter() - t0
                     logger.error(
-                        "[FAIL] LLM Initialization (%.2fs): %s",
+                        "❌ [FAIL] LLM Initialization (%.2fs): %s",
                         elapsed,
                         e,
                         exc_info=True,
@@ -3811,12 +3811,12 @@ def _ensure_latency_patches() -> None:
 
             @latency.measure_latency("embedding")
             def wrapped_embed_query(*args, **kwargs):
-                logger.info("[START] Embedding Query")
+                logger.info("🚀 [START] Embedding Query")
                 t0 = time.perf_counter()
                 try:
                     out = original_embed_query(*args, **kwargs)
                     logger.info(
-                        "[SUCCESS] Query Embedded (%.2fs)", time.perf_counter() - t0
+                        "✅ [SUCCESS] Query Embedded (%.2fs)", time.perf_counter() - t0
                     )
                     return out
                 except Exception as exc:
@@ -3832,12 +3832,12 @@ def _ensure_latency_patches() -> None:
 
         @latency.measure_latency("vector_search")
         def wrapped_trim_get_docs(self, *args, **kwargs):
-            logger.info("[START] Pinecone Vector Search")
+            logger.info("🚀 [START] Pinecone Vector Search")
             t0 = time.perf_counter()
             try:
                 docs = original_trim_get_docs(self, *args, **kwargs)
                 elapsed = time.perf_counter() - t0
-                logger.info("[SUCCESS] Retrieved %d chunks (%.2fs)", len(docs), elapsed)
+                logger.info("✅ [SUCCESS] Retrieved %d chunks (%.2fs)", len(docs), elapsed)
                 return docs
             except Exception as exc:
                 logger.error("Pinecone Vector Search failed: %s", exc, exc_info=True)
@@ -3853,13 +3853,13 @@ def _ensure_latency_patches() -> None:
 
         @latency.measure_latency("llm_inference")
         def wrapped_llm_invoke(self, *args, **kwargs):
-            logger.info("[START] LLM Prompt Construction")
-            logger.info("[START] LLM Inference")
+            logger.info("🚀 [START] LLM Prompt Construction")
+            logger.info("🚀 [START] LLM Inference")
             t0 = time.perf_counter()
             try:
                 out = original_llm_invoke(self, *args, **kwargs)
                 logger.info(
-                    "[SUCCESS] LLM Response Generated (%.2fs)", time.perf_counter() - t0
+                    "✅ [SUCCESS] LLM Response Generated (%.2fs)", time.perf_counter() - t0
                 )
                 return out
             except Exception as exc:

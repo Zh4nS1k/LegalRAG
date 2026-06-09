@@ -56,7 +56,7 @@ app = FastAPI(title="Legally RAG API", version="1.0")
 @app.on_event("startup")
 async def _warmup_rag():
     """Load all RAG components before accepting connections. Server binds after warmup (~2–3 min)."""
-    logger.info("[START] Model Initialization")
+    logger.info("🚀 [START] Model Initialization")
     t0 = time.perf_counter()
     try:
         # Level 1: Hooks - Absolute Guarantee
@@ -71,18 +71,18 @@ async def _warmup_rag():
         rag_chain.get_retriever()
         rag_chain.get_llm()
         elapsed = time.perf_counter() - t0
-        logger.info("[SUCCESS] Model Initialization (%.2fs)", elapsed)
+        logger.info("✅ [SUCCESS] Model Initialization (%.2fs)", elapsed)
     except Exception as e:
         elapsed = time.perf_counter() - t0
-        logger.error("[FAIL] Model Initialization (%.2fs): %s", elapsed, e, exc_info=True)
+        logger.error("❌ [FAIL] Model Initialization (%.2fs): %s", elapsed, e, exc_info=True)
         raise
 
 
 @app.on_event("shutdown")
 async def _graceful_shutdown():
-    logger.info("Shutdown signal received, allowing in-flight requests to finish")
+    logger.info("🛑 Shutdown signal received, allowing in-flight requests to finish")
     await asyncio.sleep(2)
-    logger.info("Shutdown complete")
+    logger.info("🛑 Shutdown complete")
 
 
 @app.get("/health")
@@ -232,7 +232,7 @@ async def _run_chat_pipeline(
 
 @app.post("/api/v1/internal-chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest):
-    logger.info("[START] Incoming Request Parsing")
+    logger.info("🚀 [START] Incoming Request Parsing")
     metrics_ctx.set({})
     x_trace_id = request.headers.get("X-Trace-ID", f"trace_{int(time.time())}")
     start_time = time.perf_counter()
@@ -242,7 +242,7 @@ async def chat(request: Request, body: ChatRequest):
         routing_decision = intent_router.classify_intent_with_confidence(_query, _history)
         intent = routing_decision.intent
         logger.info(
-            "[SUCCESS] Request Parsed (query_len=%d, history_len=%d, intent=%s, confidence=%.3f)",
+            "✅ [SUCCESS] Request Parsed (query_len=%d, history_len=%d, intent=%s, confidence=%.3f)",
             len(_query),
             len(_history),
             intent,
@@ -270,7 +270,7 @@ async def chat(request: Request, body: ChatRequest):
 
 @app.post("/api/v1/chat-stream")
 async def chat_stream(request: Request, body: ChatRequest):
-    logger.info("[START] Incoming Stream Request Parsing")
+    logger.info("🚀 [START] Incoming Stream Request Parsing")
     metrics_ctx.set({})
     x_trace_id = request.headers.get("X-Trace-ID", f"trace_{int(time.time())}")
     try:

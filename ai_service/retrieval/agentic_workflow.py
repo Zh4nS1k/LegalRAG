@@ -41,7 +41,7 @@ def _escape_format_braces(text: str) -> str:
 def _get_reranker():
     global _reranker_model
     if _reranker_model is None:
-        logger.info("[START] Reranker model initialization (BAAI/bge-reranker-v2-m3)")
+        logger.info("🚀 [START] Reranker model initialization (BAAI/bge-reranker-v2-m3)")
         t0 = time.perf_counter()
         try:
             config.configure_hf_hub()
@@ -52,7 +52,7 @@ def _get_reranker():
                 use_fp16=True,
             )
             logger.info(
-                "[SUCCESS] Reranker initialized (%.2fs)", time.perf_counter() - t0
+                "✅ [SUCCESS] Reranker initialized (%.2fs)", time.perf_counter() - t0
             )
         except Exception as e:
             logger.error("Reranker initialization failed: %s", e, exc_info=True)

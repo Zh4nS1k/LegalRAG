@@ -16,12 +16,12 @@ def pre_flight_check():
     """Absolute guarantee: Check local models and Pinecone before startup.
     If checks fail — exit(1), no hanging.
     """
-    print("[HOOK] Pre-start check: Local models + Pinecone")
+    print("🪝 [HOOK] Pre-start check: Local models + Pinecone")
 
     # 1. Check local models in .models_cache
     cache_dir = Path(config.HF_CACHE_DIR)
     if not cache_dir.exists():
-        print(f"[FAIL] Models cache not found: {cache_dir}")
+        print(f"❌ [FAIL] Models cache not found: {cache_dir}")
         sys.exit(1)
 
     model_files = list(cache_dir.rglob("*.bin")) + list(
@@ -31,17 +31,17 @@ def pre_flight_check():
         print(f"[INFO] No model files in cache: {cache_dir}, downloading...")
         result = download_models_main([])
         if result != 0:
-            print("[FAIL] Failed to download models")
+            print("❌ [FAIL] Failed to download models")
             sys.exit(1)
         # Check again after download
         model_files = list(cache_dir.rglob("*.bin")) + list(
             cache_dir.rglob("*.safetensors")
         )
         if not model_files:
-            print("[FAIL] Still no model files after download")
+            print("❌ [FAIL] Still no model files after download")
             sys.exit(1)
 
-    print(f"[OK] Local models found: {len(model_files)} files")
+    print(f"✅ [OK] Local models found: {len(model_files)} files")
 
     # Check GPU memory (force CPU if <4GB)
     if torch.cuda.is_available():
@@ -49,11 +49,11 @@ def pre_flight_check():
         memory_gb = total_memory / (1024**3)
         if total_memory < 4 * 1024**3:  # 4GB threshold
             print(
-                f"[HOOK] GPU memory insufficient ({memory_gb:.2f}GB < 4GB) — forcing CPU mode"
+                f"🪝 [HOOK] GPU memory insufficient ({memory_gb:.2f}GB < 4GB) — forcing CPU mode"
             )
             os.environ["CUDA_VISIBLE_DEVICES"] = ""
         else:
-            print(f"[OK] GPU memory: {memory_gb:.2f}GB")
+            print(f"✅ [OK] GPU memory: {memory_gb:.2f}GB")
 
     # 2. Check Pinecone connectivity (no hangs)
     try:
@@ -61,17 +61,17 @@ def pre_flight_check():
 
         pc = Pinecone(api_key=config.PINECONE_API_KEY)
         if config.PINECONE_INDEX_NAME not in pc.list_indexes().names():
-            print(f"[FAIL] Pinecone index '{config.PINECONE_INDEX_NAME}' not found")
+            print(f"❌ [FAIL] Pinecone index '{config.PINECONE_INDEX_NAME}' not found")
             sys.exit(1)
         index = pc.Index(config.PINECONE_INDEX_NAME)
         # Quick ping: describe index
         desc = index.describe_index_stats()
-        print(f"[OK] Pinecone connected: {desc.total_vector_count} vectors")
+        print(f"✅ [OK] Pinecone connected: {desc.total_vector_count} vectors")
     except Exception as e:
-        print(f"[FAIL] Pinecone unavailable: {e}")
+        print(f"❌ [FAIL] Pinecone unavailable: {e}")
         sys.exit(1)
 
-    print("[HOOK] Pre-start check passed")
+    print("🪝 [HOOK] Pre-start check passed")
 
 
 def network_sensor(func):
@@ -83,7 +83,7 @@ def network_sensor(func):
     def wrapper(*args, **kwargs):
         # Check internet connectivity with 2s timeout
         if not connectivity.is_internet_available(timeout=2.0):
-            print("[HOOK] No internet — switching to offline mode")
+            print("🪝 [HOOK] No internet — switching to offline mode")
             os.environ["HF_HUB_OFFLINE"] = "1"
             os.environ["LEGAL_RAG_HF_LOCAL_ONLY"] = "1"
         else:
@@ -95,7 +95,7 @@ def network_sensor(func):
         if torch.cuda.is_available():
             total_memory = torch.cuda.get_device_properties(0).total_memory
             if total_memory < 4 * 1024**3:  # 4GB threshold
-                print("[HOOK] GPU memory insufficient (<4GB) — forcing CPU mode")
+                print("🪝 [HOOK] GPU memory insufficient (<4GB) — forcing CPU mode")
                 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
         return func(*args, **kwargs)

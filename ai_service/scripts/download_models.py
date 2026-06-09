@@ -24,9 +24,12 @@ from pathlib import Path
 
 # Resolve paths before any HF import
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_CACHE_DIR = os.environ.get("LEGAL_RAG_HF_CACHE_DIR", "").strip() or str(
-    _REPO_ROOT / ".models_cache"
-)
+_raw_cache = os.environ.get("LEGAL_RAG_HF_CACHE_DIR", "").strip()
+_default_cache = str(_REPO_ROOT / ".models_cache")
+if _raw_cache and _raw_cache.startswith("/app") and not Path("/app").exists():
+    _CACHE_DIR = _default_cache
+else:
+    _CACHE_DIR = _raw_cache if _raw_cache else _default_cache
 
 
 def _setup_cache_env() -> None:
