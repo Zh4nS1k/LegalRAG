@@ -9,6 +9,7 @@ from langchain_core.documents import Document
 
 from ai_service.core import config
 from ai_service.retrieval import agentic_workflow
+from ai_service.retrieval import intent_router
 from ai_service.retrieval import rag_chain
 
 NOT_FOUND_MSG = "Информация не найдена в доступных текстах законов."
@@ -476,13 +477,17 @@ async def invoke_detective_qa(
         confidence_est < CONFIDENCE_THRESHOLD
     )
 
-    return {
-        "result": result,
-        "source_documents": source_documents,
-        "confidence_score": confidence_score,
-        "missing_fields": critical_missing + contextual_missing,
-        "blind_spots": blind_spots,
-        "assumptions": assumptions,
-        "retrieval_method": retrieval_method,
-        "trace_report": trace_report,
-    }
+    return rag_chain._finalize_qa_result(
+        {
+            "result": result,
+            "source_documents": source_documents,
+            "confidence_score": confidence_score,
+            "missing_fields": critical_missing + contextual_missing,
+            "blind_spots": blind_spots,
+            "assumptions": assumptions,
+            "retrieval_method": retrieval_method,
+            "trace_report": trace_report,
+        },
+        query,
+        intent_router.CASE_SPECIFIC,
+    )

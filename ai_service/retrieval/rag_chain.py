@@ -3898,7 +3898,7 @@ def _ensure_latency_patches() -> None:
 LEGAL_REASONING_GUIDANCE = """
 Обязательная юридическая логика ответа:
 1. Сначала выдели ключевые юридически значимые факты из вопроса.
-2. Затем проанализируй только те нормы, которые прямо есть в контексте.
+2. Затем проанализируй только те нормы, которые прямо есть в контексте. ОБЯЗАТЕЛЬНО цитируй номера статей, пунктов и названия нормативных актов для каждого довода.
 3. После этого явно сопоставь каждый существенный факт с диспозицией соответствующей статьи.
 4. Только потом формулируй итоговый вывод.
 5. Не пропускай этап сопоставления фактов и нормы, даже если ответ кажется очевидным.
@@ -3906,7 +3906,7 @@ LEGAL_REASONING_GUIDANCE = """
 
 Обязательные блоки в ответе после краткого прямого вывода:
 - "Ключевые юридические факты:"
-- "Анализ норм:"
+- "Анализ норм (ОБЯЗАТЕЛЬНО с указанием статей и НПА):"
 - "Сопоставление фактов и нормы:"
 - "Вывод:"
 """
@@ -3938,6 +3938,7 @@ UNIVERSAL_PROMPT_TEMPLATE = """Ты — сильный Legal AI по закон�
    Лучше 2-6 точных норм с объяснением, чем длинный список без логики.
 8. Не смешивай разные отрасли права без опоры в контексте.
 9. Обязательно проведи юридический анализ по шагам: факты -> нормы -> сопоставление -> вывод.
+10. В КАЖДОМ ответе ОБЯЗАТЕЛЬНО цитируй и указывай номера статей, пунктов и частей применимых законов и кодексов. Ответ без конкретных статей недопустим!
 
 {legal_reasoning_guidance}
 
@@ -4264,14 +4265,18 @@ def _build_offline_extractive_answer(
     top_docs = ranked_docs[: min(3, len(ranked_docs))]
 
     if not top_docs:
-        return {
-            "result": (
-                "Офлайн-режим: релевантные статьи не найдены в локальном корпусе. "
-                "Уточните вопрос или проверьте корпус данных."
-            ),
-            "source_documents": [],
-            "retrieval_method": "offline_extractive",
-        }
+        return _finalize_qa_result(
+            {
+                "result": (
+                    "Офлайн-режим: релевантные статьи не найдены в локальном корпусе. "
+                    "Уточните вопрос или проверьте корпус данных."
+                ),
+                "source_documents": [],
+                "retrieval_method": "offline_extractive",
+            },
+            query,
+            intent,
+        )
 
     intent_label = {
         "CRIMINAL": "криминальный",
@@ -4297,11 +4302,15 @@ def _build_offline_extractive_answer(
     if history:
         lines.append("Контекст диалога учтён, но ответ построен без LLM.")
 
-    return {
-        "result": "\n".join(lines).strip(),
-        "source_documents": top_docs,
-        "retrieval_method": "offline_extractive",
-    }
+    return _finalize_qa_result(
+        {
+            "result": "\n".join(lines).strip(),
+            "source_documents": top_docs,
+            "retrieval_method": "offline_extractive",
+        },
+        query,
+        intent,
+    )
 
 
 def _build_offline_bm25_retriever(top_k: int):
@@ -4397,7 +4406,11 @@ def invoke_qa_with_context(
             "chat_history": _history_str(history),
         }
     )
-    return {"result": res, "source_documents": docs}
+    return _finalize_qa_result(
+        {"result": res, "source_documents": docs},
+        query,
+        intent,
+    )
 
 
 def _invoke_qa_impl(
@@ -4440,7 +4453,11 @@ def _invoke_qa_impl(
                 exc_info=True,
             )
             docs = []
-        return _build_offline_extractive_answer(query, docs, history, intent)
+        return _finalize_qa_result(
+            _build_offline_extractive_answer(query, docs, history, intent),
+            query,
+            intent,
+        )
 
     _ensure_latency_patches()
 
@@ -4454,10 +4471,14 @@ def _invoke_qa_impl(
             f"{s_history}Вопрос/Сұрақ: {query}\nОтвет/Жауап:"
         )
         res = llm.invoke(prompt_text)
-        return {
-            "result": res.content if hasattr(res, "content") else str(res),
-            "source_documents": [],
-        }
+        return _finalize_qa_result(
+            {
+                "result": res.content if hasattr(res, "content") else str(res),
+                "source_documents": [],
+            },
+            query,
+            intent,
+        )
 
     prompt = _select_prompt(query, intent=intent)
     if model_override:
@@ -4517,7 +4538,11 @@ def _invoke_qa_impl(
                     exc_info=True,
                 )
                 docs = []
-            return _build_offline_extractive_answer(query, docs, history, intent)
+            return _finalize_qa_result(
+                _build_offline_extractive_answer(query, docs, history, intent),
+                query,
+                intent,
+            )
         raise
 
     answer = res.get("answer", "")
@@ -4543,11 +4568,15 @@ def _invoke_qa_impl(
     else:
         retrieval_method = "hybrid"
 
-    return {
-        "result": answer,
-        "source_documents": source_documents,
-        "retrieval_method": retrieval_method,
-    }
+    return _finalize_qa_result(
+        {
+            "result": answer,
+            "source_documents": source_documents,
+            "retrieval_method": retrieval_method,
+        },
+        query,
+        intent,
+    )
 
 
 @lru_cache(maxsize=512)
@@ -4646,6 +4675,22 @@ ANALYSIS_PROMPT_TEMPLATE = (
 )
 
 ANALYSIS_PROMPT = PromptTemplate.from_template(ANALYSIS_PROMPT_TEMPLATE)
+
+
+def _finalize_qa_result(
+    payload: dict,
+    question: str,
+    intent: str | None = None,
+) -> dict:
+    from ai_service.utils.ensure_citations import ensure_answer_citations
+
+    payload["result"] = ensure_answer_citations(
+        payload.get("result", ""),
+        payload.get("source_documents") or [],
+        question=question,
+        intent=intent,
+    )
+    return payload
 
 
 def validate_answer(question: str, response: str, sources: List[Document]) -> str:

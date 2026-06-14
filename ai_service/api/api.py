@@ -202,6 +202,8 @@ async def _run_chat_pipeline(
         sherlock = sherlock_engine.SherlockEngine(model_override=body.model)
         sherlock_res = await sherlock.run_sherlock_loop(body.query)
 
+    response = rag_chain._finalize_qa_result(response, body.query, intent)
+
     result = response.get("result", "")
     source_docs = []
     for doc in response.get("source_documents", []):
@@ -331,6 +333,14 @@ async def chat_stream(request: Request, body: ChatRequest):
                         + "\n\n"
                     )
             result = "".join(chunks).strip()
+            from ai_service.utils.ensure_citations import ensure_answer_citations
+
+            result = ensure_answer_citations(
+                result,
+                stream_payload["source_documents"],
+                question=body.query,
+                intent=intent,
+            )
             yield (
                 "event: final\ndata: "
                 + json.dumps(
