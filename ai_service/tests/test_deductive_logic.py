@@ -125,7 +125,7 @@ async def test_sherlock_offloads_llm_calls(monkeypatch):
 
 def test_invoke_qa_offline_mode_uses_extractively_retrieved_docs(monkeypatch):
     monkeypatch.setattr(config, "LEGAL_RAG_OFFLINE_QA", True)
-    rag_chain._invoke_qa_impl.cache_clear()
+    rag_chain.clear_qa_cache()
 
     docs = [
         MagicMock(
@@ -144,7 +144,9 @@ def test_invoke_qa_offline_mode_uses_extractively_retrieved_docs(monkeypatch):
     )
     monkeypatch.setattr(
         "ai_service.retrieval.rag_chain.get_llm",
-        lambda: (_ for _ in ()).throw(AssertionError("LLM must not be called in offline QA mode")),
+        lambda model_override=None: (_ for _ in ()).throw(
+            AssertionError("LLM must not be called in offline QA mode")
+        ),
     )
 
     result = rag_chain.invoke_qa("Что будет если я украду яблоко?")

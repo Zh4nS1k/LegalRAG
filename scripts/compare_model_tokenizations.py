@@ -514,11 +514,19 @@ def _tokenize_openrouter(
             error="missing OPENROUTER_API_KEY",
         )
     try:
+        from ai_service.core.config import build_openrouter_default_headers
+
+        extra_headers = build_openrouter_default_headers()
+    except Exception:
+        extra_headers = {}
+
+    try:
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
+                **extra_headers,
             },
             json={
                 "model": model_name,

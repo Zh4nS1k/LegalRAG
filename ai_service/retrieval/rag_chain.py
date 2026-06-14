@@ -3645,14 +3645,11 @@ def get_llm(model_override: str | None = None):
             from langchain_openai import ChatOpenAI
             return ChatOpenAI(
                 api_key=config.OPENROUTER_API_KEY,
-                base_url="https://openrouter.ai/api/v1",
+                base_url=config.OPENROUTER_BASE_URL,
                 model=model_override,
                 temperature=0.1,
                 max_tokens=config.LLM_MAX_TOKENS or 2048,
-                default_headers={
-                    "HTTP-Referer": config.OPENROUTER_SITE_URL or "https://legalrag.kz",
-                    "X-Title": config.OPENROUTER_APP_NAME or "LegalRAG",
-                }
+                default_headers=config.build_openrouter_default_headers(),
             )
         else:
             from langchain_groq import ChatGroq
@@ -3715,24 +3712,11 @@ def get_llm(model_override: str | None = None):
                             )
 
                         base_url = (
-                            os.environ.get("OPENROUTER_BASE_URL")
+                            config.OPENROUTER_BASE_URL
+                            or os.environ.get("OPENROUTER_BASE_URL")
                             or os.environ.get("OPENAI_BASE_URL")
                             or "https://openrouter.ai/api/v1"
                         ).strip()
-
-                        # OpenRouter accepts optional attribution headers.
-                        # Keep them ASCII-only to avoid httpx header encoding failures.
-                        default_headers: dict[str, str] = {}
-                        referer = (os.environ.get("OPENROUTER_HTTP_REFERER") or "").strip()
-                        title = (os.environ.get("OPENROUTER_APP_TITLE") or "").strip()
-                        if referer:
-                            default_headers["HTTP-Referer"] = referer.encode(
-                                "ascii", "ignore"
-                            ).decode("ascii")
-                        if title:
-                            default_headers["X-Title"] = title.encode(
-                                "ascii", "ignore"
-                            ).decode("ascii")
 
                         _llm_instance = ChatOpenAI(
                             api_key=openrouter_api_key,
@@ -3740,7 +3724,7 @@ def get_llm(model_override: str | None = None):
                             model=config.LLM_MODEL,
                             temperature=config.LLM_TEMPERATURE,
                             max_tokens=config.LLM_MAX_TOKENS,
-                            default_headers=default_headers or None,
+                            default_headers=config.build_openrouter_default_headers(),
                         )
                         logger.info(
                             "✅ [SUCCESS] LLM Initialization (OpenRouter, model=%s, base_url=%s) (%.2fs)",
@@ -3889,7 +3873,7 @@ def _ensure_latency_patches() -> None:
                 raise
 
         llm.__class__.invoke = wrapped_llm_invoke
-    except Exception:
+    except (Exception, SystemExit):
         pass
 
     _ensure_latency_patches._done = True
@@ -4592,7 +4576,6 @@ def _invoke_qa_cached(
 def invoke_qa(
     query: str, history: Optional[List[dict]] = None, intent: str = None, model_override: Optional[str] = None
 ) -> dict:
-    _ensure_latency_patches()
     if history or model_override:
         return _invoke_qa_impl(query, history, intent, model_override)
     history_key = _history_cache_key(history)

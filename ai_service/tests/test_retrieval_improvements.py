@@ -535,7 +535,7 @@ def test_get_llm_runnable_unwraps_circuit_breaker_proxy():
 
     original = rag_chain.get_llm
     try:
-        rag_chain.get_llm = lambda: proxy
+        rag_chain.get_llm = lambda model_override=None: proxy
         runnable = _get_llm_runnable()
     finally:
         rag_chain.get_llm = original

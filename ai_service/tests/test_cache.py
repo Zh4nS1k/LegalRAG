@@ -4,7 +4,7 @@ from ai_service.retrieval import rag_chain
 def test_cache_skips_history(monkeypatch):
     calls = []
 
-    def fake_impl(query, history, intent):
+    def fake_impl(query, history, intent, model_override=None):
         calls.append((query, history, intent))
         return {"result": "ok", "source_documents": []}
 
@@ -20,7 +20,7 @@ def test_cache_skips_history(monkeypatch):
 def test_cache_hits_without_history(monkeypatch):
     calls = []
 
-    def fake_impl(query, history, intent):
+    def fake_impl(query, history, intent, model_override=None):
         calls.append((query, history, intent))
         return {"result": "ok", "source_documents": []}
 

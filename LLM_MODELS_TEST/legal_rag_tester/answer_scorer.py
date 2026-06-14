@@ -30,6 +30,10 @@ class AnswerScorer:
             api_key=settings.openrouter_api_key,
             base_url=settings.openrouter_base_url,
             timeout=20,
+            default_headers={
+                "HTTP-Referer": settings.openrouter_site_url,
+                "X-Title": settings.openrouter_app_name,
+            },
         )
 
     def score(self, question: str, chunks_context: str,

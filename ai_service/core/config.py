@@ -147,8 +147,13 @@ PINECONE_API_KEY = env_settings.PINECONE_API_KEY
 GROQ_API_KEY = env_settings.GROQ_API_KEY
 HF_TOKEN = env_settings.HF_TOKEN
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OPENROUTER_SITE_URL = os.environ.get("OPENROUTER_SITE_URL", "")
-OPENROUTER_APP_NAME = os.environ.get("OPENROUTER_APP_NAME", "")
+OPENROUTER_BASE_URL = os.environ.get(
+    "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+).strip()
+OPENROUTER_SITE_URL = os.environ.get(
+    "OPENROUTER_SITE_URL", "https://legalrag.kz"
+).strip()
+OPENROUTER_APP_NAME = os.environ.get("OPENROUTER_APP_NAME", "LegalRAG").strip()
 PINECONE_DIMENSION = 1024  # multilingual-e5-large
 PINECONE_ENRICHMENT_TIMEOUT_SEC = float(
     os.environ.get("LEGAL_RAG_PINECONE_ENRICHMENT_TIMEOUT_SEC", "2.0")
@@ -200,6 +205,24 @@ def configure_hf_hub() -> None:
     os.environ.setdefault("HF_HUB_CONNECT_TIMEOUT", str(HF_CONNECT_TIMEOUT_SEC))
     if HF_OFFLINE:
         os.environ["HF_HUB_OFFLINE"] = "1"
+
+
+def build_openrouter_default_headers() -> dict[str, str]:
+    """Attribution headers for OpenRouter usage dashboard (HTTP-Referer, X-Title)."""
+    referer = (
+        OPENROUTER_SITE_URL
+        or os.environ.get("OPENROUTER_HTTP_REFERER", "").strip()
+        or "https://legalrag.kz"
+    )
+    title = (
+        OPENROUTER_APP_NAME
+        or os.environ.get("OPENROUTER_APP_TITLE", "").strip()
+        or "LegalRAG"
+    )
+    return {
+        "HTTP-Referer": referer.encode("ascii", "ignore").decode("ascii"),
+        "X-Title": title.encode("ascii", "ignore").decode("ascii"),
+    }
 
 
 # LLM profile defaults to Groq with a valid Groq model.

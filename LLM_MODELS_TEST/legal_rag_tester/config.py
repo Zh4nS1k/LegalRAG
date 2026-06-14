@@ -34,6 +34,8 @@ class Settings:
         # === OpenRouter API ===
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
         self.openrouter_base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        self.openrouter_site_url = os.getenv("OPENROUTER_SITE_URL", "https://legalrag.kz")
+        self.openrouter_app_name = os.getenv("OPENROUTER_APP_NAME", "LegalRAG-Tester")
         self.scorer_model = os.getenv("SCORER_MODEL", "meta-llama/llama-3.3-70b-instruct")
 
         # === Google API ===
