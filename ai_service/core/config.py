@@ -47,6 +47,7 @@ try:
 except Exception as e:
     # Fallback: no pydantic_settings (e.g. wrong venv); require env vars to be set
     _pk = os.environ.get("PINECONE_API_KEY")
+    _gk = os.environ.get("GROQ_API_KEY")
     if not _pk:
         sys.exit(
             f"\n[CRITICAL ERROR] Missing configuration.\n"
