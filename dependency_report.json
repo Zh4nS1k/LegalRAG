@@ -1,0 +1,233 @@
+{
+  "total_python_files": 20532,
+  "requirements_file": "requirements.txt",
+  "total_requirements": 28,
+  "total_imports": 63,
+  "third_party_imports": 36,
+  "unused_requirements": [
+    "beautifulsoup4",
+    "flashrank",
+    "langchain-classic",
+    "langchain-community",
+    "langchain-core",
+    "langchain-groq",
+    "langchain-huggingface",
+    "langchain-ollama",
+    "langchain-pinecone",
+    "langchain-text-splitters",
+    "openpyxl",
+    "pydantic-settings",
+    "python-dotenv",
+    "rank_bm25",
+    "rouge-score",
+    "sentence-transformers"
+  ],
+  "missing_requirements": [
+    "ai_service",
+    "api",
+    "bs4",
+    "certifi",
+    "concurrent",
+    "contextvars",
+    "dotenv",
+    "langchain_classic",
+    "langchain_community",
+    "langchain_core",
+    "langchain_groq",
+    "langchain_huggingface",
+    "langchain_ollama",
+    "langchain_openai",
+    "langchain_pinecone",
+    "langchain_text_splitters",
+    "numpy",
+    "pydantic",
+    "pydantic_settings",
+    "pytest",
+    "rag_chain",
+    "redis",
+    "sentence_transformers",
+    "torch"
+  ],
+  "import_counts": {
+    "ai_service": 46,
+    "json": 28,
+    "typing": 27,
+    "pathlib": 22,
+    "time": 21,
+    "os": 20,
+    "re": 15,
+    "argparse": 15,
+    "__future__": 14,
+    "langchain_core": 13,
+    "datetime": 12,
+    "logging": 12,
+    "sys": 9,
+    "pandas": 9,
+    "asyncio": 6,
+    "pinecone": 5,
+    "langchain_community": 5,
+    "langchain_huggingface": 5,
+    "pydantic": 4,
+    "hashlib": 4
+  },
+  "file_imports": {
+    "torch": [
+      "lifecycle_hooks.py",
+      "retrieval/rag_chain.py",
+      "scripts/train_legal_lora.py"
+    ],
+    "ai_service": [
+      "api/api.py",
+      "api/api_optimized.py",
+      "app.py"
+    ],
+    "api": [
+      "main.py"
+    ],
+    "numpy": [
+      "api/api.py",
+      "api/api_optimized.py"
+    ],
+    "pydantic": [
+      "api/api.py",
+      "api/api_optimized.py",
+      "retrieval/core.py"
+    ],
+    "pydantic_settings": [
+      "core/config.py"
+    ],
+    "dotenv": [
+      "core/config.py"
+    ],
+    "langchain_core": [
+      "processing/corpus_quality.py",
+      "processing/prepare_data.py",
+      "retrieval/agentic_workflow.py"
+    ],
+    "certifi": [
+      "processing/fetch_adilet.py"
+    ],
+    "bs4": [
+      "processing/fetch_adilet.py"
+    ],
+    "langchain_community": [
+      "processing/prepare_data.py",
+      "retrieval/rag_chain.py",
+      "utils/gold_citations_clean_hybrid_rerank_benchmark.py"
+    ],
+    "langchain_text_splitters": [
+      "processing/prepare_data.py"
+    ],
+    "langchain_huggingface": [
+      "retrieval/build_vector_db.py",
+      "retrieval/rag_chain.py",
+      "utils/gold_citations_clean_hybrid_rerank_benchmark.py"
+    ],
+    "langchain_pinecone": [
+      "retrieval/build_vector_db.py",
+      "retrieval/rag_chain.py"
+    ],
+    "concurrent": [
+      "retrieval/rag_chain.py"
+    ],
+    "langchain_ollama": [
+      "retrieval/rag_chain.py"
+    ],
+    "sentence_transformers": [
+      "retrieval/rag_chain.py",
+      "scripts/download_models.py",
+      "utils/gold_citations_clean_hybrid_rerank_benchmark.py"
+    ],
+    "langchain_openai": [
+      "retrieval/rag_chain.py"
+    ],
+    "langchain_classic": [
+      "retrieval/rag_chain.py"
+    ],
+    "langchain_groq": [
+      "retrieval/rag_chain.py"
+    ],
+    "pytest": [
+      "tests/test_deductive_logic.py",
+      "tests/test_intent_router.py",
+      "tests/test_observability.py"
+    ],
+    "rag_chain": [
+      "utils/benchmark.py"
+    ],
+    "contextvars": [
+      "utils/latency.py"
+    ],
+    "redis": [
+      "utils/query_cache.py"
+    ]
+  },
+  "all_requirements": [
+    "requests",
+    "beautifulsoup4",
+    "langchain",
+    "langchain-classic",
+    "langchain-core",
+    "langchain-community",
+    "langchain-pinecone",
+    "pinecone",
+    "langchain-huggingface",
+    "langchain-ollama",
+    "langchain-text-splitters",
+    "python-dotenv",
+    "pydantic-settings",
+    "sentence-transformers",
+    "rank_bm25",
+    "transformers",
+    "flashrank",
+    "FlagEmbedding",
+    "peft",
+    "datasets",
+    "langchain-groq",
+    "streamlit",
+    "pandas",
+    "openpyxl",
+    "rouge-score",
+    "nltk",
+    "fastapi",
+    "uvicorn"
+  ],
+  "all_imports": [
+    "FlagEmbedding",
+    "ai_service",
+    "api",
+    "bs4",
+    "certifi",
+    "concurrent",
+    "contextvars",
+    "datasets",
+    "dotenv",
+    "fastapi",
+    "langchain",
+    "langchain_classic",
+    "langchain_community",
+    "langchain_core",
+    "langchain_groq",
+    "langchain_huggingface",
+    "langchain_ollama",
+    "langchain_openai",
+    "langchain_pinecone",
+    "langchain_text_splitters",
+    "nltk",
+    "numpy",
+    "pandas",
+    "peft",
+    "pinecone",
+    "pydantic",
+    "pydantic_settings",
+    "pytest",
+    "rag_chain",
+    "redis",
+    "requests",
+    "sentence_transformers",
+    "streamlit",
+    "torch",
+    "transformers",
+    "uvicorn"
+  ]
+}

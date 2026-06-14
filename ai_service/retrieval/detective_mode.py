@@ -43,10 +43,10 @@ LINGUIST_EXPANSION_PROMPT = """Ты — лингвист по праву РК. �
 """
 
 
-def _linguist_query_expansion(query: str, trace_id: str) -> Tuple[dict, dict]:
+def _linguist_query_expansion(query: str, trace_id: str, model_override: str | None = None) -> Tuple[dict, dict]:
     """Returns (expanded_terms, search_variants), metrics."""
     t0 = time.perf_counter()
-    llm = rag_chain.get_llm()
+    llm = rag_chain.get_llm(model_override)
     try:
         resp = llm.invoke(LINGUIST_EXPANSION_PROMPT.format(query=query.strip()))
         text = resp.content if hasattr(resp, "content") else str(resp)
@@ -120,13 +120,14 @@ def _check_missing_info(
     query: str,
     history: Optional[List[dict]],
     trace_id: str,
+    model_override: str | None = None,
 ) -> Tuple[float, List[str], List[str], List[str], List[str], List[str], bool, dict]:
     """
     Returns (confidence, critical_missing, contextual_missing, blind_spots, assumptions, clarifying_questions, proceed_to_search, metrics).
     """
     t0 = time.perf_counter()
     context_str = _format_history_context(history)
-    llm = rag_chain.get_llm()
+    llm = rag_chain.get_llm(model_override)
     try:
         resp = llm.invoke(
             MISSING_INFO_PROMPT.format(context=context_str, query=query.strip())
@@ -227,10 +228,10 @@ INTERNAL_KNOWLEDGE_FALLBACK_PROMPT = """Ты — эксперт по закон�
 """
 
 
-def _internal_knowledge_fallback(query: str, trace_id: str) -> Tuple[str, dict]:
+def _internal_knowledge_fallback(query: str, trace_id: str, model_override: str | None = None) -> Tuple[str, dict]:
     """Returns (answer, metrics)."""
     t0 = time.perf_counter()
-    llm = rag_chain.get_llm()
+    llm = rag_chain.get_llm(model_override)
     try:
         resp = llm.invoke(
             INTERNAL_KNOWLEDGE_FALLBACK_PROMPT.format(query=query.strip())
@@ -264,12 +265,13 @@ def _synthesis_causality_skeptic_flip(
     answer: str,
     source_docs: List[Document],
     trace_id: str,
+    model_override: str | None = None,
 ) -> Tuple[str, dict]:
     """Returns (enriched_answer, metrics)."""
     t0 = time.perf_counter()
     context_parts = [d.page_content[:600] for d in source_docs[:6]]
     context_str = "\n---\n".join(context_parts)
-    llm = rag_chain.get_llm()
+    llm = rag_chain.get_llm(model_override)
     try:
         resp = llm.invoke(
             CAUSALITY_SYNTHESIS_PROMPT.format(
@@ -314,11 +316,12 @@ def _synthesis_partial_analysis(
     contextual_missing: List[str],
     data_pct: int,
     trace_id: str,
+    model_override: str | None = None,
 ) -> Tuple[str, dict]:
     """Harvey-style partial synthesis: Based on X%, situation looks like [X]. Could flip to [Y] if [Missing]."""
     t0 = time.perf_counter()
     context_str = "\n---\n".join(d.page_content[:600] for d in source_docs[:6])
-    llm = rag_chain.get_llm()
+    llm = rag_chain.get_llm(model_override)
     try:
         resp = llm.invoke(
             PARTIAL_ANALYSIS_PROMPT.format(
@@ -363,6 +366,7 @@ async def invoke_detective_qa(
     query: str,
     history: Optional[List[dict]] = None,
     trace_id: Optional[str] = None,
+    model_override: str | None = None,
 ) -> dict:
     """
     Multi-stage pipeline: Linguist -> Detective -> Reasoner.
@@ -375,7 +379,7 @@ async def invoke_detective_qa(
     metrics: dict = {}
 
     # STAGE 1: THE LINGUIST (Query Expansion)
-    expanded_terms, search_variants, m_ling = _linguist_query_expansion(query, trace_id)
+    expanded_terms, search_variants, m_ling = _linguist_query_expansion(query, trace_id, model_override)
     metrics.update(m_ling)
     # Use expanded query for further processing
     expanded_query = search_variants.get("semantic", query)
@@ -390,7 +394,7 @@ async def invoke_detective_qa(
         questions,
         proceed_to_search,
         m_comp,
-    ) = _check_missing_info(expanded_query, history, trace_id)
+    ) = _check_missing_info(expanded_query, history, trace_id, model_override)
     metrics.update(m_comp)
     is_first = _is_first_interaction(history)
     should_ask = _should_ask_questions(
@@ -421,7 +425,7 @@ async def invoke_detective_qa(
 
     # STAGE 3: THE REASONER (Hybrid Synthesis)
     agentic_out = await agentic_workflow.invoke_agentic_qa(
-        expanded_query, history=history, trace_id=trace_id
+        expanded_query, history=history, trace_id=trace_id, model_override=model_override
     )
     result = agentic_out.get("result", "")
     source_documents = agentic_out.get("source_documents", [])
@@ -430,7 +434,7 @@ async def invoke_detective_qa(
 
     if not result or result.strip() == NOT_FOUND_MSG or not source_documents:
         # Internal knowledge fallback
-        result, m_fall = _internal_knowledge_fallback(query, trace_id)
+        result, m_fall = _internal_knowledge_fallback(query, trace_id, model_override)
         metrics.update(m_fall)
         source_documents = []  # No external sources
         retrieval_method = "internal_fallback"
@@ -440,7 +444,7 @@ async def invoke_detective_qa(
     # Synthesis: full or partial
     if confidence_est >= CONFIDENCE_THRESHOLD and source_documents:
         result, m_syn = _synthesis_causality_skeptic_flip(
-            result, source_documents, trace_id
+            result, source_documents, trace_id, model_override
         )
     else:
         data_pct = int(confidence_est * 100) if confidence_est else 40
@@ -451,6 +455,7 @@ async def invoke_detective_qa(
             contextual_missing,
             data_pct,
             trace_id,
+            model_override,
         )
     metrics.update(m_syn)
 

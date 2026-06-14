@@ -3639,7 +3639,29 @@ def get_retriever_for_coverage(top_k: int | None = None):
     return retriever
 
 
-def get_llm():
+def get_llm(model_override: str | None = None):
+    if model_override:
+        if "/" in model_override:
+            from langchain_openai import ChatOpenAI
+            return ChatOpenAI(
+                api_key=config.OPENROUTER_API_KEY,
+                base_url="https://openrouter.ai/api/v1",
+                model=model_override,
+                temperature=0.1,
+                max_tokens=config.LLM_MAX_TOKENS or 2048,
+                default_headers={
+                    "HTTP-Referer": config.OPENROUTER_SITE_URL or "https://legalrag.kz",
+                    "X-Title": config.OPENROUTER_APP_NAME or "LegalRAG",
+                }
+            )
+        else:
+            from langchain_groq import ChatGroq
+            return ChatGroq(
+                api_key=config.GROQ_API_KEY,
+                model_name=model_override,
+                temperature=0.1,
+                max_tokens=config.LLM_MAX_TOKENS,
+            )
     global _llm_instance
     if _llm_instance is None:
         with _init_lock:
@@ -3790,13 +3812,13 @@ def get_llm():
     return _llm_instance
 
 
-def _get_llm_runnable():
+def _get_llm_runnable(model_override: str | None = None):
     """Return the underlying Runnable LLM for LCEL chain composition.
 
     `get_llm()` may return a CircuitBreakerProxy, which is fine for direct
     `invoke()` calls but is not itself a Runnable for `PromptTemplate | llm`.
     """
-    llm = get_llm()
+    llm = get_llm(model_override)
     return llm._target if isinstance(llm, CircuitBreakerProxy) else llm
 
 
@@ -4338,6 +4360,7 @@ def invoke_qa_with_context(
     context_docs: List[Document],
     history: Optional[List[dict]] = None,
     intent: str = None,
+    model_override: Optional[str] = None,
 ) -> dict:
     """Run QA using a pre-retrieved list of documents (no retriever). Used by agentic workflow."""
     _ensure_latency_patches()
@@ -4365,7 +4388,7 @@ def invoke_qa_with_context(
         template="[{code_ru} | ст. {article_number} | {source}]\n{page_content}",
     )
     question_answer_chain = create_stuff_documents_chain(
-        _get_llm_runnable(), prompt, document_prompt=document_prompt
+        _get_llm_runnable(model_override=model_override), prompt, document_prompt=document_prompt
     )
     res = question_answer_chain.invoke(
         {
@@ -4377,11 +4400,11 @@ def invoke_qa_with_context(
     return {"result": res, "source_documents": docs}
 
 
-@lru_cache(maxsize=512)
 def _invoke_qa_impl(
     query: str,
     history: Optional[List[dict]],
     intent: str | None,
+    model_override: Optional[str] = None,
 ) -> dict:
     if config.LEGAL_RAG_OFFLINE_QA:
         try:
@@ -4437,12 +4460,23 @@ def _invoke_qa_impl(
         }
 
     prompt = _select_prompt(query, intent=intent)
-    if prompt is RANGE_PROMPT:
-        chain = _get_qa_chains()["range"]
-    elif prompt is CRIMINAL_PROMPT:
-        chain = _get_qa_chains()["criminal"]
+    if model_override:
+        llm = get_llm(model_override)
+        document_prompt = PromptTemplate(
+            input_variables=["page_content", "source", "article_number", "code_ru"],
+            template="[{code_ru} | ст. {article_number} | {source}]\n{page_content}",
+        )
+        chain = create_retrieval_chain(
+            get_retriever(),
+            create_stuff_documents_chain(llm, prompt, document_prompt=document_prompt)
+        )
     else:
-        chain = _get_qa_chains()["universal"]
+        if prompt is RANGE_PROMPT:
+            chain = _get_qa_chains()["range"]
+        elif prompt is CRIMINAL_PROMPT:
+            chain = _get_qa_chains()["criminal"]
+        else:
+            chain = _get_qa_chains()["universal"]
 
     try:
         res = chain.invoke(
@@ -4527,11 +4561,11 @@ def _invoke_qa_cached(
 
 
 def invoke_qa(
-    query: str, history: Optional[List[dict]] = None, intent: str = None
+    query: str, history: Optional[List[dict]] = None, intent: str = None, model_override: Optional[str] = None
 ) -> dict:
     _ensure_latency_patches()
-    if history:
-        return _invoke_qa_impl(query, history, intent)
+    if history or model_override:
+        return _invoke_qa_impl(query, history, intent, model_override)
     history_key = _history_cache_key(history)
     query_hash = _cache_key_digest(query, history_key, intent)
     return _invoke_qa_cached(query_hash, query, intent)
@@ -4691,7 +4725,7 @@ def build_streaming_qa_prompt(
 def analyze_text(text: str) -> str:
     """Analyses the provided text using the configured LLM."""
     _ensure_latency_patches()
-    chain = ANALYSIS_PROMPT | _get_llm_runnable()
+    chain = ANALYSIS_PROMPT | _get_llm_runnable(model_override=None)
     result = chain.invoke({"text": text})
     # Extract content string if it's an AIMessage
     return result.content if hasattr(result, "content") else str(result)

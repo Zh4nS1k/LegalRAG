@@ -119,3 +119,4 @@ temp/
 *.tmp
 *.bak
 *.orig
+.env.optimized

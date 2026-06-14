@@ -130,12 +130,13 @@ def _render_report(query: str, analysis: Dict[str, Any], docs: List[Document]) -
 
 
 class SherlockEngine:
-    def __init__(self):
+    def __init__(self, model_override: str | None = None):
         self.llm = None
         self.enabled = config.LEGAL_RAG_ENABLE_SHERLOCK
         self.retriever_top_k = int(
             getattr(config, "SHERLOCK_RETRIEVER_TOP_K", config.RETRIEVER_WIDE_K)
         )
+        self.model_override = model_override
 
     async def _retrieve_context(self, query: str) -> List[Document]:
         retriever = rag_chain.get_retriever_for_coverage(top_k=self.retriever_top_k)
@@ -162,7 +163,7 @@ class SherlockEngine:
             docs = await self._retrieve_context(query)
             llm = self.llm
             if llm is None:
-                llm = await asyncio.to_thread(rag_chain.get_llm)
+                llm = await asyncio.to_thread(lambda: rag_chain.get_llm(self.model_override))
                 self.llm = llm
             context = "\n\n".join(
                 [

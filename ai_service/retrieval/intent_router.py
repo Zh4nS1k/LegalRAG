@@ -167,7 +167,7 @@ def _llm_route(query: str, history: Optional[list[dict]], heuristic: RoutingDeci
     try:
         from ai_service.retrieval.rag_chain import get_llm
 
-        llm = get_llm()
+        llm = get_llm(model_override)
     except Exception as exc:
         logger.debug("LLM router unavailable, using heuristic decision: %s", exc)
         return heuristic

@@ -34,7 +34,8 @@ try:
         PINECONE_API_KEY: str
         PINECONE_INDEX_NAME: str = "legally-index"
         PINECONE_NAMESPACE: str = "default"
-        GROQ_API_KEY: str
+        GROQ_API_KEY: str | None = None
+        OPENROUTER_API_KEY: str | None = None
         HF_TOKEN: str | None = None
         model_config = SettingsConfigDict(
             env_file=str(AI_SERVICE_DIR / ".env"),
@@ -46,11 +47,10 @@ try:
 except Exception as e:
     # Fallback: no pydantic_settings (e.g. wrong venv); require env vars to be set
     _pk = os.environ.get("PINECONE_API_KEY")
-    _gk = os.environ.get("GROQ_API_KEY")
-    if not _pk or not _gk:
+    if not _pk:
         sys.exit(
             f"\n[CRITICAL ERROR] Missing configuration.\n"
-            f"Load .env or set PINECONE_API_KEY and GROQ_API_KEY.\n"
+            f"Load .env or set PINECONE_API_KEY.\n"
             f"If using a venv, activate the one where you ran: pip install -r requirements.txt\n"
             f"  e.g. source venv/bin/activate  (from LegalRAG) or  .venv/bin/activate  (from ai_service)\n"
             f"Original: {e}\n"
@@ -145,6 +145,9 @@ PINECONE_NAMESPACE = env_settings.PINECONE_NAMESPACE
 PINECONE_API_KEY = env_settings.PINECONE_API_KEY
 GROQ_API_KEY = env_settings.GROQ_API_KEY
 HF_TOKEN = env_settings.HF_TOKEN
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_SITE_URL = os.environ.get("OPENROUTER_SITE_URL", "")
+OPENROUTER_APP_NAME = os.environ.get("OPENROUTER_APP_NAME", "")
 PINECONE_DIMENSION = 1024  # multilingual-e5-large
 PINECONE_ENRICHMENT_TIMEOUT_SEC = float(
     os.environ.get("LEGAL_RAG_PINECONE_ENRICHMENT_TIMEOUT_SEC", "2.0")
@@ -201,8 +204,8 @@ def configure_hf_hub() -> None:
 # LLM profile defaults to Groq with a valid Groq model.
 # Backend/model can still be overridden via env.
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-LLM_BACKEND = os.environ.get("LEGAL_RAG_LLM_BACKEND", "groq").lower()
-LLM_MODEL = os.environ.get("LEGAL_RAG_LLM", "llama-3.1-8b-instant")
+LLM_BACKEND = "openrouter"
+LLM_MODEL = "meta-llama/llama-3.1-8b-instruct"
 LLM_TEMPERATURE = 0.0
 LLM_MAX_TOKENS = int(os.environ.get("LEGAL_RAG_LLM_MAX_TOKENS", "2048"))
 HF_LLM_BASE_MODEL = os.environ.get(

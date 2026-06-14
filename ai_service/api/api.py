@@ -124,6 +124,7 @@ async def health():
 class ChatRequest(BaseModel):
     query: str
     history: Optional[List[dict]] = []
+    model: Optional[str] = None
 
 
 class SourceDocument(BaseModel):
@@ -179,25 +180,26 @@ async def _run_chat_pipeline(
     sherlock_res = None
     if intent == intent_router.SOCIAL:
         response = await asyncio.to_thread(
-            rag_chain.invoke_qa, body.query, history=body.history, intent=intent
+            rag_chain.invoke_qa, body.query, history=body.history, intent=intent, model_override=body.model
         )
     elif intent == intent_router.GENERAL_LEGAL:
         response = await asyncio.to_thread(
-            rag_chain.invoke_qa, body.query, history=body.history, intent=intent
+            rag_chain.invoke_qa, body.query, history=body.history, intent=intent, model_override=body.model
         )
-        sherlock = sherlock_engine.SherlockEngine()
+        sherlock = sherlock_engine.SherlockEngine(model_override=body.model)
         sherlock_res = await sherlock.run_sherlock_loop(body.query)
     elif intent == intent_router.PROCEDURAL:
         response = await asyncio.to_thread(
-            rag_chain.invoke_qa, body.query, history=body.history, intent=intent
+            rag_chain.invoke_qa, body.query, history=body.history, intent=intent, model_override=body.model
         )
     else:
         response = await detective_mode.invoke_detective_qa(
             body.query,
             history=body.history,
             trace_id=x_trace_id,
+            model_override=body.model,
         )
-        sherlock = sherlock_engine.SherlockEngine()
+        sherlock = sherlock_engine.SherlockEngine(model_override=body.model)
         sherlock_res = await sherlock.run_sherlock_loop(body.query)
 
     result = response.get("result", "")

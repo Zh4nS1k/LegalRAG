@@ -551,6 +551,7 @@ async def invoke_agentic_qa(
     query: str,
     history: Optional[List[dict]] = None,
     trace_id: Optional[str] = None,
+    model_override: str | None = None,
 ) -> dict:
     """
     Board of Directors pipeline: Linguist (HyDE + expansion) → Retrieval → Censor (rerank 50→5)

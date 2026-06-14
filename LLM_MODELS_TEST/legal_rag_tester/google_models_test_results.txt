@@ -1,0 +1,390 @@
+Total models available: 50
+
+Model: models/gemini-2.5-flash
+Display Name: Gemini 2.5 Flash
+Description: Stable version of Gemini 2.5 Flash, our mid-size multimodal model that supports up to 1 million tokens, released in June of 2025.
+Test Status: Failed (HTTP 503)
+Error Details: This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.
+--------------------------------------------------
+Model: models/gemini-2.5-pro
+Display Name: Gemini 2.5 Pro
+Description: Stable release (June 17th, 2025) of Gemini 2.5 Pro
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro
+Please retry in 37.679074121s.
+--------------------------------------------------
+Model: models/gemini-2.0-flash
+Display Name: Gemini 2.0 Flash
+Description: Gemini 2.0 Flash
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+Please retry in 37.189479383s.
+--------------------------------------------------
+Model: models/gemini-2.0-flash-001
+Display Name: Gemini 2.0 Flash 001
+Description: Stable version of Gemini 2.0 Flash, our fast and versatile multimodal model for scaling across diverse tasks, released in January of 2025.
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash
+Please retry in 36.689540591s.
+--------------------------------------------------
+Model: models/gemini-2.0-flash-lite-001
+Display Name: Gemini 2.0 Flash-Lite 001
+Description: Stable version of Gemini 2.0 Flash-Lite
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash-lite
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash-lite
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash-lite
+Please retry in 36.121530222s.
+--------------------------------------------------
+Model: models/gemini-2.0-flash-lite
+Display Name: Gemini 2.0 Flash-Lite
+Description: Gemini 2.0 Flash-Lite
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash-lite
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash-lite
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash-lite
+Please retry in 35.622638548s.
+--------------------------------------------------
+Model: models/gemini-2.5-flash-preview-tts
+Display Name: Gemini 2.5 Flash Preview TTS
+Description: Gemini 2.5 Flash Preview TTS
+Test Status: Failed (HTTP 400)
+Error Details: The requested combination of response modalities (TEXT) is not supported by the model. models/gemini-2.5-flash-preview-tts accepts the following combination of response modalities:
+* AUDIO
+
+--------------------------------------------------
+Model: models/gemini-2.5-pro-preview-tts
+Display Name: Gemini 2.5 Pro Preview TTS
+Description: Gemini 2.5 Pro Preview TTS
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro-tts
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-pro-tts
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-pro-tts
+Please retry in 34.483597511s.
+--------------------------------------------------
+Model: models/gemma-4-26b-a4b-it
+Display Name: Gemma 4 26B A4B IT
+Description: Gemma 4 26B A4B IT
+Test Status: Success
+Test Output: The user wants me to say the exact phrase "hello world" and nothing else.
+
+    *   Content: "hello world"
+    *   Constraint: "and nothing else" (no preamble, no explanation, no punctuation unless part of the phrase, no markdown if possible, or just the plain text).
+
+    *   Option 1: `hello world`
+    *   Option 2: `"hello world"`
+    *   Option 3: `Hello world` (capitalization might matter, user said 'hello world' in lowercase).
+
+The user's prompt is `Say 'hello world' and nothing else.`
+    I should output: `hello world
+--------------------------------------------------
+Model: models/gemma-4-31b-it
+Display Name: Gemma 4 31B IT
+Description: Gemma 4 31B IT
+Test Status: Success
+Test Output: The user wants me to say "hello world" and nothing else.
+
+1.  Identify the required phrase: "hello world".
+2.  Identify the constraint: "and nothing else".
+3.  Execute: Output "hello world".
+--------------------------------------------------
+Model: models/gemini-flash-latest
+Display Name: Gemini Flash Latest
+Description: Latest release of Gemini Flash
+Test Status: Success
+Test Output: hello world
+--------------------------------------------------
+Model: models/gemini-flash-lite-latest
+Display Name: Gemini Flash-Lite Latest
+Description: Latest release of Gemini Flash-Lite
+Test Status: Success
+Test Output: hello world
+--------------------------------------------------
+Model: models/gemini-pro-latest
+Display Name: Gemini Pro Latest
+Description: Latest release of Gemini Pro
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+Please retry in 1.124079369s.
+--------------------------------------------------
+Model: models/gemini-2.5-flash-lite
+Display Name: Gemini 2.5 Flash-Lite
+Description: Stable version of Gemini 2.5 Flash-Lite, released in July of 2025
+Test Status: Success
+Test Output: hello world
+--------------------------------------------------
+Model: models/gemini-2.5-flash-image
+Display Name: Nano Banana
+Description: Gemini 2.5 Flash Preview Image
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.5-flash-preview-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-flash-preview-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-flash-preview-image
+Please retry in 59.724112582s.
+--------------------------------------------------
+Model: models/gemini-3-pro-preview
+Display Name: Gemini 3 Pro Preview
+Description: Gemini 3 Pro Preview
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+Please retry in 59.281890121s.
+--------------------------------------------------
+Model: models/gemini-3-flash-preview
+Display Name: Gemini 3 Flash Preview
+Description: Gemini 3 Flash Preview
+Test Status: Success
+Test Output: hello world
+--------------------------------------------------
+Model: models/gemini-3.1-pro-preview
+Display Name: Gemini 3.1 Pro Preview
+Description: Gemini 3.1 Pro Preview
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+Please retry in 57.455771604s.
+--------------------------------------------------
+Model: models/gemini-3.1-pro-preview-customtools
+Display Name: Gemini 3.1 Pro Preview Custom Tools
+Description: Gemini 3.1 Pro Preview optimized for custom tool usage
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-pro
+Please retry in 56.952765262s.
+--------------------------------------------------
+Model: models/gemini-3.1-flash-lite-preview
+Display Name: Gemini 3.1 Flash Lite Preview
+Description: Gemini 3.1 Flash Lite Preview
+Test Status: Success
+Test Output: hello world
+--------------------------------------------------
+Model: models/gemini-3.1-flash-lite
+Display Name: Gemini 3.1 Flash Lite
+Description: Gemini 3.1 Flash Lite
+Test Status: Success
+Test Output: hello world
+--------------------------------------------------
+Model: models/gemini-3-pro-image-preview
+Display Name: Nano Banana Pro
+Description: Gemini 3 Pro Image Preview
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3-pro-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3-pro-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3-pro-image
+Please retry in 54.572578103s.
+--------------------------------------------------
+Model: models/gemini-3-pro-image
+Display Name: Nano Banana Pro
+Description: Gemini 3 Pro Image
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3-pro-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3-pro-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3-pro-image
+Please retry in 54.091917447s.
+--------------------------------------------------
+Model: models/nano-banana-pro-preview
+Display Name: Nano Banana Pro
+Description: Gemini 3 Pro Image Preview
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3-pro-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3-pro-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3-pro-image
+Please retry in 53.566370993s.
+--------------------------------------------------
+Model: models/gemini-3.1-flash-image-preview
+Display Name: Nano Banana 2
+Description: Gemini 3.1 Flash Image Preview.
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-flash-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-flash-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-flash-image
+Please retry in 53.084937081s.
+--------------------------------------------------
+Model: models/gemini-3.1-flash-image
+Display Name: Nano Banana 2
+Description: Gemini 3.1 Flash Image.
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-3.1-flash-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-flash-image
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-flash-image
+Please retry in 52.604400222s.
+--------------------------------------------------
+Model: models/gemini-3.5-flash
+Display Name: Gemini 3.5 Flash
+Description: Gemini 3.5 Flash
+Test Status: Success
+Test Output: hello world
+--------------------------------------------------
+Model: models/lyria-3-clip-preview
+Display Name: Lyria 3 Clip Preview
+Description: Lyria 3 30s model Preview
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: lyria-3-clip
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: lyria-3-clip
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: lyria-3-clip
+Please retry in 50.144856453s.
+--------------------------------------------------
+Model: models/lyria-3-pro-preview
+Display Name: Lyria 3 Pro Preview
+Description: Lyria 3 Pro Preview
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: lyria-3-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: lyria-3-pro
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: lyria-3-pro
+Please retry in 49.658836849s.
+--------------------------------------------------
+Model: models/gemini-3.1-flash-tts-preview
+Display Name: Gemini 3.1 Flash TTS Preview
+Description: Gemini 3.1 Flash TTS Preview
+Test Status: Failed (HTTP 400)
+Error Details: Request contains an invalid argument.
+--------------------------------------------------
+Model: models/gemini-robotics-er-1.5-preview
+Display Name: Gemini Robotics-ER 1.5 Preview
+Description: Gemini Robotics-ER 1.5 Preview
+Test Status: Failed (HTTP 404)
+Error Details: This model models/gemini-robotics-er-1.5-preview is no longer available. Please update your code to use a newer model for the latest features and improvements.
+--------------------------------------------------
+Model: models/gemini-robotics-er-1.6-preview
+Display Name: Gemini Robotics-ER 1.6 Preview
+Description: Gemini Robotics-ER 1.6 Preview
+Test Status: Success
+Test Output: hello world
+--------------------------------------------------
+Model: models/gemini-2.5-computer-use-preview-10-2025
+Display Name: Gemini 2.5 Computer Use Preview 10-2025
+Description: Gemini 2.5 Computer Use Preview 10-2025
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: computer-use-preview
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: computer-use-preview
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: computer-use-preview
+Please retry in 45.722348435s.
+--------------------------------------------------
+Model: models/antigravity-preview-05-2026
+Display Name: Antigravity Agent Preview
+Description: Preview release of Antigravity Agent (05-2026)
+Test Status: Failed (HTTP 429)
+Error Details: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. 
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: antigravity
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: antigravity
+* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: antigravity
+Please retry in 45.200745563s.
+--------------------------------------------------
+Model: models/deep-research-max-preview-04-2026
+Display Name: Deep Research Max Preview (Apr-21-2026)
+Description: Preview release (April 21st, 2026) of Deep Research Max
+Test Status: Failed (HTTP 400)
+Error Details: This model only supports Interactions API.
+--------------------------------------------------
+Model: models/deep-research-preview-04-2026
+Display Name: Deep Research Preview (Apr-21-2026)
+Description: Preview release (April 21th, 2026) of Deep Research
+Test Status: Failed (HTTP 400)
+Error Details: This model only supports Interactions API.
+--------------------------------------------------
+Model: models/deep-research-pro-preview-12-2025
+Display Name: Deep Research Pro Preview (Dec-12-2025)
+Description: Preview release (December 12th, 2025) of Deep Research Pro
+Test Status: Failed (HTTP 400)
+Error Details: This model only supports Interactions API.
+--------------------------------------------------
+Model: models/gemini-embedding-001
+Display Name: Gemini Embedding 001
+Description: Obtain a distributed representation of a text.
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/gemini-embedding-2-preview
+Display Name: Gemini Embedding 2 Preview
+Description: Obtain a distributed representation of multimodal content.
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/gemini-embedding-2
+Display Name: Gemini Embedding 2
+Description: Obtain a distributed representation of multimodal content.
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/aqa
+Display Name: Model that performs Attributed Question Answering.
+Description: Model trained to return answers to questions that are grounded in provided sources, along with estimating answerable probability.
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/imagen-4.0-generate-001
+Display Name: Imagen 4
+Description: Vertex served Imagen 4.0 model
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/imagen-4.0-ultra-generate-001
+Display Name: Imagen 4 Ultra
+Description: Vertex served Imagen 4.0 ultra model
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/imagen-4.0-fast-generate-001
+Display Name: Imagen 4 Fast
+Description: Vertex served Imagen 4.0 Fast model
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/veo-2.0-generate-001
+Display Name: Veo 2
+Description: Vertex served Veo 2 model. Access to this model requires billing to be enabled on the associated Google Cloud Platform account. Please visit https://console.cloud.google.com/billing to enable it.
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/veo-3.0-generate-001
+Display Name: Veo 3
+Description: Veo 3
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/veo-3.0-fast-generate-001
+Display Name: Veo 3 fast
+Description: Veo 3 fast
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/veo-3.1-generate-preview
+Display Name: Veo 3.1
+Description: Veo 3.1
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/veo-3.1-fast-generate-preview
+Display Name: Veo 3.1 fast
+Description: Veo 3.1 fast
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
+Model: models/veo-3.1-lite-generate-preview
+Display Name: Veo 3.1 lite
+Description: Veo 3.1 lite
+Test Status: Skipped (generateContent not supported)
+--------------------------------------------------
