@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - optional helper
 
 DEFAULT_QWEN_TOKENIZER = os.environ.get(
     "LEGAL_RAG_QWEN_TOKENIZER",
-    str(_REPO_ROOT / "ai_service" / "models" / "legal-lora-qwen2.5-1.5b"),
+    str(_REPO_ROOT / "engine" / "models" / "legal-lora-qwen2.5-1.5b"),
 )
 DEFAULT_LLAMA_TOKENIZER = os.environ.get(
     "LEGAL_RAG_LLAMA_TOKENIZER",
@@ -514,7 +514,7 @@ def _tokenize_openrouter(
             error="missing OPENROUTER_API_KEY",
         )
     try:
-        from ai_service.core.config import build_openrouter_default_headers
+        from engine.core.config import build_openrouter_default_headers
 
         extra_headers = build_openrouter_default_headers()
     except Exception:

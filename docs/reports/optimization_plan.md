@@ -46,7 +46,7 @@ LEGAL_RAG_RERANK_SKIP_MIN_CODE_MATCHES=1        # Was 2
 ## Priority 2: Caching Implementation
 
 ### 2.1 Query Result Cache
-Already implemented: `ai_service/utils/query_cache.py`
+Already implemented: `engine/utils/query_cache.py`
 
 **Configuration:**
 ```bash
@@ -80,7 +80,7 @@ LEGAL_RAG_EMBEDDING=intfloat/multilingual-e5-base
 Cache embeddings for frequent legal terms and article references:
 
 ```python
-# Add to ai_service/retrieval/rag_chain.py
+# Add to engine/retrieval/rag_chain.py
 _embedding_cache = {}
 def get_cached_embedding(text: str) -> List[float]:
     key = hashlib.md5(text.encode()).hexdigest()

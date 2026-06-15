@@ -147,7 +147,7 @@ The system indexes **19 core laws** sourced directly from [adilet.zan.kz](https:
 
 ```
 LegalRAG/
-├── ai_service/                 # Python AI Engine (2.0 GB)
+├── engine/                 # Python AI Engine (2.0 GB)
 │   ├── api/                   # FastAPI endpoints
 │   ├── core/                  # Configuration, logging, settings
 │   ├── retrieval/             # RAG pipeline, vector DB, retrieval logic
@@ -230,10 +230,10 @@ class EngineSettings(BaseSettings):
 
 **Local Fine-Tuning Support:**
 ```bash
-python -m ai_service.scripts.train_legal_lora \
-  --dataset ai_service/training_data/legal_lora_sample.jsonl \
+python -m engine.scripts.train_legal_lora \
+  --dataset engine/training_data/legal_lora_sample.jsonl \
   --base-model Qwen/Qwen2.5-7B-Instruct \
-  --output-dir ai_service/models/legal-lora
+  --output-dir engine/models/legal-lora
 ```
 
 ### 4.4 Performance Optimization
@@ -284,7 +284,7 @@ Every response includes mandatory disclosures compliant with RK AI Law (2025):
 
 ### 6.2 Automated Testing
 
-1. **Unit Tests**: Core functionality testing in `ai_service/tests/`
+1. **Unit Tests**: Core functionality testing in `engine/tests/`
 2. **Integration Tests**: End-to-end API testing
 3. **Benchmark Tests**: Automated quality gates
 4. **Security Scans**: `scripts/security_scan.py` on every commit
@@ -293,7 +293,7 @@ Every response includes mandatory disclosures compliant with RK AI Law (2025):
 
 **Evaluation Gate System:**
 ```bash
-./venv/bin/python -m ai_service.utils.eval_gate \
+./venv/bin/python -m engine.utils.eval_gate \
   --baseline tests/benchmarks/retrieval_quality_baseline.json
 ```
 
@@ -306,7 +306,7 @@ The gate compares current benchmark summary against baseline contract to prevent
 ```yaml
 services:
   mongodb:        # MongoDB database
-  ai_service:     # Python FastAPI AI Engine
+  engine:     # Python FastAPI AI Engine
   backend:        # Go Gin Backend
   frontend:       # React SPA via nginx
 ```

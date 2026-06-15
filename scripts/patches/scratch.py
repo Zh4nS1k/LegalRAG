@@ -1,4 +1,4 @@
-from ai_service.retrieval import agentic_workflow as aw
+from engine.retrieval import agentic_workflow as aw
 from langchain_core.documents import Document
 
 query = "Действует ли статья 50 на 2024 год?"

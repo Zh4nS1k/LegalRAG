@@ -1,6 +1,6 @@
 import re
 
-with open("ai_service/retrieval/agentic_workflow.py", "r") as f:
+with open("engine/retrieval/agentic_workflow.py", "r") as f:
     content = f.read()
 
 # _crag_eval
@@ -59,5 +59,5 @@ content = content.replace(
     'base_res = await asyncio.to_thread(\n        rag_chain.invoke_qa, query, history=history, model_override=model_override\n    )'
 )
 
-with open("ai_service/retrieval/agentic_workflow.py", "w") as f:
+with open("engine/retrieval/agentic_workflow.py", "w") as f:
     f.write(content)

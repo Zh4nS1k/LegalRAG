@@ -1,7 +1,7 @@
 # Comprehensive LegalRAG Analysis Report
 **Generated:** 2026-06-14  
 **Focus:** Response Quality & Speed Bottleneck Analysis  
-**Scope:** Python AI Engine (ai_service/) with hybrid RAG pipeline
+**Scope:** Python AI Engine (engine/) with hybrid RAG pipeline
 
 ---
 
@@ -29,7 +29,7 @@ LegalRAG implements a sophisticated **legal-aware hybrid RAG system** combining 
 
 ### 1.1 Chunking Strategy
 
-**File:** [ai_service/processing/prepare_data.py](ai_service/processing/prepare_data.py#L642)  
+**File:** [engine/processing/prepare_data.py](engine/processing/prepare_data.py#L642)  
 **Class:** `ArticleTextSplitter`
 
 #### Findings:
@@ -45,7 +45,7 @@ class ArticleTextSplitter(TextSplitter):
 
 **Chunk Boundaries:** ✅ **Excellent**
 - **Hierarchy-aware**: Document → Chapter → Article → Clause → Sub-clause
-- **No mid-article breaks**: Regex patterns ([ARTICLE_RE](ai_service/processing/prepare_data.py#L33), [CLAUSE_RE](ai_service/processing/prepare_data.py#L49)) ensure clean article boundaries
+- **No mid-article breaks**: Regex patterns ([ARTICLE_RE](engine/processing/prepare_data.py#L33), [CLAUSE_RE](engine/processing/prepare_data.py#L49)) ensure clean article boundaries
 - **Metadata preserved**: Every chunk carries `article_number`, `code_ru`, `clause_level`, `revision_date`
 
 **Chunk Sizes:** ⚠️ **Problematic**
@@ -91,7 +91,7 @@ enriched_content = f"""[ARTICLE {art_num}] {article_title}
 
 ### 1.2 Embedding Model
 
-**Config:** [ai_service/core/config.py#L163](ai_service/core/config.py#L163)
+**Config:** [engine/core/config.py#L163](engine/core/config.py#L163)
 ```python
 EMBEDDING_MODEL = os.environ.get(
     "LEGAL_RAG_EMBEDDING", "intfloat/multilingual-e5-large"
@@ -186,8 +186,8 @@ def get_embeddings_with_boosting():
 
 ### 1.3 Retrieval Mechanism
 
-**File:** [ai_service/retrieval/rag_chain.py](ai_service/retrieval/rag_chain.py)  
-**Core Function:** [_fuse_retrieval_candidates()](ai_service/retrieval/rag_chain.py#L3208) + [get_retriever()](ai_service/retrieval/rag_chain.py#L3340)
+**File:** [engine/retrieval/rag_chain.py](engine/retrieval/rag_chain.py)  
+**Core Function:** [_fuse_retrieval_candidates()](engine/retrieval/rag_chain.py#L3208) + [get_retriever()](engine/retrieval/rag_chain.py#L3340)
 
 #### Findings:
 
@@ -287,8 +287,8 @@ else:
 ### 1.4 Prompt Construction & Context Injection
 
 **Files:**
-- [ai_service/retrieval/rag_chain.py#L4720](ai_service/retrieval/rag_chain.py#L4720) (UNIVERSAL_PROMPT_TEMPLATE)
-- [ai_service/retrieval/rag_chain.py#L4136](ai_service/retrieval/rag_chain.py#L4136) (_make_qa_chain)
+- [engine/retrieval/rag_chain.py#L4720](engine/retrieval/rag_chain.py#L4720) (UNIVERSAL_PROMPT_TEMPLATE)
+- [engine/retrieval/rag_chain.py#L4136](engine/retrieval/rag_chain.py#L4136) (_make_qa_chain)
 
 #### Findings:
 
@@ -386,7 +386,7 @@ document_prompt = PromptTemplate(
 
 ### 1.5 Index Quality & Metadata
 
-**File:** [ai_service/retrieval/build_vector_db.py](ai_service/retrieval/build_vector_db.py)
+**File:** [engine/retrieval/build_vector_db.py](engine/retrieval/build_vector_db.py)
 
 #### Findings:
 
@@ -466,8 +466,8 @@ for chunk in clause_chunks:
 ### 1.6 Query Processing
 
 **Files:**
-- [ai_service/retrieval/query_rewrite.py](ai_service/retrieval/query_rewrite.py)
-- [ai_service/retrieval/rag_chain.py#L2192](ai_service/retrieval/rag_chain.py#L2192) (_multi_query_retrieve)
+- [engine/retrieval/query_rewrite.py](engine/retrieval/query_rewrite.py)
+- [engine/retrieval/rag_chain.py#L2192](engine/retrieval/rag_chain.py#L2192) (_multi_query_retrieve)
 
 #### Findings:
 
@@ -578,7 +578,7 @@ _vector_store_instance = PineconeVectorStore(
 
 **Recommendation 2.1A: Eager Initialization on Startup**
 ```python
-# In ai_service/main.py or api.py startup
+# In engine/main.py or api.py startup
 from contextlib import asynccontextmanager
 
 @asynccontextmanager

@@ -23,13 +23,13 @@ export LEGAL_RAG_RETRIEVER_WIDE_K="${LEGAL_RAG_RETRIEVER_WIDE_K:-50}"
 export LEGAL_RAG_RETRIEVER_TOP_K_AFTER_RERANK="${LEGAL_RAG_RETRIEVER_TOP_K_AFTER_RERANK:-5}"
 export LEGAL_RAG_RETRIEVER_MULTI_QUERY_LIMIT="${LEGAL_RAG_RETRIEVER_MULTI_QUERY_LIMIT:-4}"
 
-PYTHONPATH="$ROOT_DIR" python -u "$ROOT_DIR/ai_service/utils/gold_citations_retrieval_benchmark.py" \
+PYTHONPATH="$ROOT_DIR" python -u "$ROOT_DIR/engine/utils/gold_citations_retrieval_benchmark.py" \
   --xlsx "$XLSX_PATH" \
   --limit "$LIMIT" \
   --top-k "$TOP_K" \
   --output "$RAW_OUTPUT"
 
-PYTHONPATH="$ROOT_DIR" python -u "$ROOT_DIR/ai_service/utils/recompute_gold_benchmark_with_canonical_codes.py" \
+PYTHONPATH="$ROOT_DIR" python -u "$ROOT_DIR/engine/utils/recompute_gold_benchmark_with_canonical_codes.py" \
   --input "$RAW_OUTPUT" \
   --output "$CANONICAL_OUTPUT"
 

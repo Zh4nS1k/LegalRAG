@@ -1,0 +1,10 @@
+# Backend Go Docker Ignore
+.env
+tmp/
+*.log
+.vscode/
+.idea/
+bin/
+main
+legally
+vendor/

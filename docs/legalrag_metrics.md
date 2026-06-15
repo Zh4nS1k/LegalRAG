@@ -48,11 +48,11 @@
 
 ### Бенчмарк по вашему XLSX (по умолчанию `Полный бенчмарк-3.reviewed8.xlsx`)
 - Только citation-metrics (без retrieval и judge):
-  - `python -m ai_service.utils.legal_rag_bench_xlsx --mode offline`
+  - `python -m engine.utils.legal_rag_bench_xlsx --mode offline`
 - Добавить Context Precision/Recall (retrieval vs gold):
-  - `python -m ai_service.utils.legal_rag_bench_xlsx --mode retrieval --top-k 10`
+  - `python -m engine.utils.legal_rag_bench_xlsx --mode retrieval --top-k 10`
 - Добавить Faithfulness/Answer Relevance/Legal Reasoning (LLM-judge):
-  - `python -m ai_service.utils.legal_rag_bench_xlsx --mode full --top-k 10`
+  - `python -m engine.utils.legal_rag_bench_xlsx --mode full --top-k 10`
 
 Результат сохраняется в `benchmark_results/` в JSON (с `summary` и построчными `results`).
 

@@ -23,7 +23,7 @@
     "sentence-transformers"
   ],
   "missing_requirements": [
-    "ai_service",
+    "engine",
     "api",
     "bs4",
     "certifi",
@@ -49,7 +49,7 @@
     "torch"
   ],
   "import_counts": {
-    "ai_service": 46,
+    "engine": 46,
     "json": 28,
     "typing": 27,
     "pathlib": 22,
@@ -76,7 +76,7 @@
       "retrieval/rag_chain.py",
       "scripts/train_legal_lora.py"
     ],
-    "ai_service": [
+    "engine": [
       "api/api.py",
       "api/api_optimized.py",
       "app.py"
@@ -194,7 +194,7 @@
   ],
   "all_imports": [
     "FlagEmbedding",
-    "ai_service",
+    "engine",
     "api",
     "bs4",
     "certifi",

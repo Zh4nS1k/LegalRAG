@@ -91,9 +91,9 @@ User Question
 ### Key Files
 | File | Role |
 |---|---|
-| `ai_service/retrieval/rag_chain.py` | Full pipeline — retrievers, reranker, prompts, `invoke_qa()` |
-| `ai_service/core/config.py` | Typed Pydantic config — loads from `.env` |
-| `ai_service/api/api.py` | FastAPI endpoint handlers |
+| `engine/retrieval/rag_chain.py` | Full pipeline — retrievers, reranker, prompts, `invoke_qa()` |
+| `engine/core/config.py` | Typed Pydantic config — loads from `.env` |
+| `engine/api/api.py` | FastAPI endpoint handlers |
 
 ### Configuration Variables
 | Variable | Default | Description |
@@ -163,7 +163,7 @@ PDF Upload
 ### Key Files
 | File | Role |
 |---|---|
-| `ai_service/api/api.py` | `POST /api/v1/analyze` endpoint |
+| `engine/api/api.py` | `POST /api/v1/analyze` endpoint |
 | `backend/legally/services/analysis_service.go` | Go orchestrator — PDF parsing + AI call |
 
 ---
@@ -214,11 +214,11 @@ Admin views aggregated results → exports CSV/Excel for analysis
 1. Add the new law as a `.txt` file to `documents/`
 2. Re-index into Pinecone:
    ```bash
-   ./venv/bin/python ai_service/retrieval/build_vector_db.py
+   ./venv/bin/python engine/retrieval/build_vector_db.py
    ```
 3. Rebuild the BM25 corpus:
    ```bash
-   ./venv/bin/python -m ai_service.processing.prepare_data
+   ./venv/bin/python -m engine.processing.prepare_data
    ```
 4. Confirm vectors appear in Pinecone console
 5. Restart the AI engine — the lazy Pinecone loader picks up new vectors automatically
@@ -228,10 +228,10 @@ Admin views aggregated results → exports CSV/Excel for analysis
 ## Extending the RAG Pipeline
 
 ### Change the LLM
-Open `ai_service/core/config.py` → update `LLM_MODEL` default, or set `LEGAL_RAG_LLM` in `.env`.
+Open `engine/core/config.py` → update `LLM_MODEL` default, or set `LEGAL_RAG_LLM` in `.env`.
 
 ### Change the Embedding Model
-1. Open `ai_service/retrieval/rag_chain.py` — locate `_make_embeddings()`
+1. Open `engine/retrieval/rag_chain.py` — locate `_make_embeddings()`
 2. Replace `config.EMBEDDING_MODEL` value in `core/config.py`
 3. **Rebuild the Pinecone index** — embedding dimensions must match
 
@@ -250,9 +250,9 @@ This pins all retrieval to that specific code/article (useful for domain-specifi
 
 ### Smoke Testing After Changes
 ```bash
-./venv/bin/python ai_service/utils/verify_langchain.py  # chain loads correctly
-./venv/bin/python ai_service/utils/test_retrieval.py    # retrieval quality audit
-./venv/bin/python -m ai_service.utils.benchmark          # full RAGAS benchmark
+./venv/bin/python engine/utils/verify_langchain.py  # chain loads correctly
+./venv/bin/python engine/utils/test_retrieval.py    # retrieval quality audit
+./venv/bin/python -m engine.utils.benchmark          # full RAGAS benchmark
 ```
 
 ---
@@ -274,4 +274,4 @@ Every response includes a `trace_report` JSON field:
 }
 ```
 
-Implemented via `@measure_latency` decorator in `ai_service/utils/latency.py`.
+Implemented via `@measure_latency` decorator in `engine/utils/latency.py`.

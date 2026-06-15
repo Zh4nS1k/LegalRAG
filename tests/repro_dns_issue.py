@@ -9,9 +9,9 @@ def test_startup_with_dns_failure():
     # Set PYTHONPATH
     sys.path.append(os.getcwd())
     
-    from ai_service.lifecycle_hooks import pre_flight_check
+    from engine.lifecycle_hooks import pre_flight_check
     
-    with patch("ai_service.utils.connectivity.is_internet_available", return_value=True), \
+    with patch("engine.utils.connectivity.is_internet_available", return_value=True), \
          patch("pinecone.Pinecone") as mock_pinecone:
         
         # Simulate NameResolutionError

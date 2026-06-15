@@ -26,10 +26,10 @@ class LLMClient:
             elapsed = (time.perf_counter() - start) * 1000
             data = resp.json()
 
-            # ai_service возвращает "result" согласно документации
+            # engine возвращает "result" согласно документации
             answer = str(data.get("result", "")).strip()
 
-            # Дополнительные метрики если ai_service их возвращает
+            # Дополнительные метрики если engine их возвращает
             trace = data.get("trace_report", {})
             metrics = trace.get("metrics_ms", {}).get("breakdown", {})
 
@@ -54,7 +54,7 @@ class LLMClient:
             elapsed = (time.perf_counter() - start) * 1000
             return LLMResult(
                 model=model, answer="",
-                error="ai_service недоступен на порту 8000",
+                error="engine недоступен на порту 8000",
                 latency_ms=elapsed,
             )
         except Exception as e:

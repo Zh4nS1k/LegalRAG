@@ -13,8 +13,8 @@ CONTENT = """
 Идея была простая: прежде чем поднимать retrieval, нужно начать мерить его нормально.
 
 Что изменили:
-- В ai_service/utils/retrieval_quality_benchmark.py расширили метрики.
-- В ai_service/tests/test_retrieval_quality_benchmark.py добавили тесты.
+- В engine/utils/retrieval_quality_benchmark.py расширили метрики.
+- В engine/tests/test_retrieval_quality_benchmark.py добавили тесты.
 
 Что добавили в benchmark:
 - strict/soft precision
@@ -52,7 +52,7 @@ CONTENT = """
 Цель была: не просто оценивать релевантно / нерелевантно, а смотреть, совпадают ли retrieved статьи с gold citations.
 
 Сначала был сделан офлайн baseline:
-- ai_service/utils/gold_citations_local_bm25_benchmark.py
+- engine/utils/gold_citations_local_bm25_benchmark.py
 
 Результат на 642:
 - strict_hit = 0.0545 -> 35/642
@@ -69,7 +69,7 @@ CONTENT = """
 Чтобы померить текущий retrieval без лишних догадок.
 
 Сделали файл:
-- ai_service/utils/gold_citations_pinecone_direct_benchmark.py
+- engine/utils/gold_citations_pinecone_direct_benchmark.py
 
 Результат на 642:
 - strict_hit = 0.1059 -> 68/642
@@ -92,7 +92,7 @@ CONTENT = """
 - law/article-aware boosts
 
 Сделали:
-- ai_service/utils/gold_citations_pinecone_hybrid_benchmark.py
+- engine/utils/gold_citations_pinecone_hybrid_benchmark.py
 
 6. Первая итерация hybrid
 Компоненты:
@@ -181,9 +181,9 @@ CONTENT = """
 Задача была: не держать улучшение только в benchmark-скрипте, а встроить его в production retrieval stack.
 
 Что встроили:
-- ai_service/retrieval/rag_chain.py
-- ai_service/core/config.py
-- ai_service/tests/test_retrieval_improvements.py
+- engine/retrieval/rag_chain.py
+- engine/core/config.py
+- engine/tests/test_retrieval_improvements.py
 
 Что именно добавили:
 - feature flag EXPERIMENTAL_HYBRID_V3_RETRIEVAL
@@ -203,7 +203,7 @@ CONTENT = """
 
 10. Потом попытались проверить уже интегрированный retriever через реальный benchmark
 Использовали:
-- ai_service/utils/gold_citations_retrieval_benchmark.py
+- engine/utils/gold_citations_retrieval_benchmark.py
 
 Цель:
 - не просто мерить экспериментальный скрипт
@@ -224,7 +224,7 @@ CONTENT = """
 Сначала были инфраструктурные проблемы:
 
 Проблема 1:
-- ModuleNotFoundError: No module named ai_service
+- ModuleNotFoundError: No module named engine
 Решение:
 - запускать с PYTHONPATH=/content/LegalRAG
 
@@ -284,17 +284,17 @@ CONTENT = """
 
 14. Что именно создано и изменено по ходу работы
 Основные benchmark/util файлы:
-- ai_service/utils/retrieval_quality_benchmark.py
-- ai_service/utils/gold_citations_local_bm25_benchmark.py
-- ai_service/utils/gold_citations_pinecone_direct_benchmark.py
-- ai_service/utils/gold_citations_pinecone_hybrid_benchmark.py
-- ai_service/utils/gold_citations_retrieval_benchmark.py
+- engine/utils/retrieval_quality_benchmark.py
+- engine/utils/gold_citations_local_bm25_benchmark.py
+- engine/utils/gold_citations_pinecone_direct_benchmark.py
+- engine/utils/gold_citations_pinecone_hybrid_benchmark.py
+- engine/utils/gold_citations_retrieval_benchmark.py
 
 Основные интеграционные изменения:
-- ai_service/retrieval/rag_chain.py
-- ai_service/core/config.py
-- ai_service/tests/test_retrieval_improvements.py
-- ai_service/tests/test_retrieval_quality_benchmark.py
+- engine/retrieval/rag_chain.py
+- engine/core/config.py
+- engine/tests/test_retrieval_improvements.py
+- engine/tests/test_retrieval_quality_benchmark.py
 
 Результаты benchmark-ов:
 - benchmark_results/642_questions_vs_gold_pinecone_direct.json

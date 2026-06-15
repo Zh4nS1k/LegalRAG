@@ -78,7 +78,7 @@ Legally is a **three-tier platform**. Each layer is independently deployable and
 ```
 LegalRAG/
 │
-├── ai_service/                 # Python AI Engine (FastAPI)
+├── engine/                 # Python AI Engine (FastAPI)
 │   ├── api/
 │   │   └── api.py              # FastAPI app — all AI endpoints
 │   ├── core/
@@ -179,7 +179,7 @@ Answer + Source Documents (JSON)
 | **Dynamic prompt selection** | Detects criminal, article-range, or general query and routes to the optimal few-shot prompt template |
 | **Latency tracking** | Per-stage timing via `@measure_latency` decorator, returned in API trace reports |
 
-### Configuration Reference (`ai_service/core/config.py`)
+### Configuration Reference (`engine/core/config.py`)
 
 All values are loaded via **Pydantic `EngineSettings`** from the root `.env` file.
 
@@ -222,14 +222,14 @@ LEGAL_RAG_FILTER_ARTICLE_NUMBER="136"
 
 | Module | Purpose |
 |---|---|
-| `ai_service/api/api.py` | FastAPI app, endpoint handlers, numpy-type serialization |
-| `ai_service/core/config.py` | Typed Pydantic settings, BASE_DIR resolution, HF hub configuration |
-| `ai_service/retrieval/rag_chain.py` | Full RAG pipeline: embeddings, vector store lazy init, BM25, reranker, LLM, QA chains |
-| `ai_service/retrieval/build_vector_db.py` | Indexes legal documents into Pinecone (run once) |
-| `ai_service/processing/prepare_data.py` | Chunks law text for BM25 retriever, exports `chunks_for_bm25.pkl` |
-| `ai_service/processing/fetch_adilet.py` | Scrapes current law text from `adilet.zan.kz` |
-| `ai_service/utils/latency.py` | `@measure_latency` decorator, per-request timing context |
-| `ai_service/utils/benchmark.py` | Full RAGAS-style benchmark suite with faithfulness, recall, precision metrics |
+| `engine/api/api.py` | FastAPI app, endpoint handlers, numpy-type serialization |
+| `engine/core/config.py` | Typed Pydantic settings, BASE_DIR resolution, HF hub configuration |
+| `engine/retrieval/rag_chain.py` | Full RAG pipeline: embeddings, vector store lazy init, BM25, reranker, LLM, QA chains |
+| `engine/retrieval/build_vector_db.py` | Indexes legal documents into Pinecone (run once) |
+| `engine/processing/prepare_data.py` | Chunks law text for BM25 retriever, exports `chunks_for_bm25.pkl` |
+| `engine/processing/fetch_adilet.py` | Scrapes current law text from `adilet.zan.kz` |
+| `engine/utils/latency.py` | `@measure_latency` decorator, per-request timing context |
+| `engine/utils/benchmark.py` | Full RAGAS-style benchmark suite with faithfulness, recall, precision metrics |
 
 ### Domain Fine-Tuning with LoRA
 
@@ -238,7 +238,7 @@ The project now supports a local HuggingFace inference backend with an optional 
 ```bash
 export LEGAL_RAG_LLM_BACKEND=hf_peft
 export LEGAL_RAG_HF_BASE_MODEL=Qwen/Qwen2.5-7B-Instruct
-export LEGAL_RAG_HF_ADAPTER_PATH=./ai_service/models/legal-lora
+export LEGAL_RAG_HF_ADAPTER_PATH=./engine/models/legal-lora
 export LEGAL_RAG_HF_LOAD_IN_4BIT=1
 ```
 
@@ -247,10 +247,10 @@ export LEGAL_RAG_HF_LOAD_IN_4BIT=1
 To train a legal-domain LoRA adapter on JSONL instruction data:
 
 ```bash
-python -m ai_service.scripts.train_legal_lora \
-  --dataset ai_service/training_data/legal_lora_sample.jsonl \
+python -m engine.scripts.train_legal_lora \
+  --dataset engine/training_data/legal_lora_sample.jsonl \
   --base-model Qwen/Qwen2.5-7B-Instruct \
-  --output-dir ai_service/models/legal-lora
+  --output-dir engine/models/legal-lora
 ```
 
 For Linux + NVIDIA CUDA you can add `--load-in-4bit`. On macOS, keep it off.
@@ -467,7 +467,7 @@ source venv/bin/activate       # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Start the AI engine
-./venv/bin/uvicorn ai_service.api.api:app --reload --port 8000
+./venv/bin/uvicorn engine.api.api:app --reload --port 8000
 ```
 
 **Healthy startup output:**
@@ -518,12 +518,12 @@ Before the hybrid retriever can work at full capacity you need to:
 
 **1. Fetch the latest law texts from Adilet** *(optional — files may already exist in `documents/`)*:
 ```bash
-./venv/bin/python -m ai_service.processing.fetch_adilet
+./venv/bin/python -m engine.processing.fetch_adilet
 ```
 
 **2. Chunk and index into Pinecone + build BM25 corpus:**
 ```bash
-./venv/bin/python ai_service/retrieval/build_vector_db.py
+./venv/bin/python engine/retrieval/build_vector_db.py
 ```
 
 **Expected output:**
@@ -646,7 +646,7 @@ Returns: `{ "answer", "chunks", "articles" }`
 Run the full benchmark suite against the test question set:
 
 ```bash
-./venv/bin/python -m ai_service.utils.benchmark
+./venv/bin/python -m engine.utils.benchmark
 ```
 
 Outputs an Excel report to `benchmark_results/` with per-question metrics:
@@ -660,7 +660,7 @@ Outputs an Excel report to `benchmark_results/` with per-question metrics:
 Use the fixed benchmark set as a release gate before merging retrieval or prompting changes:
 
 ```bash
-./venv/bin/python -m ai_service.utils.eval_gate --baseline tests/benchmarks/retrieval_quality_baseline.json
+./venv/bin/python -m engine.utils.eval_gate --baseline tests/benchmarks/retrieval_quality_baseline.json
 ```
 
 The gate compares the current benchmark summary and fixed-query outcomes against the baseline contract. Update the baseline only from a known-good run.
@@ -672,13 +672,13 @@ Vector ingestion writes a corpus manifest to `benchmark_results/corpus_manifests
 ### Manual Retrieval Audit
 
 ```bash
-./venv/bin/python ai_service/utils/test_retrieval.py
+./venv/bin/python engine/utils/test_retrieval.py
 ```
 
 ### Verify LangChain Chain
 
 ```bash
-./venv/bin/python ai_service/utils/verify_langchain.py
+./venv/bin/python engine/utils/verify_langchain.py
 ```
 
 ---
@@ -691,7 +691,7 @@ Vector ingestion writes a corpus manifest to `benchmark_results/corpus_manifests
 |---|---|---|
 | `[CRITICAL ERROR] Missing Configuration: PINECONE_API_KEY` | `.env` not found or key missing | Check `BASE_DIR` in `config.py`, ensure `.env` is in project root |
 | `SystemExit: Задайте GROQ_API_KEY` | Pydantic loaded key but LLM code couldn't read it | Ensure `config.GROQ_API_KEY` is used (not `os.environ.get`) |
-| `Error loading ASGI app. Could not import module "api"` | Wrong uvicorn command (old path) | Use `./venv/bin/uvicorn ai_service.api.api:app` |
+| `Error loading ASGI app. Could not import module "api"` | Wrong uvicorn command (old path) | Use `./venv/bin/uvicorn engine.api.api:app` |
 | `ModuleNotFoundError: No module named 'fastapi'` | System uvicorn used instead of venv | Always use `./venv/bin/uvicorn` |
 | `is_torch_fx_available` import error | FlagEmbedding/transformers version clash | Set `LEGAL_RAG_USE_RERANKER=0` or run `pip install --upgrade transformers FlagEmbedding` |
 | `ValueError: Pinecone API key must be provided` | Old code path before lazy loading | Confirm `rag_chain.py` uses `get_vector_store()` function, not module-level init |

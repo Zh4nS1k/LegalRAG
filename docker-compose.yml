@@ -22,20 +22,20 @@ services:
       timeout: 5s
       retries: 5
 
-  ai_service:
+  engine:
     build:
-      context: ./ai_service
+      context: ./engine
       dockerfile: Dockerfile
       args:
         PREFETCH_HF_MODEL: "0"  # 0=download on first run (faster build); 1=pre-download for offline
-    container_name: legally_ai_service
+    container_name: legally_engine
     dns:
       - 8.8.8.8
       - 1.1.1.1
     ports:
       - "8001:8000" # <--- ВНЕШНИЙ 8001 : ВНУТРЕННИЙ 8000
     env_file:
-      - ./ai_service/.env
+      - ./engine/.env
     environment:
       - LEGAL_RAG_HF_CACHE_DIR=/app/.models_cache
       - REDIS_URL=redis://redis:6379/0
@@ -67,14 +67,14 @@ services:
       - "8080:8080"
     env_file:
       - ./server/.env
-    # Allow backend to reach host (for native ai_service): use AI_SERVICE_URL=http://host.docker.internal:8000
+    # Allow backend to reach host (for native engine): use AI_SERVICE_URL=http://host.docker.internal:8000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
     depends_on:
       mongodb:
         condition: service_started
-      ai_service:
+      engine:
         condition: service_healthy
 
   frontend:

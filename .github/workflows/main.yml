@@ -33,7 +33,7 @@ jobs:
       - name: Run Go Tests
         run: cd server && go test ./tests/... ./api/controllers/... -v
 
-      # --- PYTHON (AI Service) ---
+      # --- PYTHON (AI Engine) ---
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -48,14 +48,14 @@ jobs:
       - name: Lint with flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names
-          flake8 ai_service --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 engine --count --select=E9,F63,F7,F82 --show-source --statistics
           # exit-zero treats all errors as warnings.
-          flake8 ai_service --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          flake8 engine --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Run Python Tests
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)
-          pytest ai_service/tests
+          pytest engine/tests
         env:
           PINECONE_API_KEY: "dummy-key-for-ci"
           GROQ_API_KEY: "dummy-key-for-ci"
@@ -86,5 +86,5 @@ jobs:
       - name: Build Backend Image
         run: docker build -t legally-backend ./server
 
-      - name: Build AI Service Image
-        run: docker build -t legally-ai ./ai_service
+      - name: Build AI Engine Image
+        run: docker build -t legally-ai ./engine

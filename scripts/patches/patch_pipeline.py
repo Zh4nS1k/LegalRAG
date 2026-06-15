@@ -18,7 +18,7 @@ content = re.sub(r'        self\.query_rewriter = QueryRewriter\(\)\n', '', cont
 
 # 3. Add health check
 health_check = """
-    def _check_ai_service(self) -> bool:
+    def _check_engine(self) -> bool:
         import requests
         import os
         try:
@@ -45,8 +45,8 @@ health_check_call = """        # ── Graceful signal handlers ─────
         signal.signal(signal.SIGINT, _signal_handler)
         signal.signal(signal.SIGTERM, _signal_handler)
 
-        if not self._check_ai_service():
-            pipeline_logger.log_error("pipeline", "health", "❌ ai_service не запущен. Запусти: uvicorn ai_service.api.api:app --port 8000")
+        if not self._check_engine():
+            pipeline_logger.log_error("pipeline", "health", "❌ engine не запущен. Запусти: uvicorn engine.api.api:app --port 8000")
             sys.exit(1)"""
 content = content.replace('        # ── Graceful signal handlers ────────────────────────────────────\n        def _signal_handler(sig, frame):\n            pipeline_logger.log_warning(\n                f"⌨️  Interrupted! Saving {len(checkpoint.rows)} rows..."\n            )\n            checkpoint.finalize()\n            sys.exit(0)\n\n        signal.signal(signal.SIGINT, _signal_handler)\n        signal.signal(signal.SIGTERM, _signal_handler)', health_check_call)
 

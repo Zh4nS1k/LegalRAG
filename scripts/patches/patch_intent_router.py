@@ -1,6 +1,6 @@
 import re
 
-with open("ai_service/api/api.py", "r") as f:
+with open("engine/api/api.py", "r") as f:
     content = f.read()
 
 content = content.replace(
@@ -8,10 +8,10 @@ content = content.replace(
     'intent_router.route_query, body.query, history=body.history, model_override=body.model'
 )
 
-with open("ai_service/api/api.py", "w") as f:
+with open("engine/api/api.py", "w") as f:
     f.write(content)
 
-with open("ai_service/retrieval/intent_router.py", "r") as f:
+with open("engine/retrieval/intent_router.py", "r") as f:
     content = f.read()
 
 content = content.replace(
@@ -34,5 +34,5 @@ content = content.replace(
     '_llm_router(query, history_str, model_override)'
 )
 
-with open("ai_service/retrieval/intent_router.py", "w") as f:
+with open("engine/retrieval/intent_router.py", "w") as f:
     f.write(content)

@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-# Repo root must be on sys.path so `import ai_service` works when running
+# Repo root must be on sys.path so `import engine` works when running
 # `python scripts/run_rag_on_benchmark_xlsx.py` (not only `python -m ...`).
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -114,7 +114,7 @@ def main() -> None:
     os.environ["LEGAL_RAG_LLM_BACKEND"] = args.backend
     os.environ["LEGAL_RAG_LLM"] = args.model
 
-    from ai_service.retrieval.rag_chain import invoke_qa
+    from engine.retrieval.rag_chain import invoke_qa
 
     input_path = Path(args.xlsx)
     if not input_path.exists():

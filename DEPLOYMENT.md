@@ -30,11 +30,11 @@ Before deploying, you must have:
 - Environment: **Python**
 - Build Command:
   ```
-  pip install -r ai_service/requirements.txt
+  pip install -r engine/requirements.txt
   ```
 - Start Command:
   ```
-  uvicorn ai_service.api.api:app --host 0.0.0.0 --port $PORT
+  uvicorn engine.api.api:app --host 0.0.0.0 --port $PORT
   ```
 
 **2. Set Environment Variables in Render dashboard:**
@@ -60,8 +60,8 @@ services:
     name: legally-ai-engine
     env: python
     plan: starter
-    buildCommand: pip install -r ai_service/requirements.txt
-    startCommand: uvicorn ai_service.api.api:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -r engine/requirements.txt
+    startCommand: uvicorn engine.api.api:app --host 0.0.0.0 --port $PORT
     autoDeploy: true
     envVars:
       - key: PINECONE_API_KEY
@@ -83,13 +83,13 @@ services:
 FROM python:3.12-slim
 
 WORKDIR /app
-COPY ai_service/requirements.txt .
+COPY engine/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
 EXPOSE 8000
-CMD ["uvicorn", "ai_service.api.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "engine.api.api:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 ```bash
@@ -107,7 +107,7 @@ cd LegalRAG
 # Create venv
 python3.12 -m venv venv
 source venv/bin/activate
-pip install -r ai_service/requirements.txt
+pip install -r engine/requirements.txt
 
 # Create systemd service
 sudo nano /etc/systemd/system/legally-ai.service
@@ -122,7 +122,7 @@ After=network.target
 User=ubuntu
 WorkingDirectory=/home/ubuntu/LegalRAG
 EnvironmentFile=/home/ubuntu/LegalRAG/.env
-ExecStart=/home/ubuntu/LegalRAG/venv/bin/uvicorn ai_service.api.api:app --host 127.0.0.1 --port 8000
+ExecStart=/home/ubuntu/LegalRAG/venv/bin/uvicorn engine.api.api:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
 
@@ -275,10 +275,10 @@ export PINECONE_API_KEY="pcsk_..."
 export PINECONE_INDEX_NAME="legally-index"
 
 # Index all documents
-./venv/bin/python ai_service/retrieval/build_vector_db.py
+./venv/bin/python engine/retrieval/build_vector_db.py
 
 # Build BM25 corpus
-./venv/bin/python -m ai_service.processing.prepare_data
+./venv/bin/python -m engine.processing.prepare_data
 ```
 
 Expected result in Pinecone console: **~4,200 vectors**, dimension `1024`, metric `cosine`.

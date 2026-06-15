@@ -33,7 +33,7 @@ env.bak/
 venv.bak/
 rag-env-312/
 rag_env/
-ai_service/venv/
+engine/venv/
 
 # IDEs & Editors
 .idea/
@@ -71,14 +71,14 @@ hf_cache/
 ~/.cache/huggingface/
 
 # Fine-tuned local model artifacts
-ai_service/models/legal-lora-*/
-ai_service/models/**/checkpoint-*/
-ai_service/models/**/*.safetensors
-ai_service/models/**/optimizer.pt
-ai_service/models/**/scheduler.pt
-ai_service/models/**/rng_state.pth
-ai_service/models/**/trainer_state.json
-ai_service/models/**/training_args.bin
+engine/models/legal-lora-*/
+engine/models/**/checkpoint-*/
+engine/models/**/*.safetensors
+engine/models/**/optimizer.pt
+engine/models/**/scheduler.pt
+engine/models/**/rng_state.pth
+engine/models/**/trainer_state.json
+engine/models/**/training_args.bin
 
 # AI generated data
 chat_history.json

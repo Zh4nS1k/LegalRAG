@@ -50,7 +50,7 @@ class TestPipeline:
         if override_models:
             self.models_to_test = [m.strip() for m in override_models.split(",") if m.strip()]
 
-    def _check_ai_service(self) -> bool:
+    def _check_engine(self) -> bool:
         import requests
         try:
             r = requests.get(
@@ -81,8 +81,8 @@ class TestPipeline:
         signal.signal(signal.SIGINT, _signal_handler)
         signal.signal(signal.SIGTERM, _signal_handler)
 
-        if not self._check_ai_service():
-            pipeline_logger.log_error("pipeline", "health", "❌ ai_service не запущен. Запусти: uvicorn ai_service.api.api:app --port 8000")
+        if not self._check_engine():
+            pipeline_logger.log_error("pipeline", "health", "❌ engine не запущен. Запусти: uvicorn engine.api.api:app --port 8000")
             sys.exit(1)
 
         try:

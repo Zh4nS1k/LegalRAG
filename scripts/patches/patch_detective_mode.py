@@ -1,6 +1,6 @@
 import re
 
-with open("ai_service/retrieval/detective_mode.py", "r") as f:
+with open("engine/retrieval/detective_mode.py", "r") as f:
     content = f.read()
 
 # _linguist_query_expansion
@@ -89,5 +89,5 @@ content = content.replace(
     '            data_pct,\n            trace_id,\n            model_override,\n        )'
 )
 
-with open("ai_service/retrieval/detective_mode.py", "w") as f:
+with open("engine/retrieval/detective_mode.py", "w") as f:
     f.write(content)

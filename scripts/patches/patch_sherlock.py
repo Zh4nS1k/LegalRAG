@@ -1,6 +1,6 @@
 import re
 
-with open("ai_service/api/api.py", "r") as f:
+with open("engine/api/api.py", "r") as f:
     content = f.read()
 
 content = content.replace(
@@ -8,10 +8,10 @@ content = content.replace(
     'sherlock = sherlock_engine.SherlockEngine(model_override=body.model)'
 )
 
-with open("ai_service/api/api.py", "w") as f:
+with open("engine/api/api.py", "w") as f:
     f.write(content)
 
-with open("ai_service/retrieval/sherlock_engine.py", "r") as f:
+with open("engine/retrieval/sherlock_engine.py", "r") as f:
     content = f.read()
 
 content = content.replace(
@@ -29,5 +29,5 @@ content = content.replace(
     'lambda: rag_chain.get_llm(self.model_override)'
 )
 
-with open("ai_service/retrieval/sherlock_engine.py", "w") as f:
+with open("engine/retrieval/sherlock_engine.py", "w") as f:
     f.write(content)
