@@ -1,12 +1,35 @@
+import pytest
 from ai_service.retrieval import rag_chain
 
 
-def test_cache_skips_history(monkeypatch):
+class FakeRedis:
+    def __init__(self):
+        self.store = {}
+
+    def get(self, key):
+        return self.store.get(key)
+
+    def setex(self, key, ttl, value):
+        self.store[key] = value
+
+    def delete(self, *names):
+        for name in names:
+            self.store.pop(name, None)
+
+
+@pytest.fixture
+def fake_redis(monkeypatch):
+    r = FakeRedis()
+    monkeypatch.setattr(rag_chain, "get_redis", lambda: r)
+    return r
+
+
+def test_cache_skips_history(monkeypatch, fake_redis):
     calls = []
 
     def fake_impl(query, history, intent, model_override=None):
         calls.append((query, history, intent))
-        return {"result": "ok", "source_documents": []}
+        return {"result": "ok", "source_documents": [], "retrieval_method": "hybrid"}
 
     monkeypatch.setattr(rag_chain, "_invoke_qa_impl", fake_impl)
     rag_chain.clear_qa_cache()
@@ -17,12 +40,12 @@ def test_cache_skips_history(monkeypatch):
     assert calls[0][1] == [{"role": "user", "content": "привет"}]
 
 
-def test_cache_hits_without_history(monkeypatch):
+def test_cache_hits_without_history(monkeypatch, fake_redis):
     calls = []
 
     def fake_impl(query, history, intent, model_override=None):
         calls.append((query, history, intent))
-        return {"result": "ok", "source_documents": []}
+        return {"result": "ok", "source_documents": [], "retrieval_method": "hybrid"}
 
     monkeypatch.setattr(rag_chain, "_invoke_qa_impl", fake_impl)
     rag_chain.clear_qa_cache()

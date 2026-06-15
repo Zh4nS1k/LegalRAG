@@ -22,10 +22,10 @@ CONFIDENCE_THRESHOLD = getattr(config, "AGENTIC_RERANKER_CONFIDENCE_THRESHOLD", 
 N_VARIATIONS = getattr(config, "AGENTIC_QUERY_VARIATIONS", 4)
 COVE_ENABLED = getattr(config, "AGENTIC_COVE_ENABLED", True)
 CRAG_ENABLED = getattr(config, "AGENTIC_CRAG_ENABLED", True)
-CRAG_MAX_ROUNDS = int(getattr(config, "AGENTIC_CRAG_MAX_ROUNDS", 2))
+CRAG_MAX_ROUNDS = int(getattr(config, "AGENTIC_CRAG_MAX_ROUNDS", 1))
 CRAG_TOP_K = int(getattr(config, "AGENTIC_CRAG_TOP_K", 10))
 CRAG_REWRITE_TOP_K = int(getattr(config, "AGENTIC_CRAG_REWRITE_TOP_K", 20))
-CRAG_MIN_CONTEXT_SCORE = float(getattr(config, "AGENTIC_CRAG_MIN_CONTEXT_SCORE", 0.58))
+CRAG_MIN_CONTEXT_SCORE = float(getattr(config, "AGENTIC_CRAG_MIN_CONTEXT_SCORE", 0.10))
 CRAG_LLM_EVALUATOR = getattr(config, "AGENTIC_CRAG_LLM_EVALUATOR", False)
 CRAG_DECOMPOSE_QUERY = getattr(config, "AGENTIC_CRAG_DECOMPOSE_QUERY", True)
 
@@ -388,11 +388,14 @@ async def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
 
 async def _retrieve_candidates(
     queries: List[str], hyde_doc: str, trace_id: str
-) -> Tuple[List[Document], dict]:
-    """Run vector search for each query (and HyDE doc if present). Merge and dedupe to up to TOP_K_CANDIDATES."""
+) -> Tuple[List[Document], List[float], dict]:
+    """Run vector search for all queries at once using batch embedding.
+    Merge and dedupe to up to TOP_K_CANDIDATES.
+    """
     t0 = time.perf_counter()
     store = rag_chain.get_vector_store()
     embeddings = rag_chain.get_embeddings()
+
     # Pinecone filter (same as rag_chain)
     search_kwargs: dict = {"k": min(20, TOP_K_CANDIDATES // max(1, len(queries) + 1))}
     if hasattr(rag_chain, "_vector_kwargs") and rag_chain._vector_kwargs.get("filter"):
@@ -403,13 +406,36 @@ async def _retrieve_candidates(
     scores: List[float] = []
     search_queries = list(queries)
     if hyde_doc:
-        # HyDE: use hypothetical answer as a "query" for embedding (passage-style for consistency with index)
         search_queries.append(hyde_doc)
 
     if search_queries:
+        # Optimization: Use batch embedding to avoid sequential calls and reduce overhead
+        # embeddings.embed_documents handles "passage: " prefixing internally in PrefixedEmbeddings
+        # but here we use search_queries which are queries. PrefixedEmbeddings.embed_documents
+        # actually adds "passage: " prefix. We should be careful.
+        # Let's check PrefixedEmbeddings again.
+        
+        # Actually, if we use similarity_search_by_vector, we should use query-style embedding.
+        # PrefixedEmbeddings.embed_query adds "query: " prefix.
+        # PrefixedEmbeddings does NOT have a public embed_queries method that uses "query: " for all.
+        
+        # We can call embed_query for each, but that's what we wanted to avoid.
+        # Let's look at PrefixedEmbeddings in rag_chain.py again.
+        
+        # class PrefixedEmbeddings:
+        #    def embed_documents(self, texts):
+        #        return self.embeddings.embed_documents(["passage: " + t for t in texts])
+        #    def embed_query(self, text):
+        #        return self.embeddings.embed_query("query: " + text)
+
+        # We need "query: " prefix for all search_queries.
+        prefixed_queries = ["query: " + q for q in search_queries]
+        # Use the underlying embeddings object to batch embed with our manual prefix
+        vectors = await asyncio.to_thread(embeddings.embeddings.embed_documents, prefixed_queries)
+
         search_tasks = [
-            asyncio.to_thread(store.similarity_search_with_score, q, **search_kwargs)
-            for q in search_queries
+            asyncio.to_thread(store.similarity_search_by_vector_with_score, v, **search_kwargs)
+            for v in vectors
         ]
         search_results = await asyncio.gather(*search_tasks)
         for docs_with_scores in search_results:

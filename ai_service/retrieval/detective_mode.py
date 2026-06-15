@@ -442,8 +442,13 @@ async def invoke_detective_qa(
     else:
         retrieval_method = "hybrid"
 
-    # Synthesis: full or partial
-    if confidence_est >= CONFIDENCE_THRESHOLD and source_documents:
+    # Final decision on synthesis:
+    # If confidence is very high (>= 0.9), skip the expensive LLM synthesis round
+    # and use the raw result from agentic workflow to save ~10s of latency.
+    if confidence_est >= 0.9 and source_documents:
+        # High confidence: skip extra synthesis/flip round
+        m_syn = {"detective_skipped_synthesis": True}
+    elif confidence_est >= CONFIDENCE_THRESHOLD and source_documents:
         result, m_syn = _synthesis_causality_skeptic_flip(
             result, source_documents, trace_id, model_override
         )
