@@ -20,8 +20,8 @@ else
 fi
 
 echo "Running go fmt (Go formatting)..."
-if [ -d "backend/legally" ]; then
-    cd backend/legally && go fmt ./...
+if [ -d "server" ]; then
+    cd server && go fmt ./...
 else
     echo "Go backend directory not found. Skipping Go formatting."
 fi

@@ -34,10 +34,10 @@ deploy:
 	make -j3 backend ai_service frontend
 
 backend:
-	cd backend/legally && go run main.go
+	cd server && go run main.go
 
 frontend:
-	cd frontend/legally-app && npm start
+	cd client && npm start
 
 ai_service:
 	cd ai_service && (if [ -f "venv/bin/python" ]; then ./venv/bin/python main.py; elif [ -f ".venv/bin/python" ]; then ./.venv/bin/python main.py; else python3 main.py; fi)
@@ -46,10 +46,10 @@ build_vectors:
 	cd ai_service && export PYTHONPATH=$$PYTHONPATH:$$(pwd) && (if [ -f "venv/bin/python" ]; then ./venv/bin/python retrieval/build_vector_db.py; elif [ -f ".venv/bin/python" ]; then ./.venv/bin/python retrieval/build_vector_db.py; else python3 retrieval/build_vector_db.py; fi)
 
 test-backend:
-	cd backend/legally && go test ./tests/... ./api/controllers/... -v
+	cd server && go test ./tests/... ./api/controllers/... -v
 
 test-frontend:
-	cd frontend/legally-app && npm test -- --watchAll=false
+	cd client && npm test -- --watchAll=false
 
 test-ai_service:
 	cd ai_service && export PYTHONPATH=$$PYTHONPATH:$$(pwd) && (if [ -f "venv/bin/pytest" ]; then ./venv/bin/pytest tests/; elif [ -f ".venv/bin/pytest" ]; then ./.venv/bin/pytest tests/; else pytest tests/; fi)

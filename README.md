@@ -490,7 +490,7 @@ INFO: Application startup complete.
 ### Step 2 — Go Backend
 
 ```bash
-cd backend/legally
+cd server
 go run main.go
 ```
 
@@ -503,7 +503,7 @@ go run main.go
 ### Step 3 — React Frontend
 
 ```bash
-cd frontend/legally-app
+cd client
 npm install        # first time only
 npm start
 ```

@@ -1,17 +1,17 @@
 {
   "mappings": {
     "pages": {
-      "source": "frontend/legally-app/src/pages/",
+      "source": "client/src/pages/",
       "destination": "frontend-next/src/app/",
       "description": "React pages to Next.js app router pages"
     },
     "components": {
-      "source": "frontend/legally-app/src/components/",
+      "source": "client/src/components/",
       "destination": "frontend-next/src/components/",
       "description": "React components to Next.js components"
     },
     "services": {
-      "source": "frontend/legally-app/src/services/",
+      "source": "client/src/services/",
       "destination": "frontend-next/src/lib/api/",
       "description": "API services to typed API functions"
     }

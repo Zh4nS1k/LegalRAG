@@ -144,9 +144,9 @@ sudo systemctl status legally-ai
 ### Option A: Render.com
 
 - Environment: **Go**
-- Build Command: `go build -o server ./backend/legally`
+- Build Command: `go build -o server ./server`
 - Start Command: `./server`
-- Root Directory: `backend/legally`
+- Root Directory: `server`
 
 Environment variables:
 
@@ -163,7 +163,7 @@ Environment variables:
 ```dockerfile
 FROM golang:1.21-alpine AS builder
 WORKDIR /app
-COPY backend/legally/ .
+COPY server/ .
 RUN go build -o server .
 
 FROM alpine:latest
@@ -182,9 +182,9 @@ After=network.target
 
 [Service]
 User=ubuntu
-WorkingDirectory=/home/ubuntu/LegalRAG/backend/legally
+WorkingDirectory=/home/ubuntu/LegalRAG/server
 EnvironmentFile=/home/ubuntu/LegalRAG/.env
-ExecStart=/home/ubuntu/LegalRAG/backend/legally/server
+ExecStart=/home/ubuntu/LegalRAG/server/server
 Restart=always
 RestartSec=5
 
@@ -199,7 +199,7 @@ WantedBy=multi-user.target
 ### Option A: Vercel (Recommended)
 
 ```bash
-cd frontend/legally-app
+cd client
 npm run build
 # Push to GitHub → Vercel auto-deploys on merge to main
 ```
@@ -222,9 +222,9 @@ npm run build
 The Go backend already serves the React build at `GET /` via its static file handler. To use this:
 
 ```bash
-cd frontend/legally-app
+cd client
 npm run build
-cp -r build/ ../../backend/legally/static/
+cp -r build/ ../../server/static/
 ```
 
 Then access the full app on `http://localhost:8080`.
