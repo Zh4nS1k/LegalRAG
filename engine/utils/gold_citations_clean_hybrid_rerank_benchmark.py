@@ -445,7 +445,7 @@ def _load_reranker(model_name: str):
     except Exception:
         from FlagEmbedding import FlagReranker
 
-        model = FlagReranker(model_name, use_fp16=True)
+        model = FlagReranker(model_name, use_fp16=False)
         return "flag_embedding", model
 
 

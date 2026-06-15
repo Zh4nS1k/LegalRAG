@@ -3455,7 +3455,7 @@ def get_retriever():
 
                         # FlagReranker uses trust_remote_code=True by default in some versions.
                         _reranker_model = FlagReranker(
-                            config.RERANKER_MODEL, use_fp16=True
+                            config.RERANKER_MODEL, use_fp16=False
                         )
                         _reranker_backend = "flag_embedding"
                         # Some checkpoints do not define pad_token and fail on batched scoring.
@@ -4058,19 +4058,15 @@ RANGE_PROMPT = PromptTemplate(
 
 @latency.measure_latency("prompt_template_build")
 def _select_prompt(question: str, intent: str = None) -> PromptTemplate:
-    if _extract_article_range(question):
-        return RANGE_PROMPT
-    if intent in {"GENERAL_LEGAL", "CASE_SPECIFIC"}:
-        # Most legal questions are not criminal-law questions.
-        # Route them through the universal legal template instead of the
-        # criminal-only template to avoid wrong answer structure and bias.
-        return UNIVERSAL_PROMPT
-    q = question or ""
-    if _is_criminal_query(q) or re.search(
-        r"(?:ст\.?\s*\d|статья\s*\d|бап\s*\d)", q, re.IGNORECASE
-    ):
-        return CRIMINAL_PROMPT
-    return UNIVERSAL_PROMPT
+    from engine.retrieval.intent_router import detect_question_type
+    from engine.retrieval.prompt_templates import PROMPT_TEMPLATES
+    
+    qtype = detect_question_type(question or "")
+    template_str = PROMPT_TEMPLATES.get(qtype, PROMPT_TEMPLATES["article_lookup"])
+    return PromptTemplate(
+        input_variables=["chat_history", "context", "input"],
+        template=template_str,
+    )
 
 
 try:
@@ -4409,7 +4405,7 @@ def _invoke_qa_impl(
     _ensure_latency_patches()
 
     if intent == "SOCIAL":
-        llm = get_llm()
+        llm = get_llm(model_override)
         s_history = _history_str(history)
         prompt_text = (
             "Ты — дружелюбный юридический ассистент Legally / Сіз Legally мейірімді заң көмекшісісіз. "

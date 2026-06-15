@@ -35,7 +35,7 @@ services:
     ports:
       - "8001:8000" # <--- ВНЕШНИЙ 8001 : ВНУТРЕННИЙ 8000
     env_file:
-      - ./engine/.env
+      - ./.env
     environment:
       - LEGAL_RAG_HF_CACHE_DIR=/app/.models_cache
       - REDIS_URL=redis://redis:6379/0

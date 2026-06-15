@@ -49,7 +49,7 @@ def _get_reranker():
 
             _reranker_model = FlagReranker(
                 getattr(config, "RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"),
-                use_fp16=True,
+                use_fp16=False,
             )
             logger.info(
                 "✅ [SUCCESS] Reranker initialized (%.2fs)", time.perf_counter() - t0
@@ -308,10 +308,10 @@ async def _corrective_retrieve(
 # ─── 1. Linguist-Analyst: HyDE + Query expansion (RU/KZ) ─────────────────────
 
 
-async def _linguist_hyde(query: str, trace_id: str) -> Tuple[str, dict]:
+async def _linguist_hyde(query: str, trace_id: str, model_override: str | None = None) -> Tuple[str, dict]:
     """Generate hypothetical legal answer (HyDE) for better retrieval. Returns (hypothetical_doc, metrics)."""
     t0 = time.perf_counter()
-    llm = rag_chain.get_llm()
+    llm = rag_chain.get_llm(model_override)
     prompt = (
         "Ты — эксперт по законодательству РК. Дай краткий гипотетический ответ (2–3 предложения), "
         "как могла бы звучать формулировка из закона или судебной практики по вопросу. "
@@ -341,11 +341,11 @@ async def _linguist_hyde(query: str, trace_id: str) -> Tuple[str, dict]:
     return hyde_doc.strip() or "", {"linguist_hyde_ms": ms}
 
 
-async def _linguist_expand(query: str, trace_id: str) -> Tuple[List[str], dict]:
+async def _linguist_expand(query: str, trace_id: str, model_override: str | None = None) -> Tuple[List[str], dict]:
     """Generate 3–5 query variations in Russian and Kazakh. Returns (list of query strings, metrics)."""
     t0 = time.perf_counter()
     n = min(5, max(3, N_VARIATIONS))
-    llm = rag_chain.get_llm()
+    llm = rag_chain.get_llm(model_override)
     prompt = (
         f"Сгенерируй ровно {n} коротких перефразировок следующего юридического вопроса: "
         "половину на русском, половину на казахском. Каждый вариант — одна строка, без нумерации. "
@@ -531,7 +531,7 @@ def _extract_cited_articles(response: str) -> List[Tuple[str, str]]:
 
 
 async def _cove_verify(
-    response: str, source_docs: List[Document], trace_id: str
+    response: str, source_docs: List[Document], trace_id: str, model_override: str | None = None
 ) -> Tuple[str, bool, dict]:
     """Verify that key statements in the response match the cited articles in context. Returns (verified_response, all_ok, metrics)."""
     t0 = time.perf_counter()
@@ -547,11 +547,16 @@ async def _cove_verify(
         code = d.metadata.get("code_ru", "")
         context_parts.append(f"[{code} ст.{art}]\n{d.page_content[:800]}")
     context_str = "\n\n".join(context_parts)
-    llm = rag_chain.get_llm()
+    llm = rag_chain.get_llm(model_override)
     prompt = (
         "По законодательству РК. Контекст из НПА:\n{context}\n\n"
         "Ответ ассистента:\n{response}\n\n"
-        "Вопрос: Соответствует ли ответ приведённому контексту? Ответь одним словом: ДА или НЕТ."
+        "ПРАВИЛО ПРОВЕРКИ:\n"
+        "ОТКЛОНИ ответ ТОЛЬКО если В контексте НЕТ ни одной статьи, которая хотя бы косвенно относится к вопросу.\n"
+        "Если статья найдена но не даёт точного ответа — отвечай частично, цитируй статью и указывай что конкретное зависит от обстоятельств.\n"
+        "НИКОГДА не возвращай «Информация не найдена» если в контексте есть хотя бы одна статья.\n\n"
+        "Оцени ответ ассистента. Если он нарушает правила (например, говорит что информации нет, хотя статьи есть), напиши НОВЫЙ правильный ответ.\n"
+        "Если ответ ассистента хороший, просто верни его текст без изменений. Выводи ТОЛЬКО текст ответа."
     )
     try:
         safe_context = _escape_format_braces(context_str)
@@ -559,10 +564,11 @@ async def _cove_verify(
         resp = await asyncio.to_thread(
             llm.invoke, prompt.format(context=safe_context, response=safe_response)
         )
-        ans = (resp.content if hasattr(resp, "content") else str(resp)).strip().upper()
-        all_ok = "НЕТ" not in ans[:10]
-        if not all_ok:
-            response = NOT_FOUND_MSG
+        ans = (resp.content if hasattr(resp, "content") else str(resp)).strip()
+        
+        # We replace the original response with the CoVe's corrected response
+        response = ans
+        all_ok = True
     except Exception as e:
         logger.error("[%s] CoVe verification failed: %s", trace_id, e, exc_info=True)
         all_ok = True
@@ -588,8 +594,8 @@ async def invoke_agentic_qa(
     t_total = time.perf_counter()
 
     # 1. Linguist: Query expansion and HyDE
-    queries, m_ling_expand = await _linguist_expand(query, trace_id)
-    hyde_doc, m_ling_hyde = await _linguist_hyde(query, trace_id)
+    queries, m_ling_expand = await _linguist_expand(query, trace_id, model_override)
+    hyde_doc, m_ling_hyde = await _linguist_hyde(query, trace_id, model_override)
     metrics.update(m_ling_expand)
     metrics.update(m_ling_hyde)
 
@@ -668,14 +674,14 @@ async def invoke_agentic_qa(
     # 5. QA with top 5 context
     t_qa = time.perf_counter()
     qa_result = await asyncio.to_thread(
-        rag_chain.invoke_qa_with_context, query, top_docs, history=history
+        rag_chain.invoke_qa_with_context, query, top_docs, history=history, model_override=model_override
     )
     metrics["qa_ms"] = round((time.perf_counter() - t_qa) * 1000)
     result = qa_result.get("result", "")
     source_documents = qa_result.get("source_documents", [])
 
     # 6. CoVe verification
-    result, cove_ok, m5 = await _cove_verify(result, source_documents, trace_id)
+    result, cove_ok, m5 = await _cove_verify(result, source_documents, trace_id, model_override)
     metrics.update(m5)
     if not cove_ok:
         metrics["cove_replaced"] = True

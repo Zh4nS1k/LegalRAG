@@ -238,3 +238,48 @@ def classify_intent_with_confidence(
 
 def classify_intent(query: str) -> str:
     return classify_intent_with_confidence(query).intent
+
+# ==========================================
+# 21-Intent Rule-Based Prompt Router
+# ==========================================
+
+QUESTION_TYPES = {
+    "crime_qualification": ["грозит", "уголовн", "преступлен", "состав преступ"],
+    "crime_punishment": ["наказан", "штраф", "срок", "лишен", "арест", "краж", "хищен", "ограблен"],
+    "crime_aggravating": ["крупн", "групп", "особо опасн", "квалифицирующ"],
+    "crime_mitigation": ["смягчающ", "избежат", "освобожден", "прекратить дело"],
+    "article_lookup": ["статья", "ст.", "пункт", "часть", "что говорит", "содержание статьи"],
+    "contract_dispute": ["договор", "расторжен", "сделк", "неустойк"],
+    "consumer_rights": ["товар", "вернут", "потребител", "гарантий"],
+    "property_damage": ["ущерб", "ответственн", "возмещен", "вред"],
+    "inheritance": ["наследств", "наследник", "завещание"],
+    "business_registration": ["регистрац", "тоо", "открыть бизнес"],
+    "tax_penalty": ["налог", "ндс", "налогов", "уклонение", "налогоплательщик"],
+    "labor_rights": ["увольнен", "трудов", "работник", "работодател"],
+    "salary_compensation": ["зарплат", "декретн", "компенсаци", "отпуск"],
+    "social_benefits": ["пенси", "социальн", "пособие", "выплат"],
+    "labor_discipline": ["прогул", "дисциплин", "выговор"],
+    "family_law": ["развод", "алимент", "раздел имуществ", "брак"],
+    "filing_complaint": ["жалоб", "подать иск", "куда обращаться", "подача иск"],
+    "statute_limitations": ["срок давност", "истек срок"],
+    "evidence": ["доказательств", "свидетел"],
+    "enforcement": ["взыскать", "исполнение решения", "судебный пристав"],
+    "administrative": ["коап", "административн", "протокол"],
+}
+
+def detect_question_type(query: str) -> str:
+    q = query.lower()
+    PRIORITY_ORDER = [
+        "article_lookup", "crime_punishment", "crime_aggravating",
+        "crime_mitigation", "crime_qualification", "filing_complaint",
+        "statute_limitations", "labor_rights", "salary_compensation",
+        "labor_discipline", "social_benefits", "family_law",
+        "contract_dispute", "consumer_rights", "property_damage",
+        "inheritance", "business_registration", "tax_penalty",
+        "evidence", "enforcement", "administrative",
+    ]
+    for qtype in PRIORITY_ORDER:
+        keywords = QUESTION_TYPES[qtype]
+        if any(kw in q for kw in keywords):
+            return qtype
+    return "crime_punishment"  # fallback для неоднозначных уголовных вопросов

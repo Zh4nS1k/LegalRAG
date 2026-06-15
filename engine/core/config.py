@@ -237,7 +237,7 @@ def build_openrouter_default_headers() -> dict[str, str]:
 # Backend/model can still be overridden via env.
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 LLM_BACKEND = "openrouter"
-LLM_MODEL = "meta-llama/llama-3.1-8b-instruct"
+LLM_MODEL = os.environ.get("LEGAL_RAG_LLM_MODEL", "deepseek/deepseek-v4-flash")
 LLM_TEMPERATURE = 0.0
 LLM_MAX_TOKENS = int(os.environ.get("LEGAL_RAG_LLM_MAX_TOKENS", "1024"))
 HF_LLM_BASE_MODEL = os.environ.get(

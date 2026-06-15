@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             from FlagEmbedding import FlagReranker
 
-            FlagReranker(reranker_model, use_fp16=True)
+            FlagReranker(reranker_model, use_fp16=False)
             print(f"[download_models] OK: {reranker_model}")
         except ImportError:
             print(
