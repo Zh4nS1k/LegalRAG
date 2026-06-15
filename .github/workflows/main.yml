@@ -20,7 +20,7 @@ jobs:
 
       - name: Go Format Check
         run: |
-          cd backend/legally
+          cd server
           if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
             echo "The following files are not formatted:"
             gofmt -l .
@@ -28,10 +28,10 @@ jobs:
           fi
 
       - name: Install Go Dependencies
-        run: cd backend/legally && go mod download
+        run: cd server && go mod download
 
       - name: Run Go Tests
-        run: cd backend/legally && go test ./tests/... ./api/controllers/... -v
+        run: cd server && go test ./tests/... ./api/controllers/... -v
 
       # --- PYTHON (AI Service) ---
       - name: Set up Python
@@ -66,16 +66,16 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: frontend/legally-app/package-lock.json
+          cache-dependency-path: client/package-lock.json
 
       - name: Install Node Dependencies
-        run: cd frontend/legally-app && npm install
+        run: cd client && npm install
 
       - name: Frontend Lint
-        run: cd frontend/legally-app && npm run lint || echo "Lint failed but continuing"
+        run: cd client && npm run lint || echo "Lint failed but continuing"
 
       - name: Run Frontend Tests
-        run: cd frontend/legally-app && npm test -- --watchAll=false
+        run: cd client && npm test -- --watchAll=false
 
   docker-build-check:
     runs-on: ubuntu-latest
@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build Backend Image
-        run: docker build -t legally-backend ./backend/legally
+        run: docker build -t legally-backend ./server
 
       - name: Build AI Service Image
         run: docker build -t legally-ai ./ai_service
