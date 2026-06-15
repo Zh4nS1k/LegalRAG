@@ -56,20 +56,44 @@ def pre_flight_check():
             print(f"✅ [OK] GPU memory: {memory_gb:.2f}GB")
 
     # 2. Check Pinecone connectivity (no hangs)
+    if os.environ.get("LEGAL_RAG_DISABLE_PINECONE", "0") == "1":
+        print("🪝 [HOOK] Pinecone disabled by flag, skipping connectivity check")
+        return
+
+    if not connectivity.is_internet_available():
+        print("⚠️ [WARNING] No internet connection detected (checked 8.8.8.8/huggingface.co).")
+        print("⚠️ [WARNING] Pinecone connectivity check will likely fail, but we'll try once...")
+
     try:
         from pinecone import Pinecone
 
         pc = Pinecone(api_key=config.PINECONE_API_KEY)
-        if config.PINECONE_INDEX_NAME not in pc.list_indexes().names():
+        # list_indexes() might raise NameResolutionError if DNS is broken
+        indexes = pc.list_indexes()
+        index_names = [idx.name for idx in indexes]
+
+        if config.PINECONE_INDEX_NAME not in index_names:
             print(f"❌ [FAIL] Pinecone index '{config.PINECONE_INDEX_NAME}' not found")
-            sys.exit(1)
+            print(f"Available indexes: {index_names}")
+            # Even if index is missing, we might want to start in degraded mode.
+            # But usually index missing is a configuration error.
+            # Still, better to start degraded than crash loop in Docker.
+            print("⚠️ [WARNING] Continuing in DEGRADED mode (without Pinecone dense search).")
+            os.environ["LEGAL_RAG_DISABLE_PINECONE"] = "1"
+            return
+
         index = pc.Index(config.PINECONE_INDEX_NAME)
         # Quick ping: describe index
         desc = index.describe_index_stats()
         print(f"✅ [OK] Pinecone connected: {desc.total_vector_count} vectors")
     except Exception as e:
         print(f"❌ [FAIL] Pinecone unavailable: {e}")
-        sys.exit(1)
+        if "NameResolutionError" in str(e) or "[Errno -3]" in str(e):
+            print("💡 [HINT] This looks like a DNS issue in Docker. Check your internet connection or DNS settings.")
+        # In Docker, NameResolutionError often means DNS is not yet ready or misconfigured.
+        # We allow the app to start in "degraded" mode instead of crashing the container.
+        print("⚠️ [WARNING] Continuing in DEGRADED mode (without Pinecone dense search).")
+        os.environ["LEGAL_RAG_DISABLE_PINECONE"] = "1"
 
     print("🪝 [HOOK] Pre-start check passed")
 

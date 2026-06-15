@@ -37,6 +37,9 @@ try:
         GROQ_API_KEY: str | None = None
         OPENROUTER_API_KEY: str | None = None
         HF_TOKEN: str | None = None
+        REDIS_URL: str = "redis://localhost:6379/0"
+        CACHE_ENABLED: bool = True
+        CACHE_TTL_SECONDS: int = 3600
         model_config = SettingsConfigDict(
             env_file=str(AI_SERVICE_DIR / ".env"),
             env_file_encoding="utf-8",
@@ -67,6 +70,9 @@ except Exception as e:
             "PINECONE_API_KEY": _pk,
             "GROQ_API_KEY": _gk,
             "HF_TOKEN": os.environ.get("HF_TOKEN"),
+            "REDIS_URL": os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+            "CACHE_ENABLED": os.environ.get("LEGAL_RAG_CACHE_ENABLED", "1") == "1",
+            "CACHE_TTL_SECONDS": int(os.environ.get("LEGAL_RAG_CACHE_TTL_SECONDS", "3600")),
         },
     )()
 
@@ -189,7 +195,9 @@ else:
     HF_CACHE_DIR = _raw_cache if _raw_cache else _default_cache
 
 # Reranker model (used by agentic workflow and optional rag_chain reranker)
-RERANKER_MODEL = os.environ.get("LEGAL_RAG_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+RERANKER_MODEL = os.environ.get("LEGAL_RAG_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+RERANKER_FALLBACK_MODEL = os.environ.get("LEGAL_RAG_RERANKER_FALLBACK", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+USE_RERANKER = os.environ.get("LEGAL_RAG_USE_RERANKER", "1") == "1"
 
 
 def configure_hf_hub() -> None:
@@ -231,7 +239,7 @@ OLLAMA_BASE_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 LLM_BACKEND = "openrouter"
 LLM_MODEL = "meta-llama/llama-3.1-8b-instruct"
 LLM_TEMPERATURE = 0.0
-LLM_MAX_TOKENS = int(os.environ.get("LEGAL_RAG_LLM_MAX_TOKENS", "2048"))
+LLM_MAX_TOKENS = int(os.environ.get("LEGAL_RAG_LLM_MAX_TOKENS", "1024"))
 HF_LLM_BASE_MODEL = os.environ.get(
     "LEGAL_RAG_HF_BASE_MODEL", "Qwen/Qwen2.5-7B-Instruct"
 )
@@ -246,15 +254,15 @@ HF_LLM_REPETITION_PENALTY = float(
 )
 HF_LLM_DO_SAMPLE = os.environ.get("LEGAL_RAG_HF_DO_SAMPLE", "0") == "1"
 # Контекст: conservative defaults to avoid Groq 413/TPM overflow on long legal prompts.
-CONTEXT_MAX_DOCS = int(os.environ.get("LEGAL_RAG_CONTEXT_MAX_DOCS", "4"))
+CONTEXT_MAX_DOCS = int(os.environ.get("LEGAL_RAG_CONTEXT_MAX_DOCS", "6"))
 CONTEXT_MAX_CHARS_PER_DOC = int(
-    os.environ.get("LEGAL_RAG_CONTEXT_MAX_CHARS_PER_DOC", "900")
+    os.environ.get("LEGAL_RAG_CONTEXT_MAX_CHARS_PER_DOC", "1500")
 )
 CONTEXT_MAX_TOTAL_TOKENS = int(
-    os.environ.get("LEGAL_RAG_CONTEXT_MAX_TOTAL_TOKENS", "1400")
+    os.environ.get("LEGAL_RAG_CONTEXT_MAX_TOTAL_TOKENS", "2000")
 )
 CONTEXT_MAX_TOKENS_PER_DOC = int(
-    os.environ.get("LEGAL_RAG_CONTEXT_MAX_TOKENS_PER_DOC", "380")
+    os.environ.get("LEGAL_RAG_CONTEXT_MAX_TOKENS_PER_DOC", "500")
 )
 CONTEXT_TOKENIZER_MODEL = os.environ.get(
     "LEGAL_RAG_CONTEXT_TOKENIZER_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct"
@@ -265,13 +273,13 @@ CONTEXT_TOKENIZER_MODEL = os.environ.get(
 RETRIEVER_WIDE_K = int(os.environ.get("LEGAL_RAG_RETRIEVER_WIDE_K", "24"))
 RETRIEVER_TOP_K = RETRIEVER_WIDE_K  # совместимость со старым кодом
 RETRIEVER_TOP_K_AFTER_RERANK = int(
-    os.environ.get("LEGAL_RAG_RETRIEVER_TOP_K_AFTER_RERANK", "5")
+    os.environ.get("LEGAL_RAG_RETRIEVER_TOP_K_AFTER_RERANK", "8")
 )
 RETRIEVER_MIN_K_CRIMINAL = int(
     os.environ.get("LEGAL_RAG_RETRIEVER_MIN_K_CRIMINAL", "8")
 )
 RETRIEVER_MULTI_QUERY_LIMIT = int(
-    os.environ.get("LEGAL_RAG_RETRIEVER_MULTI_QUERY_LIMIT", "4")
+    os.environ.get("LEGAL_RAG_RETRIEVER_MULTI_QUERY_LIMIT", "2")
 )
 RETRIEVER_SAME_CODE_PENALTY_STEP = float(
     os.environ.get("LEGAL_RAG_RETRIEVER_SAME_CODE_PENALTY_STEP", "0.1")
@@ -374,6 +382,11 @@ AGENTIC_COVE_ENABLED = os.environ.get("LEGAL_RAG_AGENTIC_COVE_ENABLED", "1") == 
 
 # Sherlock audit mode: disabled by default, opt-in only.
 LEGAL_RAG_ENABLE_SHERLOCK = os.environ.get("LEGAL_RAG_ENABLE_SHERLOCK", "0") == "1"
+
+# Redis Caching
+REDIS_URL = env_settings.REDIS_URL
+CACHE_ENABLED = env_settings.CACHE_ENABLED
+CACHE_TTL_SECONDS = env_settings.CACHE_TTL_SECONDS
 
 # Offline QA mode: deterministic extractive answer from retrieved docs.
 LEGAL_RAG_OFFLINE_QA = os.environ.get("LEGAL_RAG_OFFLINE_QA", "0") == "1"

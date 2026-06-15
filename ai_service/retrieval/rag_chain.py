@@ -9,6 +9,7 @@ import concurrent.futures
 import time
 import json
 import hashlib
+import redis
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, List, Optional, Sequence
@@ -33,6 +34,23 @@ logger = logging.getLogger("ai_service.rag")
 
 _nltk_ready = False
 _stemmer = None
+
+
+_original_embed_query = None
+
+
+@lru_cache(maxsize=2000)
+def _get_cached_query_embedding_tuple(text: str) -> tuple[float, ...]:
+    """Internal cache for query embeddings. Returns tuple (hashable)."""
+    if _original_embed_query:
+        return tuple(_original_embed_query(text))
+    # Fallback to current if not patched yet (should not happen in normal flow)
+    return tuple(get_embeddings().embed_query(text))
+
+
+def embed_query_cached(text: str) -> list[float]:
+    """Plug-in replacement for embed_query with LRU caching."""
+    return list(_get_cached_query_embedding_tuple(text))
 
 
 def _looks_like_raw_code_name(value: str) -> bool:
@@ -97,6 +115,24 @@ _vector_store_instance = None
 _retriever_instance = None
 _llm_instance = None
 _disable_pinecone = os.environ.get("LEGAL_RAG_DISABLE_PINECONE", "0") == "1"
+_redis_client = None
+
+
+def get_redis():
+    """Lazy Redis client initialization."""
+    global _redis_client
+    if not config.CACHE_ENABLED:
+        return None
+    if _redis_client is None:
+        try:
+            _redis_client = redis.from_url(config.REDIS_URL, decode_responses=True)
+            _redis_client.ping()
+        except Exception as e:
+            logger.warning("Failed to connect to Redis at %s: %s", config.REDIS_URL, e)
+            return None
+    return _redis_client
+
+
 _context_tokenizer = None
 _groq_breaker = CircuitBreaker(
     "groq",
@@ -393,9 +429,8 @@ def _format_doc_for_prompt(doc: Document, content: str | None = None) -> str:
     meta = doc.metadata or {}
     code_ru = str(meta.get("code_ru") or "").strip() or "Неизвестный источник"
     article_number = str(meta.get("article_number") or "").strip() or "Н/Д"
-    source = str(meta.get("source") or "").strip() or "Неизвестно"
     body = str(content if content is not None else doc.page_content or "").strip()
-    return f"[{code_ru} | ст. {article_number} | {source}]\n{body}"
+    return f"[{code_ru} | Статья {article_number}]\n{body}"
 
 
 def _make_embeddings() -> PrefixedEmbeddings:
@@ -490,8 +525,10 @@ def get_embeddings() -> PrefixedEmbeddings:
 
 
 def get_vector_store():
+    global _disable_pinecone
     if _disable_pinecone:
-        raise RuntimeError("Pinecone disabled by LEGAL_RAG_DISABLE_PINECONE=1")
+        logger.warning("Pinecone is disabled (LEGAL_RAG_DISABLE_PINECONE=1)")
+        return None
     global _vector_store_instance
     if _vector_store_instance is None:
         with _init_lock:
@@ -530,9 +567,12 @@ def get_vector_store():
                         e,
                         exc_info=True,
                     )
+                    # For lifespan warmup, we don't want to crash the whole app if Pinecone is down.
+                    # We set _disable_pinecone = True so we don't keep trying and failing.
+                    _disable_pinecone = True
                     if _is_connection_failure(e):
                         reset_instances()
-                    raise
+                    return None
     return _vector_store_instance
 
 
@@ -3217,6 +3257,23 @@ def _build_minimal_legal_retriever() -> MinimalLegalRetriever:
             return [t for t in nltk.word_tokenize(text.lower()) if t.isalnum()]
         return bm25_preprocess_func(text) or []
 
+    @latency.measure_latency("BM25 search")
+    def _bm25_search(query: str) -> Sequence[Document]:
+        if bm25_retriever is None:
+            return []
+        try:
+            docs = list(bm25_retriever.invoke(query) or [])
+            _, summary_codes = _collect_summary_hints(query)
+            if summary_codes:
+                preferred = _filter_docs_by_codes(docs, summary_codes)
+                if preferred:
+                    docs = _merge_unique(preferred, docs)
+            return docs
+        except Exception as exc:
+            logger.warning("BM25 search failed in MinimalLegalRetriever: %s", exc)
+            return []
+
+
     try:
         from langchain_community.retrievers import BM25Retriever
 
@@ -3224,12 +3281,12 @@ def _build_minimal_legal_retriever() -> MinimalLegalRetriever:
         if chunks:
             if _ensure_nltk():
                 bm25_retriever = BM25Retriever.from_documents(
-                    chunks, preprocess_func=hybrid_tokenizer, k=max(40, _hybrid_k)
+                    chunks, preprocess_func=hybrid_tokenizer, k=_hybrid_k
                 )
                 print("BM25 инициализирован для MinimalLegalRetriever.")
             else:
                 bm25_retriever = BM25Retriever.from_documents(
-                    chunks, k=max(40, _hybrid_k)
+                    chunks, k=_hybrid_k
                 )
 
         summary_chunks = _load_summary_chunks()
@@ -3274,28 +3331,14 @@ def _build_minimal_legal_retriever() -> MinimalLegalRetriever:
                 codes.append(code)
         return hints, codes[: int(getattr(config, "SUMMARY_EXPANSION_MAX_CODES", 3))]
 
-    def _bm25_search(query: str) -> Sequence[Document]:
-        if bm25_retriever is None:
-            return []
-        try:
-            docs = list(bm25_retriever.invoke(query) or [])
-            _, summary_codes = _collect_summary_hints(query)
-            if summary_codes:
-                preferred = _filter_docs_by_codes(docs, summary_codes)
-                if preferred:
-                    docs = _merge_unique(preferred, docs)
-            return docs
-        except Exception as exc:
-            logger.warning("BM25 search failed in MinimalLegalRetriever: %s", exc)
-            return []
-
+    @latency.measure_latency("Vector search (Pinecone)")
     def _dense_search(query: str) -> Sequence[tuple[Document, float]]:
         if _disable_pinecone:
             return []
         try:
             vs = get_vector_store()
             _, summary_codes = _collect_summary_hints(query)
-            search_kwargs = {"k": max(40, _hybrid_k)}
+            search_kwargs = {"k": _hybrid_k}
             if summary_codes:
                 search_kwargs["filter"] = {
                     "$or": [{"code_ru": code} for code in summary_codes]
@@ -3310,7 +3353,7 @@ def _build_minimal_legal_retriever() -> MinimalLegalRetriever:
             ]
             if not filtered and summary_codes and "filter" in search_kwargs:
                 docs_with_scores = vs.similarity_search_with_score(
-                    query, k=max(40, _hybrid_k)
+                    query, k=_hybrid_k
                 )
                 filtered = [
                     (doc, score)
@@ -3332,8 +3375,8 @@ def _build_minimal_legal_retriever() -> MinimalLegalRetriever:
         dense_search=_dense_search,
         bm25_weight=0.55,
         dense_weight=0.45,
-        candidate_k=max(40, _hybrid_k),
-        final_k=max(40, _hybrid_k),
+        candidate_k=_hybrid_k,
+        final_k=_hybrid_k,
     )
 
 
@@ -3448,6 +3491,7 @@ def get_retriever():
                 class BGEReranker(BaseDocumentCompressor):
                     top_n: int = 8
 
+                    @latency.measure_latency("reranking")
                     def compress_documents(
                         self,
                         documents: Sequence[Document],
@@ -3813,14 +3857,15 @@ def _ensure_latency_patches() -> None:
     if not _disable_pinecone:
         try:
             emb = get_embeddings()
-            original_embed_query = emb.embed_query
+            global _original_embed_query
+            _original_embed_query = emb.embed_query
 
-            @latency.measure_latency("embedding")
-            def wrapped_embed_query(*args, **kwargs):
-                logger.info("🚀 [START] Embedding Query")
+            @latency.measure_latency("Query embedding")
+            def wrapped_embed_query(text, *args, **kwargs):
+                logger.info("🚀 [START] Embedding Query: %s...", text[:50])
                 t0 = time.perf_counter()
                 try:
-                    out = original_embed_query(*args, **kwargs)
+                    out = embed_query_cached(text)
                     logger.info(
                         "✅ [SUCCESS] Query Embedded (%.2fs)", time.perf_counter() - t0
                     )
@@ -3834,45 +3879,21 @@ def _ensure_latency_patches() -> None:
             pass
 
     try:
-        original_trim_get_docs = _TrimRetriever._get_relevant_documents
-
-        @latency.measure_latency("vector_search")
-        def wrapped_trim_get_docs(self, *args, **kwargs):
-            logger.info("🚀 [START] Pinecone Vector Search")
-            t0 = time.perf_counter()
-            try:
-                docs = original_trim_get_docs(self, *args, **kwargs)
-                elapsed = time.perf_counter() - t0
-                logger.info("✅ [SUCCESS] Retrieved %d chunks (%.2fs)", len(docs), elapsed)
-                return docs
-            except Exception as exc:
-                logger.error("Pinecone Vector Search failed: %s", exc, exc_info=True)
-                raise
-
-        _TrimRetriever._get_relevant_documents = wrapped_trim_get_docs
+        # We now have granular bm25 and vector search timing in MinimalLegalRetriever
+        pass
     except Exception:
         pass
 
     try:
         llm = get_llm()
-        original_llm_invoke = llm.__class__.invoke
+        # Patch _generate which is the main entry point for ChatModel in LangChain
+        original_llm_generate = llm.__class__._generate
 
-        @latency.measure_latency("llm_inference")
-        def wrapped_llm_invoke(self, *args, **kwargs):
-            logger.info("🚀 [START] LLM Prompt Construction")
-            logger.info("🚀 [START] LLM Inference")
-            t0 = time.perf_counter()
-            try:
-                out = original_llm_invoke(self, *args, **kwargs)
-                logger.info(
-                    "✅ [SUCCESS] LLM Response Generated (%.2fs)", time.perf_counter() - t0
-                )
-                return out
-            except Exception as exc:
-                logger.error("LLM Inference failed: %s", exc, exc_info=True)
-                raise
+        @latency.measure_latency("LLM inference")
+        def wrapped_llm_generate(self, *args, **kwargs):
+            return original_llm_generate(self, *args, **kwargs)
 
-        llm.__class__.invoke = wrapped_llm_invoke
+        llm.__class__._generate = wrapped_llm_generate
     except (Exception, SystemExit):
         pass
 
@@ -3893,6 +3914,13 @@ LEGAL_REASONING_GUIDANCE = """
 - "Анализ норм (ОБЯЗАТЕЛЬНО с указанием статей и НПА):"
 - "Сопоставление фактов и нормы:"
 - "Вывод:"
+
+ОБЯЗАТЕЛЬНО В КАЖДОМ ОТВЕТЕ:
+- Цитируй точный текст статьи из предоставленного контекста.
+- Указывай: название закона + номер статьи + пункт/часть (если есть).
+- Формат цитаты СТРОГО: «[текст статьи]» (Статья X, Название закона РК)
+- Если релевантных статей несколько — цитируй каждую.
+- Никогда не отвечай без ссылки на конкретную статью и её дословной цитаты в указанном формате. Если цитаты нет в контексте, так и напиши: "Цитата статьи не найдена в контексте".
 """
 
 
@@ -3948,71 +3976,6 @@ UNIVERSAL_PROMPT_TEMPLATE = """Ты — сильный Legal AI по закон�
 
 Ответ:"""
 
-CRIMINAL_PROMPT_TEMPLATE = """Ты — эксперт по Уголовному кодексу РК.
-• Гражданский кодекс РК (Общая и Особенная части)
-• Трудовой кодекс РК
-• Налоговый кодекс РК
-• Кодекс об административных правонарушениях РК (КоАП)
-• Уголовный кодекс РК (УК РК)
-• Уголовно-процессуальный кодекс РК (УПК РК)
-• Гражданский процессуальный кодекс РК (ГПК РК)
-• Кодекс о браке (супружестве) и семье РК
-• Кодекс о здоровье народа и системе здравоохранения РК
-• Предпринимательский кодекс РК
-• Социальный кодекс РК
-• Кодекс РК об административных процедурах
-• Закон РК о государственных закупках
-• Закон РК об исполнительном производстве и статусе судебных исполнителей
-
-ОТВЕЧАЙ ИСКЛЮЧИТЕЛЬНО на основе предоставленного ниже контекста.
-НИКОГДА НЕ ПРИДУМЫВАЙ номера статей, названия законов, даты, санкции, выводы или факты, которых нет в контексте.
-Если в контексте есть релевантные статьи, используй их для ответа.
-Если в контексте СОВСЕМ нет релевантной информации — отвечай ровно одной строкой:
-"Информация не найдена в доступных текстах законов."
-
-Строгие правила ответа, учитывающие все сферы жизни:
-1. Всегда начинай ответ строго с фразы:
-   "Это не официальная юридическая консультация. Информация только из базы."
-2. Если вопрос на казахском — отвечай ТОЛЬКО на казахском, используя точные формулировки НҚА.
-   Если вопрос на русском — отвечай ТОЛЬКО на русском.
-3. Цитируй статьи дословно, указывай:
-   • точный номер статьи и часть (если есть)
-   • название кодекса/закона
-   • точную санкцию (если применимо)
-   • источник (название файла или кодекса)
-4. Если в вопросе диапазон статей (например, ст. 120–135 УК РК) —
-   перечисляй ВСЕ релевантные статьи из контекста с кратким описанием и
-   санкцией.
-5. Для любой сферы всегда разбирай, если применимо (и только если в
-   контексте):
-   - Конституционное право: права граждан, принципы, нормы Конституции.
-   - Гражданское право (ГК): договоры, имущество, обязательства, ущерб, компенсация.
-   - Трудовое право (ТК): принципы, права работников/работодателей, нарушения, компенсации.
-   - Налоговое право: налоги, нарушения, штрафы, декларации.
-   - Административное право (КоАП): нарушения, штрафы, процедуры.
-   - Уголовное право (УК): состав преступления (объект, объективная
-     сторона, субъект, субъективная сторона), ауырлататын және
-     жеңілдететін мән-жайлар, санкция дословно.
-   - Процессуальное (УПК/ГПК): процедуры суда, доказательства, сроки.
-   - Семейное право: брак, развод, дети, алименты.
-   - Здравоохранение: права пациентов, обязанности медработников, нарушения.
-   - Предпринимательство: бизнес, регистрация, нарушения.
-   - Социальное: пособия, пенсии, социальная защита.
-   - Административные процедуры: обращения, сроки, права граждан.
-   - Госзакупки: процедуры, нарушения, ответственность.
-   - Исполнительное производство: взыскание долгов, действия исполнителей.
-6. Никогда не применяй нормы из одной сферы/кодекса к другой.
-   Если в контексте нет точной санкции/освобождения/смягчения для данной статьи — пиши:
-   "Санкция / освобождение / смягчение в контексте не указаны."
-7. Если вопрос касается нескольких сфер — ищи и указывай нормы из каждого релевантного кодекса (например, УК + КоАП).
-
-{chat_history}
-Контекст (с источниками, номерами статей и кодексами):
-{context}
-
-Вопрос: {input}
-
-Ответ (строго следуй правилам выше, цитируй дословно, указывай статью, часть, кодекс и источник):"""
 
 CRIMINAL_PROMPT_TEMPLATE = """Ты — эксперт по Уголовному кодексу РК / ҚР Қылмыстық кодексінің сарапшысы.
 ОТВЕЧАЙ ТОЛЬКО на основе контекста ниже. ТЕК төмендегі контекст негізінде жауап беріңіз.
@@ -4137,7 +4100,7 @@ def _make_qa_chain(prompt: PromptTemplate) -> Any:
     # Define a prompt to format each document including metadata
     document_prompt = PromptTemplate(
         input_variables=["page_content", "source", "article_number", "code_ru"],
-        template="[{code_ru} | ст. {article_number} | {source}]\n{page_content}",
+        template="[{code_ru} | Статья {article_number}]\n{page_content}",
     )
 
     # LCEL pipeline: Retriever -> Document Chain -> Retrieval Chain
@@ -4469,7 +4432,7 @@ def _invoke_qa_impl(
         llm = get_llm(model_override)
         document_prompt = PromptTemplate(
             input_variables=["page_content", "source", "article_number", "code_ru"],
-            template="[{code_ru} | ст. {article_number} | {source}]\n{page_content}",
+            template="[{code_ru} | Статья {article_number}]\n{page_content}",
         )
         chain = create_retrieval_chain(
             get_retriever(),
@@ -4573,14 +4536,96 @@ def _invoke_qa_cached(
     return _invoke_qa_impl(query, None, intent)
 
 
-def invoke_qa(
-    query: str, history: Optional[List[dict]] = None, intent: str = None, model_override: Optional[str] = None
+def invoke_qa_with_cache(
+    query: str,
+    history: Optional[List[dict]] = None,
+    intent: str = None,
+    model_override: Optional[str] = None,
 ) -> dict:
-    if history or model_override:
+    """Check Redis cache before running full RAG pipeline."""
+    if not config.CACHE_ENABLED or model_override:
         return _invoke_qa_impl(query, history, intent, model_override)
+
     history_key = _history_cache_key(history)
-    query_hash = _cache_key_digest(query, history_key, intent)
-    return _invoke_qa_cached(query_hash, query, intent)
+    cache_key_digest = _cache_key_digest(query, history_key, intent)
+    full_cache_key = f"rag_cache:{cache_key_digest}"
+
+    client = get_redis()
+    if client:
+        try:
+            cached = client.get(full_cache_key)
+            if cached:
+                logger.info(
+                    "📦 Cache hit for %s... (%s...)", cache_key_digest[:8], query[:50]
+                )
+                data = json.loads(cached)
+                # Reconstruct Document objects
+                data["source_documents"] = [
+                    Document(page_content=d["page_content"], metadata=d["metadata"])
+                    for d in data.get("source_documents") or []
+                ]
+                return data
+        except Exception as e:
+            logger.warning("Redis get failed: %s", e)
+
+    logger.info("🔄 Cache miss, running pipeline for: %s...", query[:50])
+    result = _invoke_qa_impl(query, history, intent, model_override)
+
+    if client and result and result.get("result"):
+        try:
+            # Convert Documents to serializable dicts
+            serializable_result = {
+                "result": result["result"],
+                "source_documents": [
+                    {"page_content": doc.page_content, "metadata": doc.metadata}
+                    for doc in result.get("source_documents") or []
+                ],
+                "retrieval_method": result.get("retrieval_method"),
+            }
+            client.setex(
+                full_cache_key,
+                config.CACHE_TTL_SECONDS,
+                json.dumps(serializable_result, ensure_ascii=False),
+            )
+        except Exception as e:
+            logger.warning("Redis set failed: %s", e)
+
+    return result
+
+
+def invoke_qa(
+    query: str,
+    history: Optional[List[dict]] = None,
+    intent: str = None,
+    model_override: Optional[str] = None,
+) -> dict:
+    from ai_service.utils.latency import metrics_ctx
+
+    token = metrics_ctx.set({})
+    t0 = time.perf_counter()
+    try:
+        result = invoke_qa_with_cache(query, history, intent, model_override)
+
+        # Log timings
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        metrics = metrics_ctx.get() or {}
+        timing_parts = []
+        # Match requested stages
+        for stage in [
+            "Query embedding",
+            "Vector search (Pinecone)",
+            "BM25 search",
+            "reranking",
+            "LLM inference",
+        ]:
+            if stage in metrics:
+                timing_parts.append(f"{stage}: {metrics[stage]}ms")
+        timing_parts.append(f"total: {elapsed_ms}ms")
+        logger.info("[TIMING] %s", " | ".join(timing_parts))
+
+        return result
+    finally:
+        metrics_ctx.reset(token)
 
 
 _KZ_CHARS = set("әғқңөұүһі")
@@ -4715,7 +4760,7 @@ def clear_qa_cache() -> None:
     _invoke_qa_cached.cache_clear()
 
 
-def build_streaming_qa_prompt(
+async def build_streaming_qa_prompt(
     query: str,
     history: Optional[List[dict]] = None,
     intent: str | None = None,
@@ -4740,7 +4785,7 @@ def build_streaming_qa_prompt(
     else:
         _get_qa_chains()["universal"]
 
-    docs = _fill_missing_metadata(get_retriever().invoke(query))
+    docs = _fill_missing_metadata(await get_retriever().ainvoke(query))
     context = "\n\n".join(_format_doc_for_prompt(doc) for doc in docs)
     prompt_text = prompt.format(
         input=query,

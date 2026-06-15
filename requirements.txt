@@ -44,6 +44,12 @@ openpyxl>=3.1.0
 rouge-score>=0.1.2
 nltk>=3.8.0
 
+# Redis caching
+redis>=5.0.0
+numpy>=1.24.0
+torch>=2.1.0
+pydantic>=2.0.0
+
 # Опционально: Graph RAG (Neo4j)
 # neo4j>=5.0.0
 

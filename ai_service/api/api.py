@@ -4,6 +4,7 @@ import logging
 import os
 import time
 import uvicorn
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -50,13 +51,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("openai").setLevel(logging.WARNING)
 
-app = FastAPI(title="Legally RAG API", version="1.0")
-
-
-@app.on_event("startup")
-async def _warmup_rag():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Load all RAG components before accepting connections. Server binds after warmup (~2–3 min)."""
-    logger.info("🚀 [START] Model Initialization")
+    logger.info("🚀 [START] Model Initialization (Lifespan)")
     t0 = time.perf_counter()
     try:
         # Level 1: Hooks - Absolute Guarantee
@@ -77,12 +75,14 @@ async def _warmup_rag():
         logger.error("❌ [FAIL] Model Initialization (%.2fs): %s", elapsed, e, exc_info=True)
         raise
 
+    yield
 
-@app.on_event("shutdown")
-async def _graceful_shutdown():
     logger.info("🛑 Shutdown signal received, allowing in-flight requests to finish")
     await asyncio.sleep(2)
     logger.info("🛑 Shutdown complete")
+
+
+app = FastAPI(title="Legally RAG API", version="1.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -93,9 +93,12 @@ async def health():
         from ai_service.retrieval import rag_chain
 
         vector_store = rag_chain.get_vector_store()
-        if hasattr(vector_store, "_index"):
-            vector_store._index.describe_index_stats()
-        checks["pinecone"] = "ok"
+        if vector_store is not None:
+            if hasattr(vector_store, "_index"):
+                vector_store._index.describe_index_stats()
+            checks["pinecone"] = "ok"
+        else:
+            checks["pinecone"] = "disabled/unavailable"
     except Exception as e:
         checks["pinecone"] = f"error: {e}"
 
@@ -125,6 +128,11 @@ class ChatRequest(BaseModel):
     query: str
     history: Optional[List[dict]] = []
     model: Optional[str] = None
+
+
+class QuestionRequest(BaseModel):
+    question: str
+    history: Optional[List[dict]] = []
 
 
 class SourceDocument(BaseModel):
@@ -272,6 +280,39 @@ async def chat(request: Request, body: ChatRequest):
         _raise_http_error("Chat request failed", e)
 
 
+@app.post("/qa/stream")
+async def qa_stream(request: QuestionRequest):
+    async def generate():
+        from ai_service.retrieval import rag_chain, intent_router
+        from ai_service.utils.latency import metrics_ctx
+
+        metrics_ctx.set({})
+        routing_decision = intent_router.classify_intent_with_confidence(
+            request.question, request.history or []
+        )
+        intent = routing_decision.intent
+
+        try:
+            stream_payload = await rag_chain.build_streaming_qa_prompt(
+                request.question,
+                history=request.history,
+                intent=intent,
+            )
+            # Use chain if available, or just the LLM + Prompt
+            # In build_streaming_qa_prompt, we get prompt_text and llm
+            async for chunk in stream_payload["llm"].astream(stream_payload["prompt_text"]):
+                token = chunk.content if hasattr(chunk, "content") else str(chunk)
+                if token:
+                    yield f"data: {json.dumps({'text': token}, ensure_ascii=False)}\n\n"
+
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            logger.error("QA stream failed: %s", e, exc_info=True)
+            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @app.post("/api/v1/chat-stream")
 async def chat_stream(request: Request, body: ChatRequest):
     logger.info("🚀 [START] Incoming Stream Request Parsing")
@@ -301,7 +342,7 @@ async def chat_stream(request: Request, body: ChatRequest):
                 + json.dumps({"status": "retrieving_context"}, ensure_ascii=False)
                 + "\n\n"
             )
-            stream_payload = rag_chain.build_streaming_qa_prompt(
+            stream_payload = await rag_chain.build_streaming_qa_prompt(
                 body.query,
                 history=body.history,
                 intent=intent,
