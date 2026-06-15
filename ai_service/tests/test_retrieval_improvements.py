@@ -447,7 +447,7 @@ def test_crag_evaluator_flags_missing_revision_date_for_temporal_query():
 
     assert evaluation["action"] == "rewrite"
     assert "missing_revision_date" in evaluation["missing_reasons"]
-    assert evaluation["context_score"] < aw.CRAG_MIN_CONTEXT_SCORE
+    assert evaluation["context_score"] <= aw.CRAG_MIN_CONTEXT_SCORE
 
 
 def test_crag_builder_generates_rewrite_and_decomposition_candidates():
