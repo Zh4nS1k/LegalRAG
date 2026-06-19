@@ -30,6 +30,13 @@ from engine.retrieval.query_rewrite import rewrite_query
 from engine.utils import latency
 from engine.utils.connectivity import is_cache_populated, is_internet_available
 
+from engine.retrieval.language import (  # noqa: F401  (KZ helpers extracted)
+    _KZ_CHARS,
+    _KZ_COMMON_WORDS,
+    _is_kz_query,
+    _is_kz_response,
+)
+
 logger = logging.getLogger("engine.rag")
 
 _nltk_ready = False
@@ -584,930 +591,11 @@ _vector_kwargs = {"k": _hybrid_k}
 # - по номеру статьи: например, 136 для кейса акушерки (баланы ауыстыру)
 _filter_code = getattr(config, "RETRIEVER_FILTER_CODE_RU", None)
 _filter_article = getattr(config, "RETRIEVER_FILTER_ARTICLE_NUMBER", None)
-_uk_variants = [
-    "Уголовный кодекс РК",
-    "Уголовный кодекс Республики Казахстан",
-    "Қылмыстық кодекс",
-    "УК РК",
-]
-_gk_general_variants = [
-    "Гражданский кодекс РК (Общая часть)",
-    "Азаматтық кодекс (Жалпы бөлім)",
-]
-_gk_special_variants = [
-    "Гражданский кодекс РК (Особенная часть)",
-    "Азаматтық кодекс (Ерекше бөлім)",
-]
-_gk_variants = _gk_general_variants + _gk_special_variants
-_koap_variants = [
-    "Кодекс об административных правонарушениях РК",
-    "Әкімшілік құқық бұзушылық туралы кодекс",
-]
-_gpk_variants = [
-    "Гражданский процессуальный кодекс РК",
-    "Азаматтық іс жүргізу кодексі",
-]
-_upk_variants = [
-    "Уголовно-процессуальный кодекс РК",
-    "Қылмыстық іс жүргізу кодексі",
-]
-_tk_variants = [
-    "Трудовой кодекс РК",
-    "Еңбек кодексі",
-]
-_nk_variants = [
-    "Налоговый кодекс РК",
-    "Салық кодексі",
-]
-_pk_variants = [
-    "Предпринимательский кодекс РК",
-    "Кәсіпкерлік кодекс",
-]
-_family_variants = [
-    "Кодекс о браке и семье РК",
-    "Неке және отбасы туралы кодекс",
-]
-_admin_proc_variants = [
-    "Кодекс об административных процедурах РК",
-    "Әкімшілік рәсімдер туралы кодекс",
-]
-_social_variants = [
-    "Социальный кодекс РК",
-    "Әлеуметтік кодекс",
-]
-_procurement_variants = [
-    "Закон о государственных закупках РК",
-    "Мемлекеттік сатып алу туралы заң",
-]
-_anti_corruption_variants = [
-    "Закон о противодействии коррупции РК",
-    "Коррупцияға қарсы күрес туралы заң",
-]
-_enforcement_variants = [
-    "Закон об исполнительном производстве РК",
-    "Орындау өндірісі туралы заң",
-]
-_personal_data_variants = [
-    "Закон о персональных данных РК",
-    "Жеке деректер туралы заң",
-]
-_ai_variants = [
-    "Закон об искусственном интеллекте РК",
-    "Жасанды интеллект туралы заң",
-]
-_consumer_variants = [
-    "Закон о защите прав потребителей РК",
-    "Тұтынушылардың құқықтарын қорғау туралы заң",
-]
-_housing_variants = [
-    "Закон о жилищных отношениях РК",
-    "Тұрғын үй қатынастары туралы заң",
-]
-_banks_variants = [
-    "Закон о банках и банковской деятельности РК",
-    "Банктер және банк қызметі туралы заң",
-]
-_land_variants = [
-    "Земельный кодекс РК",
-    "Жер кодексі",
-]
-_military_variants = [
-    "Закон о воинской службе и статусе военнослужащих РК",
-    "Әскери қызмет және әскери қызметшілердің мәртебесі туралы заң",
-]
-_llp_variants = [
-    "Закон о товариществах с ограниченной и дополнительной ответственностью РК",
-    "Жауапкершілігі шектеулі және қосымша жауапкершілігі бар серіктестіктер туралы заң",
-]
-_notariat_variants = [
-    "Закон о нотариате РК",
-    "Нотариат туралы заң",
-]
-_real_estate_registration_variants = [
-    "Закон о государственной регистрации прав на недвижимое имущество РК",
-    "Жылжымайтын мүлікке құқықтарды мемлекеттік тіркеу туралы заң",
-]
-_vehicle_insurance_variants = [
-    "Закон об обязательном страховании гражданско-правовой ответственности владельцев транспортных средств РК",
-    "Көлік құралдары иелерінің азаматтық-құқықтық жауапкершілігін міндетті сақтандыру туралы заң",
-]
-_education_variants = [
-    "Закон об образовании РК",
-    "Білім туралы заң",
-]
-_public_service_variants = [
-    "Закон о государственной службе Республики Казахстан",
-    "Қазақстан Республикасының мемлекеттік қызметі туралы заң",
-]
-_child_rights_variants = [
-    "Закон о правах ребенка РК",
-    "Баланың құқықтары туралы заң",
-]
-_advertising_variants = [
-    "Закон о рекламе РК",
-    "Жарнама туралы заң",
-]
-_collection_variants = [
-    "Закон о коллекторской деятельности РК",
-    "Коллекторлық қызмет туралы заң",
-]
-_road_traffic_variants = [
-    "Закон о дорожном движении РК",
-    "Жол жүрісі туралы заң",
-]
-_valuation_variants = [
-    "Закон об оценочной деятельности в Республике Казахстан",
-    "Қазақстан Республикасындағы бағалау қызметі туралы заң",
-]
-_legal_entities_registration_variants = [
-    "Закон о государственной регистрации юридических лиц и учетной регистрации филиалов и представительств",
-    "Заңды тұлғаларды мемлекеттік тіркеу және филиалдар мен өкілдіктерді есептік тіркеу туралы заң",
-]
-_currency_variants = [
-    "Закон о валютном регулировании и валютном контроле",
-    "Валюталық реттеу және валюталық бақылау туралы заң",
-]
-_digital_assets_variants = [
-    "Закон о цифровых активах",
-    "Цифрлық активтер туралы заң",
-]
-_personal_data_protection_variants = [
-    "Закон о персональных данных и их защите",
-    "Дербес деректер және оларды қорғау туралы заң",
-]
-_credit_bureaus_variants = [
-    "Закон о кредитных бюро и формировании кредитных историй",
-    "Кредиттік бюролар және кредиттік тарихты қалыптастыру туралы заң",
-]
-_microfinance_variants = [
-    "Закон о микрофинансовой деятельности",
-    "Микроқаржылық қызмет туралы заң",
-]
-_citizen_bankruptcy_variants = [
-    "Закон о восстановлении платежеспособности и банкротстве граждан Республики Казахстан",
-    "Қазақстан Республикасы азаматтарының төлем қабілеттілігін қалпына келтіру және банкроттығы туралы заң",
-]
-_rehabilitation_bankruptcy_variants = [
-    "Закон о реабилитации и банкротстве",
-    "Оңалту және банкроттық туралы заң",
-]
-
-_LAW_ALIAS_GROUPS: list[tuple[tuple[str, ...], list[str]]] = [
-    (
-        (
-            "уголовный кодекс",
-            "ук рк",
-            "ук республики казахстан",
-            "қылмыстық кодекс",
-            "қр қк",
-        ),
-        _uk_variants,
-    ),
-    (
-        (
-            "гражданский кодекс",
-            "гк рк",
-            "гк",
-            "азаматтық кодекс",
-        ),
-        _gk_variants,
-    ),
-    (
-        (
-            "гражданский кодекс общая часть",
-            "гк общая часть",
-            "общая часть гк",
-            "жалпы бөлім",
-        ),
-        _gk_general_variants,
-    ),
-    (
-        (
-            "гражданский кодекс особенная часть",
-            "гк особенная часть",
-            "особенная часть гк",
-            "ерекше бөлім",
-        ),
-        _gk_special_variants,
-    ),
-    (
-        (
-            "кодекс об административных правонарушениях",
-            "коап рк",
-            "коап",
-            "әкімшілік құқық бұзушылық туралы кодекс",
-        ),
-        _koap_variants,
-    ),
-    (
-        (
-            "гражданский процессуальный кодекс",
-            "гпк рк",
-            "гпк",
-            "азаматтық іс жүргізу кодексі",
-        ),
-        _gpk_variants,
-    ),
-    (
-        (
-            "уголовно-процессуальный кодекс",
-            "упк рк",
-            "упк",
-            "қылмыстық іс жүргізу кодексі",
-        ),
-        _upk_variants,
-    ),
-    (
-        (
-            "трудовой кодекс",
-            "тк рк",
-            "тк",
-            "еңбек кодексі",
-        ),
-        _tk_variants,
-    ),
-    (
-        (
-            "налоговый кодекс",
-            "нк рк",
-            "нк",
-            "салық кодексі",
-        ),
-        _nk_variants,
-    ),
-    (
-        (
-            "предпринимательский кодекс",
-            "пк рк",
-            "кәсіпкерлік кодекс",
-        ),
-        _pk_variants,
-    ),
-    (
-        (
-            "о браке",
-            "о семье",
-            "кодекс о браке",
-            "кодекс о браке (супружестве) и семье",
-            "неке және отбасы туралы кодекс",
-        ),
-        _family_variants,
-    ),
-    (
-        (
-            "административного процедурно-процессуального кодекса",
-            "административных процедурах",
-            "аппк",
-            "аппк рк",
-            "әкімшілік рәсімдер туралы кодекс",
-        ),
-        _admin_proc_variants,
-    ),
-    (
-        (
-            "социальный кодекс",
-            "әлеуметтік кодекс",
-        ),
-        _social_variants,
-    ),
-    (
-        (
-            "государственных закуп",
-            "мемлекеттік сатып алу",
-        ),
-        _procurement_variants,
-    ),
-    (
-        (
-            "противодействии коррупции",
-            "коррупцияға қарсы",
-        ),
-        _anti_corruption_variants,
-    ),
-    (
-        (
-            "исполнительном производстве",
-            "орындау өндірісі",
-        ),
-        _enforcement_variants,
-    ),
-    (
-        (
-            "защите прав потребителей",
-            "правах потребителей",
-            "зпп",
-            "тұтынушылардың құқықтарын қорғау",
-        ),
-        _consumer_variants,
-    ),
-    (
-        (
-            "жилищных отношениях",
-            "жилищные отношения",
-            "тұрғын үй қатынастары",
-        ),
-        _housing_variants,
-    ),
-    (
-        (
-            "банках и банковской деятельности",
-            "банковской деятельности",
-            "банк қызметі",
-        ),
-        _banks_variants,
-    ),
-    (
-        (
-            "земельный кодекс",
-            "жер кодексі",
-        ),
-        _land_variants,
-    ),
-    (
-        (
-            "воинской службе",
-            "статусе военнослужащих",
-            "әскери қызмет",
-        ),
-        _military_variants,
-    ),
-    (
-        (
-            "товариществах с ограниченной и дополнительной ответственностью",
-            "тоо",
-            "т о о",
-            "жауапкершілігі шектеулі",
-        ),
-        _llp_variants,
-    ),
-    (
-        (
-            "нотариате",
-            "нотариат туралы",
-        ),
-        _notariat_variants,
-    ),
-    (
-        (
-            "государственной регистрации прав на недвижимое имущество",
-            "жылжымайтын мүлікке құқықтарды мемлекеттік тіркеу",
-        ),
-        _real_estate_registration_variants,
-    ),
-    (
-        (
-            "страховании гражданско-правовой ответственности владельцев транспортных средств",
-            "көлік құралдары иелерінің азаматтық-құқықтық жауапкершілігін міндетті сақтандыру",
-        ),
-        _vehicle_insurance_variants,
-    ),
-    (
-        (
-            "об образовании",
-            "білім туралы",
-        ),
-        _education_variants,
-    ),
-    (
-        (
-            "государственной службе",
-            "мемлекеттік қызметі туралы",
-        ),
-        _public_service_variants,
-    ),
-    (
-        (
-            "правах ребенка",
-            "баланың құқықтары",
-        ),
-        _child_rights_variants,
-    ),
-    (
-        (
-            "рекламе",
-            "жарнама туралы",
-        ),
-        _advertising_variants,
-    ),
-    (
-        (
-            "коллекторской деятельности",
-            "коллекторлық қызмет",
-        ),
-        _collection_variants,
-    ),
-    (
-        (
-            "дорожном движении",
-            "жол жүрісі",
-        ),
-        _road_traffic_variants,
-    ),
-    (
-        (
-            "оценочной деятельности",
-            "бағалау қызметі",
-        ),
-        _valuation_variants,
-    ),
-    (
-        (
-            "государственной регистрации юридических лиц",
-            "филиалов и представительств",
-            "заңды тұлғаларды мемлекеттік тіркеу",
-        ),
-        _legal_entities_registration_variants,
-    ),
-    (
-        (
-            "валютном регулировании",
-            "валютном контроле",
-            "валюталық реттеу",
-        ),
-        _currency_variants,
-    ),
-    (
-        (
-            "цифровых активах",
-            "цифрлық активтер",
-        ),
-        _digital_assets_variants,
-    ),
-    (
-        (
-            "персональных данных и их защите",
-            "дербес деректер және оларды қорғау",
-        ),
-        _personal_data_protection_variants,
-    ),
-    (
-        (
-            "кредитных бюро",
-            "кредиттік бюролар",
-        ),
-        _credit_bureaus_variants,
-    ),
-    (
-        (
-            "микрофинансовой деятельности",
-            "микроқаржылық қызмет",
-        ),
-        _microfinance_variants,
-    ),
-    (
-        (
-            "банкротстве граждан",
-            "восстановлении платежеспособности",
-            "азаматтарының төлем қабілеттілігін қалпына келтіру",
-        ),
-        _citizen_bankruptcy_variants,
-    ),
-    (
-        (
-            "реабилитации и банкротстве",
-            "оңалту және банкроттық",
-        ),
-        _rehabilitation_bankruptcy_variants,
-    ),
-    (
-        (
-            "персональных данных",
-            "жеке деректер",
-        ),
-        _personal_data_variants,
-    ),
-    (
-        (
-            "искусственном интеллекте",
-            "жасанды интеллект",
-        ),
-        _ai_variants,
-    ),
-]
-
-_THEFT_QUERY_HINTS: tuple[str, ...] = (
-    "краж",
-    "украл",
-    "украду",
-    "украсть",
-    "воров",
-    "похит",
-    "тайное хищение",
-    "ұрлық",
-    "ұрла",
-    "жымқыру",
-)
-
-_LEGAL_CONCEPT_BUNDLES: tuple[dict[str, Any], ...] = (
-    {
-        "name": "theft",
-        "patterns": _THEFT_QUERY_HINTS,
-        "code_names": _uk_variants,
-        "focus_articles": ("188",),
-        "expansions_ru": (
-            "кража 188 УК РК",
-            "тайное хищение чужого имущества",
-            "кража из жилища",
-        ),
-        "expansions_kz": (
-            "ұрлық 188-бап ҚР ҚК",
-            "бөтен мүлікті жасырын жымқыру",
-            "тұрғын үйден ұрлау",
-        ),
-        "doc_terms": (
-            "кража",
-            "тайное хищение",
-            "чужого имущества",
-            "ұрлық",
-            "жымқыру",
-        ),
-        "weight": 1.6,
-        "criminal": True,
-    },
-    {
-        "name": "fraud",
-        "patterns": (
-            "мошеннич",
-            "алаяқ",
-            "обман",
-            "обманул",
-            "обманным путем",
-            "злоупотребление доверием",
-            "афер",
-        ),
-        "code_names": _uk_variants,
-        "focus_articles": ("190",),
-        "expansions_ru": (
-            "мошенничество 190 УК РК",
-            "хищение путем обмана или злоупотребления доверием",
-        ),
-        "expansions_kz": (
-            "алаяқтық 190-бап ҚР ҚК",
-            "алдау немесе сенімді теріс пайдалану арқылы мүлікті иелену",
-        ),
-        "doc_terms": (
-            "мошенничество",
-            "обман",
-            "злоупотребление доверием",
-            "алаяқтық",
-        ),
-        "weight": 1.7,
-        "criminal": True,
-    },
-    {
-        "name": "violent_property",
-        "patterns": (
-            "грабеж",
-            "грабил",
-            "разбой",
-            "вымог",
-            "шантаж",
-            "ограб",
-            "тонау",
-            "қарақшылық",
-            "қорқытып алу",
-        ),
-        "code_names": _uk_variants,
-        "focus_articles": (),
-        "expansions_ru": (
-            "насильственное хищение чужого имущества",
-            "грабеж разбой вымогательство УК РК",
-        ),
-        "expansions_kz": (
-            "бөтен мүлікті күш қолданып иелену",
-            "тонау қарақшылық қорқытып алу ҚК",
-        ),
-        "doc_terms": (
-            "грабеж",
-            "разбой",
-            "вымогательство",
-            "тонау",
-            "қарақшылық",
-        ),
-        "weight": 1.4,
-        "criminal": True,
-    },
-    {
-        "name": "consumer_return",
-        "patterns": (
-            "возврат товара",
-            "некачественный товар",
-            "дефект товара",
-            "товарный вид",
-            "продавец отказал",
-            "каспи магазин",
-            "бритва",
-            "қайтару",
-            "сапасыз тауар",
-        ),
-        "code_names": _consumer_variants,
-        "focus_articles": (),
-        "expansions_ru": (
-            "защита прав потребителей возврат товара",
-            "недостатки товара право потребителя",
-        ),
-        "expansions_kz": (
-            "тұтынушылардың құқықтарын қорғау тауарды қайтару",
-            "тауар кемшілігі тұтынушы құқығы",
-        ),
-        "doc_terms": (
-            "защите прав потребителей",
-            "возврат товара",
-            "недостаток товара",
-            "тұтынушылардың құқықтарын қорғау",
-        ),
-        "weight": 1.4,
-        "criminal": False,
-    },
-    {
-        "name": "family_support",
-        "patterns": (
-            "алимент",
-            "развод",
-            "расторжение брака",
-            "бывш",
-            "ребенок",
-            "детей",
-            "опек",
-            "родительских прав",
-            "неке",
-            "отбасы",
-            "қамқоршы",
-        ),
-        "code_names": _family_variants,
-        "focus_articles": (),
-        "expansions_ru": (
-            "кодекс о браке и семье алименты развод опека",
-            "родительские права ребенок содержание",
-        ),
-        "expansions_kz": (
-            "неке отбасы кодексі алимент ажырасу қорғаншылық",
-            "ата-ана құқықтары бала асырау",
-        ),
-        "doc_terms": (
-            "алименты",
-            "расторжение брака",
-            "родительских прав",
-            "опека",
-            "неке",
-            "отбасы",
-        ),
-        "weight": 1.4,
-        "criminal": False,
-    },
-    {
-        "name": "labor_employment",
-        "patterns": (
-            "увольн",
-            "сокращен",
-            "зарплат",
-            "работодатель",
-            "трудовой договор",
-            "отпуск",
-            "штат",
-            "жұмыс",
-            "еңбек",
-            "жалақы",
-        ),
-        "code_names": _tk_variants,
-        "focus_articles": (),
-        "expansions_ru": (
-            "трудовой кодекс увольнение сокращение заработная плата",
-            "трудовые права работника обязанности работодателя",
-        ),
-        "expansions_kz": (
-            "еңбек кодексі жұмыстан шығару қысқарту жалақы",
-            "жұмыскердің құқықтары жұмыс берушінің міндеттері",
-        ),
-        "doc_terms": (
-            "трудовой договор",
-            "работодатель",
-            "заработная плата",
-            "еңбек",
-            "жалақы",
-        ),
-        "weight": 1.4,
-        "criminal": False,
-    },
-    {
-        "name": "bank_credit",
-        "patterns": (
-            "кредит",
-            "заем",
-            "ипотек",
-            "банк",
-            "проценты",
-            "просроч",
-            "кредитор",
-            "неси",
-            "қарыз",
-            "банкрот",
-        ),
-        "code_names": _banks_variants,
-        "focus_articles": (),
-        "expansions_ru": (
-            "банковский заем кредитный договор просрочка банк",
-            "проценты по кредиту реструктуризация задолженности",
-        ),
-        "expansions_kz": (
-            "банктік қарыз кредит шарты мерзімін өткізу банк",
-            "кредит бойынша пайыздар берешекті қайта құрылымдау",
-        ),
-        "doc_terms": (
-            "банковский заем",
-            "кредит",
-            "ипотека",
-            "банк",
-            "несие",
-        ),
-        "weight": 1.25,
-        "criminal": False,
-    },
-    {
-        "name": "housing_real_estate",
-        "patterns": (
-            "квартир",
-            "жилой дом",
-            "дом оформлен",
-            "недвижим",
-            "собственност",
-            "нотариус",
-            "жилье",
-            "пәтер",
-            "үй",
-        ),
-        "code_names": _housing_variants + _real_estate_registration_variants + _gk_variants,
-        "focus_articles": (),
-        "expansions_ru": (
-            "жилищные отношения право собственности недвижимое имущество",
-            "государственная регистрация прав на недвижимое имущество",
-        ),
-        "expansions_kz": (
-            "тұрғын үй қатынастары меншік құқығы жылжымайтын мүлік",
-            "жылжымайтын мүлікке құқықтарды мемлекеттік тіркеу",
-        ),
-        "doc_terms": (
-            "жилищные отношения",
-            "недвижимое имущество",
-            "право собственности",
-            "тұрғын үй",
-        ),
-        "weight": 1.35,
-        "criminal": False,
-    },
-    {
-        "name": "tax_business",
-        "patterns": (
-            "налог",
-            "ндс",
-            "деклараци",
-            "ип",
-            "тоо",
-            "предприним",
-            "салық",
-            "деклар",
-            "кәсіпкер",
-            "тіркеусіз",
-        ),
-        "code_names": _nk_variants + _llp_variants + _pk_variants,
-        "focus_articles": (),
-        "expansions_ru": (
-            "налоговый кодекс декларация обязательства налогоплательщика",
-            "тоо ип предпринимательская деятельность регистрация",
-        ),
-        "expansions_kz": (
-            "салық кодексі декларация салық төлеушінің міндеттері",
-            "тоо ип кәсіпкерлік қызмет тіркеу",
-        ),
-        "doc_terms": (
-            "налоговый кодекс",
-            "декларация",
-            "налогоплательщик",
-            "салық",
-            "тоо",
-        ),
-        "weight": 1.45,
-        "criminal": False,
-    },
-    {
-        "name": "bankruptcy",
-        "patterns": (
-            "банкрот",
-            "неплатежеспособ",
-            "реабилитац",
-            "восстановление платежеспособности",
-            "төлем қабілетті",
-            "оңалту",
-            "дәрменсіз",
-        ),
-        "code_names": _citizen_bankruptcy_variants + _rehabilitation_bankruptcy_variants,
-        "focus_articles": (),
-        "expansions_ru": (
-            "банкротство граждан восстановление платежеспособности",
-            "реабилитация и банкротство должника",
-        ),
-        "expansions_kz": (
-            "азаматтардың банкроттығы төлем қабілеттілігін қалпына келтіру",
-            "оңалту және банкроттық борышкер",
-        ),
-        "doc_terms": (
-            "банкротство",
-            "восстановление платежеспособности",
-            "реабилитация",
-            "банкроттық",
-        ),
-        "weight": 1.5,
-        "criminal": False,
-    },
-    {
-        "name": "waste_sanitary",
-        "patterns": (
-            "мусор",
-            "тбо",
-            "антисанитар",
-            "контейнер",
-            "отходы",
-            "санитарно",
-            "қоқыс",
-            "санитар",
-        ),
-        "code_names": _koap_variants,
-        "focus_articles": (),
-        "expansions_ru": (
-            "нарушение санитарных требований отходы коап",
-            "мусорная площадка твердые бытовые отходы",
-        ),
-        "expansions_kz": (
-            "санитариялық талаптарды бұзу қалдықтар әкімшілік кодекс",
-            "қоқыс алаңы тұрмыстық қатты қалдықтар",
-        ),
-        "doc_terms": (
-            "санитар",
-            "отходы",
-            "тбо",
-            "қоқыс",
-        ),
-        "weight": 1.3,
-        "criminal": False,
-    },
-    {
-        "name": "noise_silence",
-        "patterns": (
-            "тишин",
-            "шум",
-            "шумет",
-            "шуметь",
-            "громк",
-            "сосед",
-            "суббот",
-            "воскресен",
-            "выходн",
-            "праздничн",
-            "ноч",
-            "покой",
-            "квартира",
-            "ремонт",
-            "сверл",
-            "перфорат",
-            "22:00",
-            "23:00",
-            "09:00",
-            "10:00",
-            "22 30",
-            "22:30",
-            "23 30",
-            "23:30",
-            "тыныш",
-            "шу",
-            "демалыс",
-            "сенбі",
-            "жексенбі",
-            "мереке",
-        ),
-        "code_names": _koap_variants,
-        "focus_articles": ("437",),
-        "expansions_ru": (
-            "нарушение тишины коап 437 покой физических лиц",
-            "тишина в будние выходные и праздничные дни",
-            "шум в квартире ремонтные работы в жилом доме",
-        ),
-        "expansions_kz": (
-            "тыныштықты бұзу әкімшілік кодекс 437 жеке тұлғалардың тыныштығы",
-            "жұмыс күндері демалыс және мереке күндеріндегі тыныштық",
-            "пәтердегі шу тұрғын үйдегі жөндеу жұмыстары",
-        ),
-        "doc_terms": (
-            "нарушение тишины",
-            "покой физических лиц",
-            "выходные и праздничные дни",
-            "шумом",
-            "тыныштық",
-            "тыныштығы",
-        ),
-        "weight": 1.75,
-        "criminal": False,
-    },
-)
+# Legal code/route/concept data tables live in legal_codes_data.py (extracted to reduce size).
+from engine.retrieval.legal_codes_data import *  # noqa: F401,F403
+from engine.retrieval import legal_codes_data as _lcd  # noqa: F401
+from engine.retrieval.query_analysis import *  # noqa: F401,F403
+from engine.retrieval import query_analysis as _qa  # noqa: F401
 _allowed_code_ru_for_filter = None
 _filter_clauses: list[dict] = []
 
@@ -1567,15 +655,6 @@ class LazyPineconeRetriever(BaseRetriever):
 _vector_retriever = LazyPineconeRetriever(search_kwargs=_vector_kwargs)
 
 
-def _get_target_code_profile(query: str) -> tuple[list[str], bool]:
-    ranked = _score_target_codes(query)
-    if not ranked:
-        return [], False
-    top_score = ranked[0][1]
-    second_score = ranked[1][1] if len(ranked) > 1 else 0.0
-    detected = _detect_target_codes(query)
-    confident = top_score >= 1.8 and top_score >= second_score + 1.2
-    return detected, confident
 
 
 def _adaptive_wide_k(query: str, target_codes: list[str], target_articles: list[str]) -> int:
@@ -1858,255 +937,22 @@ def _fuse_retrieval_candidates(
     return ordered
 
 
-def _extract_article_range(query: str) -> tuple[int, int] | None:
-    match = re.search(
-        r"(?:статья|ст\.|ст|бап)?\s*(\d+)\s*[-–—]\s*(\d+)", query or "", re.IGNORECASE
-    )
-    if not match:
-        return None
-    start = int(match.group(1))
-    end = int(match.group(2))
-    return (start, end) if start <= end else (end, start)
 
 
-def _normalized_query(query: str) -> str:
-    q = (query or "").lower().replace("ё", "е")
-    q = re.sub(r"\s+", " ", q)
-    return q
 
 
-def _has_alias(query: str, alias: str) -> bool:
-    pattern = r"(?<!\w)" + re.escape(alias) + r"(?!\w)"
-    return re.search(pattern, query) is not None
 
 
-_LAW_ROUTE_HINTS: list[tuple[tuple[str, ...], list[str], float]] = [
-    (
-        (
-            "возмездного оказания услуг",
-            "договор оказания услуг",
-            "представительство в суде",
-            "юридическая помощь",
-            "адвокатская деятельность",
-            "поверенный",
-            "договор поручения",
-        ),
-        _gk_special_variants,
-        1.5,
-    ),
-    (
-        (
-            "валютном регулировании",
-            "валютном контроле",
-            "валюталық реттеу",
-            "валюталық бақылау",
-            "нерезидент",
-            "резидент",
-            "импорт",
-            "экспорт",
-            "внешнеэконом",
-            "дубай",
-            "дубае",
-            "иностранн",
-            "за рубежом",
-            "наличными деньгами",
-            "наличные деньги",
-            "оплата наличными",
-            "оплата товара наличными",
-        ),
-        _currency_variants,
-        1.2,
-    ),
-    (
-        (
-            "товариществах с ограниченной и дополнительной ответственностью",
-            "жауапкершілігі шектеулі",
-        ),
-        _llp_variants,
-        1.2,
-    ),
-    (
-        (
-            "тоо",
-            "т о о",
-            "ип",
-        ),
-        _llp_variants,
-        0.15,
-    ),
-    (
-        (
-            "зпп",
-            "защите прав потребителей",
-            "правах потребителей",
-            "возврат товара",
-            "продавец отказал",
-            "некачественный товар",
-            "недостаток товара",
-            "товарный вид",
-            "в течение четырнадцати дней",
-            "14 дней",
-            "потребитель",
-            "бритва",
-        ),
-        _consumer_variants,
-        1.4,
-    ),
-    (
-        (
-            "цифровые активы",
-            "необеспеченные цифровые активы",
-            "крипто",
-            "криптобирж",
-            "стейкинг",
-            "kraken",
-        ),
-        _digital_assets_variants,
-        1.6,
-    ),
-    (
-        (
-            "мусор",
-            "тбо",
-            "отходы",
-            "антисанитар",
-            "контейнер",
-            "санитарно-эпидемиолог",
-            "мусорная площадка",
-        ),
-        _koap_variants,
-        1.3,
-    ),
-    (
-        _THEFT_QUERY_HINTS,
-        _uk_variants,
-        1.6,
-    ),
-    (
-        (
-            "банковской деятельности",
-            "банковский счет",
-            "банковский заем",
-            "банк",
-            "счет",
-            "перевод денег",
-        ),
-        _banks_variants,
-        0.8,
-    ),
-]
 
 
-def _score_target_codes(query: str) -> list[tuple[str, float]]:
-    q = _normalized_query(query)
-    scores: dict[str, float] = {}
-
-    for aliases, code_names in _LAW_ALIAS_GROUPS:
-        matched = False
-        for alias in aliases:
-            if _has_alias(q, alias):
-                matched = True
-                break
-        if not matched:
-            continue
-        for code_name in code_names:
-            scores[code_name] = scores.get(code_name, 0.0) + 1.0
-
-    for aliases, code_names, weight in _LAW_ROUTE_HINTS:
-        matched_count = 0
-        for alias in aliases:
-            if _has_alias(q, alias):
-                matched_count += 1
-        if not matched_count:
-            continue
-        boost = min(weight * matched_count, weight * 3)
-        for code_name in code_names:
-            scores[code_name] = scores.get(code_name, 0.0) + boost
-
-    for bundle in _matching_legal_concepts(query):
-        weight = float(bundle.get("weight", 1.0) or 1.0)
-        for code_name in bundle.get("code_names", ()):
-            scores[code_name] = scores.get(code_name, 0.0) + weight
-
-    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    if not ranked:
-        return []
-    return ranked
 
 
-def _detect_target_codes(query: str) -> list[str]:
-    ranked = _score_target_codes(query)
-    if not ranked:
-        return []
-
-    top_score = ranked[0][1]
-    second_score = ranked[1][1] if len(ranked) > 1 else 0.0
-
-    if top_score >= 1.8 and top_score >= second_score + 1.2:
-        return [code for code, score in ranked if score >= top_score - 0.4]
-
-    cutoff = max(1.0, top_score - 0.5)
-    detected: list[str] = []
-    for code, score in ranked:
-        if score < cutoff:
-            continue
-        if code not in detected:
-            detected.append(code)
-    return detected
 
 
-def _normalize_article_number(value: str | None) -> str:
-    raw = str(value or "").strip().lower()
-    if not raw:
-        return ""
-    raw = raw.replace("статья", "").replace("ст.", "").replace("ст", "").replace("бап", "")
-    raw = re.sub(r"\s+", "", raw)
-    raw = raw.replace("–", "-").replace("—", "-")
-    raw = re.sub(r"[^\da-zа-я\-\.]", "", raw, flags=re.IGNORECASE)
-    return raw.strip(".-")
 
 
-def _extract_query_article_number(query: str) -> str | None:
-    q = query or ""
-    match = re.search(r"(?:статья|ст\.|ст|бап)\s*(\d+[а-яА-Яa-zA-Z\-]?)", q, re.IGNORECASE)
-    if match:
-        normalized = _normalize_article_number(match.group(1))
-        return normalized or None
-    return None
 
 
-def _extract_query_article_numbers(query: str) -> list[str]:
-    q = query or ""
-    articles: list[str] = []
-
-    def _add(article: str) -> None:
-        normalized = _normalize_article_number(article)
-        if normalized and normalized not in articles:
-            articles.append(normalized)
-
-    primary = _extract_query_article_number(q)
-    if primary:
-        _add(primary)
-
-    for match in re.finditer(
-        r"(?:статьи|статья|ст\.|ст|баптары|баптар|бап)\s*([0-9,\-\sandи]+)",
-        q,
-        re.IGNORECASE,
-    ):
-        raw_tail = match.group(1)
-        for token in re.findall(r"\d+(?:-\d+)?", raw_tail):
-            _add(token)
-
-    range_match = _extract_article_range(q)
-    if range_match:
-        start, end = range_match
-        for number in range(start, end + 1):
-            _add(str(number))
-
-    for article in sorted(_focus_articles_from_query(q)):
-        _add(article)
-
-    return articles
 
 
 def _filter_docs_by_codes(docs: List[Document], code_names: list[str]) -> List[Document]:
@@ -2157,76 +1003,15 @@ def _search_with_code_filters(
     return docs
 
 
-_LEGAL_SYNONYMS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("договор", ("обязательство", "сделка", "договорные отношения")),
-    ("налич", ("наличные расчеты", "денежные средства", "оплата наличными")),
-    ("ущерб", ("убытки", "вред", "возмещение вреда")),
-    ("мусор", ("отходы", "тбо", "санитарные требования")),
-    ("крипто", ("цифровые активы", "необеспеченные цифровые активы", "стейкинг")),
-    ("банкрот", ("неплатежеспособность", "восстановление платежеспособности")),
-    ("тоо", ("товарищество с ограниченной ответственностью", "участник тоо")),
-    ("ип", ("индивидуальный предприниматель", "предпринимательская деятельность")),
-    ("недвижим", ("имущество", "право собственности", "регистрация прав")),
-)
-
-def _is_theft_query(query: str) -> bool:
-    q = _normalized_query(query)
-    return any(token in q for token in _THEFT_QUERY_HINTS)
 
 
-def _matching_legal_concepts(query: str) -> list[dict[str, Any]]:
-    q = _normalized_query(query)
-    matched: list[dict[str, Any]] = []
-    for bundle in _LEGAL_CONCEPT_BUNDLES:
-        if any(token in q for token in bundle.get("patterns", ())):
-            matched.append(bundle)
-    return matched
 
 
-def _expand_legal_synonyms(query: str) -> list[str]:
-    q = _normalized_query(query)
-    extras: list[str] = []
-    for needle, synonyms in _LEGAL_SYNONYMS:
-        if needle not in q:
-            continue
-        extras.extend(s for s in synonyms if s not in q)
-    return extras
 
 
-def _rewrite_query_for_retrieval(query: str) -> str:
-    llm = None
-    if getattr(config, "USE_LLM_QUERY_REWRITE", False):
-        try:
-            llm = get_llm()
-        except Exception:
-            llm = None
-    return rewrite_query(
-        query,
-        llm=llm,
-        detect_target_codes=_detect_target_codes,
-        extract_query_article_number=_extract_query_article_number,
-        focus_articles_from_query=_focus_articles_from_query,
-        expand_legal_synonyms=_expand_legal_synonyms,
-    )
 
 
-def _build_retrieval_queries(query: str) -> list[str]:
-    augmented = _augment_retrieval_query(query)
-    rewritten = _rewrite_query_for_retrieval(query)
-    queries: list[str] = []
-    for candidate in (query, augmented, rewritten):
-        cleaned = re.sub(r"\s+", " ", (candidate or "").strip())
-        if cleaned and cleaned not in queries:
-            queries.append(cleaned)
 
-    target_codes = _detect_target_codes(query)
-    if target_codes:
-        code_query = f"{rewritten} {' '.join(target_codes)}".strip()
-        if code_query and code_query not in queries:
-            queries.append(code_query)
-
-    limit = max(1, getattr(config, "RETRIEVER_MULTI_QUERY_LIMIT", 4))
-    return queries[:limit]
 
 
 def _multi_query_retrieve(base_retriever: Any, query: str) -> List[Document]:
@@ -2294,289 +1079,18 @@ def _sort_docs_for_coverage(
     return [doc for _, _, doc in scored]
 
 
-def _augment_retrieval_query(query: str) -> str:
-    q = (query or "").lower()
-    extras: list[str] = []
-    target_codes = _detect_target_codes(query)
-    is_criminal = any(code in set(_uk_variants) for code in target_codes) or _is_criminal_query(query)
-
-    # Check language
-    is_kz = _is_kz_query(query)
-
-    if any(
-        token in q
-        for token in (
-            "несовершеннолетний",
-            "несовершеннолетние",
-            "несовершеннолетних",
-            "minor",
-            "underage",
-            "кәмелетке толмаған",
-            "кәмелетке толмағандар",
-        )
-    ):
-        if is_kz:
-            extras.append("он сегіз жасқа толмаған жұмыскерлер")
-            extras.append("76-бап ҚР Еңбек кодексі")
-            extras.append("кәмелетке толмағандардың түнгі жұмысына тыйым салу")
-        else:
-            extras.append("работники, не достигшие восемнадцатилетнего возраста")
-            extras.append("статья 76 Трудовой кодекс РК")
-            extras.append("запрет ночной работы несовершеннолетних")
-    for bundle in _matching_legal_concepts(query):
-        if bundle.get("criminal") and not is_criminal:
-            continue
-        localized = bundle.get("expansions_kz", ()) if is_kz else bundle.get("expansions_ru", ())
-        extras.extend(str(item) for item in localized if item)
-    if any(
-        token in q
-        for token in (
-            "субсид",
-            "субсидия",
-            "гос",
-            "государ",
-            "бюджет",
-            "грант",
-            "инвест",
-            "смет",
-            "договор",
-            "фиктив",
-            "жалған",
-            "құжат",
-            "алаяқ",
-            "мемлекеттік",
-            "қаржы",
-            "ақша",
-        )
-    ) and is_criminal:
-        if is_kz:
-            extras.append("алаяқтық 190-бап ҚР ҚК")
-            extras.append("қылмыстық жолмен алынған ақшаны заңдастыру 218-бап ҚР ҚК")
-            extras.append("субсидия алу үшін жалған құжаттар 190-бап ҚР ҚК")
-        else:
-            extras.append("алаяқтық 190 УК РК")
-            extras.append("қылмыстық жолмен алынған ақшаны заңдастыру 218 УК РК")
-            extras.append("субсидия алу үшін жалған құжаттар 190 УК РК")
-    if any(
-        token in q
-        for token in (
-            "заңсыз кәсіпкер",
-            "кәсіпкерлік",
-            "лицензиясыз",
-            "тіркеусіз",
-            "незаконн",
-            "без регистрации",
-            "без лицензии",
-            "салық төлем",
-            "налог",
-            "уклонен",
-        )
-    ) and is_criminal:
-        if is_kz:
-            extras.append("заңсыз кәсіпкерлік 214-бап ҚР ҚК")
-            extras.append("салық төлеуден жалтару 245-бап ҚР ҚК")
-        else:
-            extras.append("заңсыз кәсіпкерлік 214 УК РК")
-            extras.append("салық төлеуден жалтару 245 УК РК")
-    if any(
-        token in q
-        for token in (
-            "пирамида",
-            "пирамид",
-            "қаржылық пирамида",
-            "инвестиция",
-            "инвест",
-            "жоғары пайда",
-            "30-50%",
-        )
-    ) and is_criminal:
-        if is_kz:
-            extras.append("қаржылық пирамида құру және басқару 217-бап ҚР ҚК")
-            extras.append("қаржылық пирамиданы жарнамалау 217-1-бап ҚР ҚК")
-        else:
-            extras.append("қаржылық пирамида құру және басқару 217 УК РК")
-            extras.append("финансовая пирамида создание и руководство 217 УК РК")
-            extras.append("реклама финансовой пирамиды 217-1 УК РК")
-    # ... other heuristics could be localized similarly ...
-
-    range_match = _extract_article_range(query)
-    if range_match and ("ук" in q or "қылмыстық" in q or "уголов" in q):
-        start, end = range_match
-        nums = " ".join(str(n) for n in range(start, end + 1))
-        if is_kz:
-            extras.append(f"ҚР ҚК {nums} баптары")
-        else:
-            extras.append(f"статьи {nums} УК РК")
-    return (query + " " + " ".join(extras)).strip() if extras else query
 
 
-def _is_criminal_query(query: str) -> bool:
-    q = _normalized_query(query)
-    if any(token in q for token in ("қылмыстық", "уголов", "преступ", "ук рк", "квалификация преступ", "состав преступ")):
-        return True
-    if any(bundle.get("criminal") for bundle in _matching_legal_concepts(q)):
-        return True
-    return False
 
 
-def _focus_articles_from_query(query: str) -> set[str]:
-    q = (query or "").lower()
-    focus: set[str] = set()
-    for bundle in _matching_legal_concepts(q):
-        focus.update(
-            _normalize_article_number(article)
-            for article in bundle.get("focus_articles", ())
-            if _normalize_article_number(article)
-        )
-    if any(
-        token in q
-        for token in (
-            "субсид",
-            "субсидия",
-            "гос",
-            "государ",
-            "бюджет",
-            "грант",
-            "инвест",
-            "смет",
-            "договор",
-            "фиктив",
-            "мемлекеттік",
-            "жалған",
-            "алаяқ",
-            "құжат",
-            "қаржы",
-            "ақша",
-        )
-    ) and _is_criminal_query(query):
-        focus.update({_normalize_article_number("190"), _normalize_article_number("218")})
-    if any(
-        token in q
-        for token in (
-            "заңсыз кәсіпкер",
-            "кәсіпкерлік",
-            "лицензиясыз",
-            "тіркеусіз",
-            "незаконн",
-            "без регистрации",
-            "без лицензии",
-            "салық төлем",
-            "налог",
-            "уклонен",
-        )
-    ) and _is_criminal_query(query):
-        focus.update({_normalize_article_number("214"), _normalize_article_number("245")})
-    if any(
-        token in q
-        for token in (
-            "пирамида",
-            "пирамид",
-            "қаржылық пирамида",
-            "инвестиция",
-            "инвест",
-            "жоғары пайда",
-            "30-50%",
-        )
-    ) and _is_criminal_query(query):
-        focus.update({_normalize_article_number("217"), _normalize_article_number("190")})
-    if any(
-        token in q
-        for token in (
-            "қалдық су",
-            "қалдық сулар",
-            "өзен",
-            "су ластау",
-            "суға төгу",
-            "тазарту жүйесі",
-            "эколог",
-            "өндіріс қалдық",
-            "өндірістік қалдық",
-            "химия",
-            "улы зат",
-            "жаппай улану",
-            "жаппай ауру",
-        )
-    ):
-        focus.update({_normalize_article_number("328"), _normalize_article_number("325"), _normalize_article_number("324")})
-    if any(
-        token in q
-        for token in (
-            "шетел",
-            "сырт ел",
-            "резидент",
-            "жылжымайтын",
-            "жарғылық капитал",
-            "уставный капитал",
-            "капиталға",
-            "вклад",
-            "взнос",
-            "декларация",
-            "деклар",
-            "имущ",
-            "имущественный",
-            "прирост стоимости",
-        )
-    ):
-        focus.update({_normalize_article_number("228"), _normalize_article_number("330"), _normalize_article_number("332"), _normalize_article_number("333")})
-    return focus
 
 
-def _is_subsidy_query(query: str) -> bool:
-    q = (query or "").lower()
-    return any(
-        token in q
-        for token in (
-            "субсид",
-            "субсидия",
-            "грант",
-            "гос",
-            "государ",
-            "мемлекеттік",
-            "бюджет",
-        )
-    )
 
 
-def _is_illegal_business_query(query: str) -> bool:
-    q = (query or "").lower()
-    return any(
-        token in q
-        for token in (
-            "заңсыз кәсіпкер",
-            "кәсіпкерлік",
-            "лицензиясыз",
-            "тіркеусіз",
-            "незаконн",
-            "без регистрации",
-            "без лицензии",
-            "салық төлем",
-            "налог",
-            "уклонен",
-        )
-    )
 
 
-def _is_pyramid_query(query: str) -> bool:
-    q = (query or "").lower()
-    return any(
-        token in q
-        for token in (
-            "пирамида",
-            "пирамид",
-            "қаржылық пирамида",
-            "инвестиция",
-            "инвест",
-            "жоғары пайда",
-            "30-50%",
-        )
-    )
 
 
-def _needs_circumstances_query(query: str) -> bool:
-    q = (query or "").lower()
-    return any(
-        token in q for token in ("ауырлататын", "жеңілдететін", "смягча", "отягча")
-    )
 
 
 def _doc_key(doc: Document) -> tuple[str, str]:
@@ -3016,14 +1530,8 @@ def _apply_legal_score(
             if bundle_codes and doc_code in bundle_codes:
                 score += 0.18
 
-            focus_articles = {
-                _normalize_article_number(article)
-                for article in bundle.get("focus_articles", ())
-                if _normalize_article_number(article)
-            }
-            if focus_articles and doc_article in focus_articles:
-                score += 0.30
-
+            # Topic→specific-article boosting (bundle.focus_articles) was removed to avoid
+            # overfitting; code-level routing + doc-term/title overlap below remain.
             doc_terms = tuple(str(term).lower() for term in bundle.get("doc_terms", ()) if term)
             if doc_terms and any(term in title_haystack for term in doc_terms):
                 score += 0.16
@@ -3072,7 +1580,17 @@ def _resolve_reranker_backend() -> str:
     model = (getattr(config, "RERANKER_MODEL", "") or "").lower()
     if "jina" in model:
         return "jina"
-    return "flag_embedding"
+    # FlagEmbedding gives the best results for BGE rerankers, but it is an optional
+    # heavy dependency that is also broken on transformers>=5 (imports the removed
+    # is_torch_fx_available). Only pick it if FlagReranker actually imports; otherwise
+    # use the sentence-transformers CrossEncoder backend (loads BGE rerankers fine)
+    # instead of silently falling back to the weaker fallback model.
+    try:
+        from FlagEmbedding import FlagReranker  # noqa: F401
+
+        return "flag_embedding"
+    except Exception:
+        return "cross_encoder"
 
 
 def _should_skip_neural_rerank(query: str, documents: Sequence[Document]) -> bool:
@@ -3263,9 +1781,9 @@ def _build_minimal_legal_retriever() -> MinimalLegalRetriever:
             return []
         try:
             docs = list(bm25_retriever.invoke(query) or [])
-            _, summary_codes = _collect_summary_hints(query)
-            if summary_codes:
-                preferred = _filter_docs_by_codes(docs, summary_codes)
+            target_codes = _detect_target_codes(query)
+            if target_codes:
+                preferred = _filter_docs_by_codes(docs, target_codes)
                 if preferred:
                     docs = _merge_unique(preferred, docs)
             return docs
@@ -3337,11 +1855,11 @@ def _build_minimal_legal_retriever() -> MinimalLegalRetriever:
             return []
         try:
             vs = get_vector_store()
-            _, summary_codes = _collect_summary_hints(query)
+            target_codes = _detect_target_codes(query)
             search_kwargs = {"k": _hybrid_k}
-            if summary_codes:
+            if target_codes:
                 search_kwargs["filter"] = {
-                    "$or": [{"code_ru": code} for code in summary_codes]
+                    "$or": [{"code_ru": code} for code in target_codes]
                 }
             docs_with_scores = vs.similarity_search_with_score(
                 query, **search_kwargs
@@ -3351,7 +1869,7 @@ def _build_minimal_legal_retriever() -> MinimalLegalRetriever:
                 for doc, score in docs_with_scores or []
                 if (doc.metadata.get("doc_kind") or "chunk") != "summary"
             ]
-            if not filtered and summary_codes and "filter" in search_kwargs:
+            if not filtered and target_codes and "filter" in search_kwargs:
                 docs_with_scores = vs.similarity_search_with_score(
                     query, k=_hybrid_k
                 )
@@ -3379,6 +1897,7 @@ def _build_minimal_legal_retriever() -> MinimalLegalRetriever:
         final_k=_hybrid_k,
     )
 
+_reranker_lock = threading.Lock()
 
 def get_retriever():
     """Build retriever lazily (Pinecone + optional BM25 + optional reranker)."""
@@ -3400,7 +1919,9 @@ def get_retriever():
             print("Включён experimental dedup retrieval layer.")
 
         # Optional reranker (very heavy) — build lazily on first request.
-        if config.USE_RERANKER or getattr(config, "RERANKER_MANDATORY", True):
+        # USE_RERANKER is authoritative; RERANKER_MANDATORY only decides whether a
+        # load failure raises (below) or degrades gracefully.
+        if config.USE_RERANKER:
             try:
                 try:
                     from langchain.retrievers import ContextualCompressionRetriever
@@ -3427,7 +1948,7 @@ def get_retriever():
                 if _backend_resolved == "cross_encoder":
                     from sentence_transformers import CrossEncoder
 
-                    _reranker_model = CrossEncoder(config.RERANKER_MODEL)
+                    _reranker_model = CrossEncoder(config.RERANKER_MODEL, device=config.RERANKER_DEVICE)
                 elif _backend_resolved == "jina":
                     try:
                         from transformers import AutoModel
@@ -3436,7 +1957,7 @@ def get_retriever():
                             config.RERANKER_MODEL,
                             dtype="auto",
                             trust_remote_code=True,
-                        )
+                        ).to(config.RERANKER_DEVICE)
                         _reranker_model.eval()
                     except Exception as jina_err:
                         logger.warning(
@@ -3446,7 +1967,7 @@ def get_retriever():
                         )
                         from sentence_transformers import CrossEncoder
 
-                        _reranker_model = CrossEncoder(config.RERANKER_FALLBACK_MODEL)
+                        _reranker_model = CrossEncoder(config.RERANKER_FALLBACK_MODEL, device=config.RERANKER_DEVICE)
                         _reranker_backend = "cross_encoder"
 
                 if _reranker_model is None:
@@ -3455,7 +1976,7 @@ def get_retriever():
 
                         # FlagReranker uses trust_remote_code=True by default in some versions.
                         _reranker_model = FlagReranker(
-                            config.RERANKER_MODEL, use_fp16=False
+                            config.RERANKER_MODEL, use_fp16=False, devices=[config.RERANKER_DEVICE]
                         )
                         _reranker_backend = "flag_embedding"
                         # Some checkpoints do not define pad_token and fail on batched scoring.
@@ -3480,7 +2001,7 @@ def get_retriever():
                         from sentence_transformers import CrossEncoder
 
                         _reranker_backend = "cross_encoder"
-                        _reranker_model = CrossEncoder(config.RERANKER_FALLBACK_MODEL)
+                        _reranker_model = CrossEncoder(config.RERANKER_FALLBACK_MODEL, device=config.RERANKER_DEVICE)
 
                 logger.info(
                     "✅ [SUCCESS] Reranker initialized via %s (%.2fs)",
@@ -3574,10 +2095,11 @@ def get_retriever():
                         pairs = [[query, d.page_content] for d in rerank_docs]
                         if _reranker_backend == "jina":
                             texts = [d.page_content for d in rerank_docs]
-                            with torch.inference_mode():
-                                jina_results = _reranker_model.rerank(
-                                    query, texts, top_n=len(texts)
-                                )
+                            with _reranker_lock:
+                                with torch.inference_mode():
+                                    jina_results = _reranker_model.rerank(
+                                        query, texts, top_n=len(texts)
+                                    )
                             scores = [0.0] * len(rerank_docs)
                             for item in jina_results:
                                 ji = int(item.get("index", -1))
@@ -3586,20 +2108,22 @@ def get_retriever():
                                         item.get("relevance_score", 0.0)
                                     )
                         elif _reranker_backend == "flag_embedding":
-                            try:
-                                scores = _reranker_model.compute_score(pairs)
-                            except ValueError as ve:
-                                if "no padding token" in str(ve).lower():
-                                    scores = [
-                                        float(
-                                            _reranker_model.compute_score([pair])[0]
-                                        )
-                                        for pair in pairs
-                                    ]
-                                else:
-                                    raise
+                            with _reranker_lock:
+                                try:
+                                    scores = _reranker_model.compute_score(pairs)
+                                except ValueError as ve:
+                                    if "no padding token" in str(ve).lower():
+                                        scores = [
+                                            float(
+                                                _reranker_model.compute_score([pair])[0]
+                                            )
+                                            for pair in pairs
+                                        ]
+                                    else:
+                                        raise
                         else:
-                            scores = _reranker_model.predict(pairs)
+                            with _reranker_lock:
+                                scores = _reranker_model.predict(pairs)
                         if isinstance(scores, float):
                             scores = [scores]
                         scored_docs = []
@@ -3645,7 +2169,7 @@ def get_retriever():
                     e,
                     exc_info=True,
                 )
-                if getattr(config, "RERANKER_MANDATORY", True):
+                if getattr(config, "RERANKER_MANDATORY", False):
                     raise
 
         # Trim context before LLM
@@ -3950,7 +2474,7 @@ UNIVERSAL_PROMPT_TEMPLATE = """Ты — сильный Legal AI по закон�
    Лучше 2-6 точных норм с объяснением, чем длинный список без логики.
 8. Не смешивай разные отрасли права без опоры в контексте.
 9. Обязательно проведи юридический анализ по шагам: факты -> нормы -> сопоставление -> вывод.
-10. В КАЖДОМ ответе ОБЯЗАТЕЛЬНО цитируй и указывай номера статей, пунктов и частей применимых законов и кодексов. Ответ без конкретных статей недопустим!
+10. В КАЖДОМ ОТВЕТЕ ВЫ ОБЯЗАНЫ УКАЗАТЬ НОМЕР СТАТЬИ, ПУНКТ И НАЗВАНИЕ ЗАКОНА (КОДЕКСА). ЭТО КРИТИЧЕСКИ ВАЖНО. Ответ без конкретных статей категорически недопустим!
 
 {legal_reasoning_guidance}
 
@@ -3986,7 +2510,7 @@ CRIMINAL_PROMPT_TEMPLATE = """Ты — эксперт по Уголовному 
 1. Начинай строго с / Қатаң түрде мынадан бастаңыз: "Это не официальная юридическая консультация. Информация только из базы." немесе "Бұл ресми заңдық кеңес емес. Ақпарат тек базадан алынған."
 2. Отвечай на казахском, если вопрос на казахском; на русском — если на русском. Сұрақ қазақша болса, қазақша жауап беріңіз; орысша болса, орысша.
 3. Для каждого пункта вопроса отвечай по порядку, нумеруя 1), 2), 3) и т.д.
-4. Всегда указывай точную статью УК РК, часть и дословную цитату / Әрқашан ҚР ҚК бабын, бөлігін және дәл дәйексөзді көрсетіңіз.
+4. КРИТИЧЕСКИ ВАЖНО: Всегда указывай точную статью УК РК, часть и дословную цитату / ӨТЕ МАҢЫЗДЫ: Әрқашан ҚР ҚК бабын, бөлігін және дәл дәйексөзді көрсетіңіз. Ответ без статьи не принимается!
 5. Разбирай состав преступления ТОЛЬКО если статья есть в контексте / Қылмыс құрамын ТЕК бап контексте болса ғана талдаңыз:
    - Объект
    - Объективті жағы / Объективная сторона
@@ -4017,7 +2541,7 @@ RANGE_PROMPT_TEMPLATE = """Ты — точный ассистент по УК Р
 • Если в вопросе диапазон статей (например, 120–135) — перечисляй ВСЕ
   релевантные статьи из контекста с номерами и кратким описанием.
 • Цитируй санкции и ключевые части дословно.
-• Указывай источник (название кодекса) и номер статьи.
+• КРИТИЧЕСКИ ВАЖНО: В каждом ответе ОБЯЗАТЕЛЬНО указывай источник (название кодекса) и точный номер статьи!
 • Для каждой статьи соблюдай порядок: факты вопроса -> анализ нормы -> сопоставление -> вывод.
 
 {legal_reasoning_guidance}
@@ -4624,30 +3148,10 @@ def invoke_qa(
         metrics_ctx.reset(token)
 
 
-_KZ_CHARS = set("әғқңөұүһі")
-_KZ_COMMON_WORDS = (
-    "және",
-    "бойынша",
-    "қылмыстық",
-    "құрамы",
-    "қылмысқа",
-    "бап",
-    "заң",
-    "мән-жай",
-    "ауырлататын",
-    "жеңілдететін",
-)
 
 
-def _is_kz_query(query: str) -> bool:
-    return any(ch in (query or "").lower() for ch in _KZ_CHARS)
 
 
-def _is_kz_response(text: str) -> bool:
-    t = (text or "").lower()
-    if any(ch in t for ch in _KZ_CHARS):
-        return True
-    return any(word in t for word in _KZ_COMMON_WORDS)
 
 
 def _extract_article_numbers_from_docs(docs: List[Document]) -> set[str]:
@@ -4732,16 +3236,10 @@ def validate_answer(question: str, response: str, sources: List[Document]) -> st
         if not has_uk:
             return fallback
 
-    mentioned = _extract_article_numbers_from_text(response or "")
-
-    if _is_illegal_business_query(question):
-        if "214" not in mentioned and "245" not in mentioned:
-            return fallback
-
-    if _is_pyramid_query(question):
-        if "217" not in mentioned:
-            return fallback
-
+    # Article-number whitelists per topic (illegal business → 214/245, pyramid → 217)
+    # were removed: they discarded otherwise-valid answers that cited an equally relevant
+    # article, overfitting to specific benchmark expectations. Citation presence/quality is
+    # enforced generically by ensure_answer_citations in the live pipeline.
     if _needs_circumstances_query(question):
         r = (response or "").lower()
         if not any(

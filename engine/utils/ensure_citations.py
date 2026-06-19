@@ -58,26 +58,39 @@ def _looks_like_internal_code_id(value: str) -> bool:
     return bool(text) and bool(re.fullmatch(r"[a-z0-9_]+", text)) and "_" in text
 
 
+def _mentions_article(lowered_text: str, article: str) -> bool:
+    """True if the text references this article number, in RU ("ст. 188", "статья 188")
+    or KZ ("188-бап", "188 бап") order."""
+    esc = re.escape(article)
+    return bool(
+        re.search(rf"(?:ст\.?|статья|статьи|бап)\s*{esc}\b", lowered_text)
+        or re.search(rf"\b{esc}\s*-?\s*бап", lowered_text)
+    )
+
+
 def response_cites_context(response: str, sources: Iterable[Any]) -> bool:
     text = (response or "").strip()
     if not text:
         return False
 
+    lowered = text.lower()
+    source_articles = _source_article_numbers(sources)
+
+    if source_articles:
+        # Rule 2: the answer must cite an article that actually appears in the retrieved
+        # context. A well-formed but ungrounded (hallucinated) citation does NOT count.
+        for article in source_articles:
+            if _mentions_article(lowered, article):
+                return True
+        for art, _code in cit.extract_citation_pairs_from_text(text):
+            if _normalize_article_value(art) in source_articles:
+                return True
+        return False
+
+    # No article numbers available in the context: accept any explicit citation / mention.
     if cit.extract_citation_pairs_from_text(text):
         return True
-
-    source_articles = _source_article_numbers(sources)
-    if not source_articles:
-        return bool(re.search(r"(?:ст\.?|статья|статьи|бап)\s*\d", text.lower()))
-
-    lowered = text.lower()
-    for article in source_articles:
-        if re.search(
-            rf"(?:ст\.?|статья|статьи|бап)\s*{re.escape(article)}\b",
-            lowered,
-        ):
-            return True
-    return False
+    return bool(re.search(r"(?:ст\.?|статья|статьи|бап)\s*\d", lowered))
 
 
 def _should_skip_citation_enforcement(

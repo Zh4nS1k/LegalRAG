@@ -12,8 +12,6 @@ class Chunk(BaseModel):
     id: str
     text: str
     score: float
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
 class LLMResult(BaseModel):
     """Represents the execution result of a single LLM call."""
     model: str
@@ -34,6 +32,7 @@ class LLMResult(BaseModel):
     quality_reason: str = ""
     quality_rank: int = 0
     retrieved_scores: list[float] = Field(default_factory=list)
+    source_documents: list[dict] = Field(default_factory=list)
 
 class TestRow(BaseModel):
     """Represents a combination of Question and its corresponding LLMResult."""

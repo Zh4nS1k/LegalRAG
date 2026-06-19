@@ -407,7 +407,11 @@ def _is_bad_chunk_text(text: str) -> bool:
 
 
 def _build_indexable_text(chunk_text: str, meta: dict) -> str:
-    prefix = _build_contextual_prefix(meta, chunk_text)
+    # Note: the English "Context: This chunk is from …" prose prefix is intentionally NOT
+    # prepended here. page_content is embedded, BM25-indexed AND fed to the LLM; the repeated
+    # English boilerplate polluted all three (diluted RU/KZ embeddings and BM25, and ate the
+    # LLM context budget) without helping a Russian/Kazakh corpus. The structured Russian
+    # header below carries the useful retrieval/citation anchors; full lineage stays in metadata.
     parts: list[str] = []
     code_ru = str(meta.get("code_ru") or "").strip()
     article_number = str(meta.get("article_number") or "").strip()
@@ -440,9 +444,9 @@ def _build_indexable_text(chunk_text: str, meta: dict) -> str:
             parts.append(f"Подпункт: {subclause_number}")
 
     if not parts:
-        return f"{prefix}\nТекст: {chunk_text.strip()}".strip()
+        return f"Текст: {chunk_text.strip()}".strip()
     header = "\n".join(parts).strip()
-    return f"{prefix}\n{header}\nТекст: {chunk_text.strip()}".strip()
+    return f"{header}\nТекст: {chunk_text.strip()}".strip()
 
 
 def _infer_jurisdiction(meta: dict) -> str:

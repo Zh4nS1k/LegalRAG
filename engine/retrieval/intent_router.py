@@ -120,9 +120,13 @@ def _keyword_hits(query: str, keywords: Iterable[str]) -> int:
 
 def _score_rules(query: str) -> dict[str, float]:
     normalized = _normalize_query(query)
+    social_score = _match_count(normalized, SOCIAL_PATTERNS) * 2.2 + _keyword_hits(normalized, _SOCIAL_KEYWORDS) * 0.7
+    # If the query is long, it's likely a real question preceded by a greeting
+    if len(normalized.split()) > 8:
+        social_score = 0.0
+
     return {
-        SOCIAL: _match_count(normalized, SOCIAL_PATTERNS) * 2.2
-        + _keyword_hits(normalized, _SOCIAL_KEYWORDS) * 0.7,
+        SOCIAL: social_score,
         GENERAL_LEGAL: _match_count(normalized, GENERAL_LEGAL_PATTERNS) * 1.8
         + _keyword_hits(normalized, _GENERAL_KEYWORDS) * 0.65,
         PROCEDURAL: _match_count(normalized, PROCEDURAL_PATTERNS) * 1.9

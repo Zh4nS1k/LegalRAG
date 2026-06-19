@@ -44,12 +44,14 @@ LINGUIST_EXPANSION_PROMPT = """Ты — лингвист по праву РК. �
 """
 
 
-def _linguist_query_expansion(query: str, trace_id: str, model_override: str | None = None) -> Tuple[dict, dict]:
+import asyncio
+
+async def _linguist_query_expansion(query: str, trace_id: str, model_override: str | None = None) -> Tuple[dict, dict]:
     """Returns (expanded_terms, search_variants), metrics."""
     t0 = time.perf_counter()
     llm = rag_chain.get_llm(model_override)
     try:
-        resp = llm.invoke(LINGUIST_EXPANSION_PROMPT.format(query=query.strip()))
+        resp = await asyncio.to_thread(llm.invoke, LINGUIST_EXPANSION_PROMPT.format(query=query.strip()))
         text = resp.content if hasattr(resp, "content") else str(resp)
         start, end = text.find("{"), text.rfind("}") + 1
         if start >= 0 and end > start:
@@ -70,17 +72,14 @@ MISSING_INFO_PROMPT = """Ты — юридический аналитик по �
 Иерархия права РК: Конституция → кодексы и законы РК. Все выводы только по ним.
 
 Инструкции:
-1. Перечисли недостающие переменные из правового чек-листа: даты, суммы, наличие договора, доказательства, стороны, отрасль права.
+1. Выяви недостающие ключевые факты, исходя из сути вопроса (например: для драки — степень вреда здоровью; для кражи — сумма; для возврата товара — прошел ли срок 14 дней). Не выдумывай лишние критерии, если они не нужны для ответа.
 2. Раздели недостающее на:
-   - Critical (критично): без этого нельзя дать заключение — например наличие договора, факт нарушения, сумма иска.
-   - Contextual (контекст): уточняет, но можно сформулировать гипотезу — например точное время суток, второстепенные детали. Отметь как "Слепые зоны".
-3. Идентифицируй Blind Spots: возраст точный?, письменный договор?, студент на дуальном обучении?
-4. Оцени уверенность по имеющимся данным: confidence от 0.0 до 1.0 (сколько процентов картины есть).
-5. Threshold Logic:
-   - Если данных 100% нет: ASK clarifying questions.
-   - Если данных 50% есть (как в этом случае): PROCEED, list assumptions.
-6. Если есть Critical и это ПЕРВЫЙ обмен — сформулируй не более 2 коротких уточняющих вопросов.
-7. Если ВТОРОЙ обмен или только Contextual — proceed_to_search: true.
+   - Critical (критично): без этого нельзя дать точный правовой ответ.
+   - Contextual (контекст): второстепенные детали, можно обойтись без них.
+3. Оцени уверенность по имеющимся данным: confidence от 0.0 до 1.0 (насколько понятна ситуация).
+4. Threshold Logic:
+   - Если уверенность < 0.7 и есть Critical факты (и это ПЕРВЫЙ обмен) — сформулируй 1-2 коротких уточняющих вопроса.
+   - Если уверенность >= 0.7 или это ВТОРОЙ обмен — proceed_to_search: true.
 
 Уже известное из диалога (контекст):
 {context}
@@ -91,11 +90,10 @@ MISSING_INFO_PROMPT = """Ты — юридический аналитик по �
 Ответ СТРОГО в JSON без markdown:
 {{
   "confidence": 0.0-1.0,
-  "critical_missing": ["элемент1", "элемент2"],
-  "contextual_missing": ["слепая зона 1"],
-  "blind_spots": ["возраст точный?", "письменный договор?"],
-  "assumptions": ["предполагаем возраст <18"],
-  "clarifying_questions": ["вопрос 1?", "вопрос 2?"],
+  "critical_missing": ["факты, без которых нельзя ответить"],
+  "contextual_missing": ["второстепенные детали"],
+  "assumptions": ["сделанные предположения"],
+  "clarifying_questions": ["уточняющий вопрос 1?", "уточняющий вопрос 2?"],
   "proceed_to_search": true или false
 }}
 
@@ -117,7 +115,7 @@ def _format_history_context(history: Optional[List[dict]]) -> str:
     return "\n".join(lines) if lines else "(Нет предыдущих сообщений.)"
 
 
-def _check_missing_info(
+async def _check_missing_info(
     query: str,
     history: Optional[List[dict]],
     trace_id: str,
@@ -130,8 +128,8 @@ def _check_missing_info(
     context_str = _format_history_context(history)
     llm = rag_chain.get_llm(model_override)
     try:
-        resp = llm.invoke(
-            MISSING_INFO_PROMPT.format(context=context_str, query=query.strip())
+        resp = await asyncio.to_thread(
+            llm.invoke, MISSING_INFO_PROMPT.format(context=context_str, query=query.strip())
         )
         text = resp.content if hasattr(resp, "content") else str(resp)
         start, end = text.find("{"), text.rfind("}") + 1
@@ -215,27 +213,43 @@ def _should_ask_questions(
 
 # ─── STAGE 3: THE REASONER (Hybrid Synthesis with Internal Fallback) ───
 
-INTERNAL_KNOWLEDGE_FALLBACK_PROMPT = """Ты — эксперт по законодательству Республики Казахстан. Пользователь спросил: "{query}"
+INTERNAL_KNOWLEDGE_FALLBACK_PROMPT = """Роль и цель
+Вы — профессиональный юридический консультант, специализирующийся на законодательстве Республики Казахстан (РК). Ваша задача — предоставлять точные, структурированные и обоснованные ответы на основе нормативных правовых актов (НПА) РК.
 
-В базе данных не найдено информации. Используй свои внутренние знания по НПА РК для предварительного ответа.
+Внимание: В базе данных не найдено информации по запросу. Используй свои внутренние знания по НПА РК для предварительного ответа.
 
-Структура ответа:
-🎯 Прямой ответ: (Да/Нет/Зависит, с обоснованием).
-📜 Правовая основа: (Укажи кодекс и статью).
-🔍 Недостающие детали: (Что предположено, например, возраст).
-⚖️ Точка перелома: (Когда ответ может измениться).
+Пользователь спросил: "{query}"
 
-Если не уверен, скажи "Требуется консультация юриста".
+Источники знаний
+Приоритет №1: Общие знания о праве РК, так как в файлах нет специфической информации.
+Актуальность: Ссылайтесь на кодексы (Гражданский, Уголовный, Трудовой, Налоговый, Административный и др.) и законы РК.
+
+Правила ответов
+Цитирование: КРИТИЧЕСКИ ВАЖНО! ПРИ КАЖДОМ ОТВЕТЕ ВЫ ОБЯЗАНЫ УКАЗАТЬ СТАТЬЮ, ПУНКТ И ЗАКОН (КОДЕКС), которые относятся к вопросу. Ответ без точного номера статьи не принимается! Пример: «Согласно пункту 1 статьи 30 Закона РК "О защите прав потребителей"…».
+Структура:
+Краткий ответ: Прямой ответ на вопрос пользователя.
+Правовое обоснование: Ссылки на конкретные нормы права.
+Разъяснение: Простым языком объясните, как эта норма применяется к ситуации пользователя. Обязательно укажите, что ответ основан только на общих знаниях.
+Рекомендация: Какие действия необходимо предпринять (например, подать заявление, составить претензию).
+Язык: Отвечайте на том языке, на котором задан вопрос (казахский или русский). Если вопрос на казахском, используйте официальную юридическую терминологию.
+
+Ограничения и этика
+Отсутствие данных: Если вашей базе нет точного ответа на вопрос, честно сообщите об этом. Не выдумывайте нормы права.
+Дисклеймер: В конце каждого сложного или критического ответа добавляйте примечание: «Данная консультация носит информационный характер. Для принятия юридически значимых решений рекомендуется обратиться к лицензированному адвокату или юристу».
+Конфиденциальность: Не просите пользователя вводить ИИН, номера удостоверений личности или другие чувствительные персональные данные.
+
+Тон общения
+Официально-деловой, сдержанный, объективный и поддерживающий. Избегайте двусмысленных трактовок.
 """
 
 
-def _internal_knowledge_fallback(query: str, trace_id: str, model_override: str | None = None) -> Tuple[str, dict]:
+async def _internal_knowledge_fallback(query: str, trace_id: str, model_override: str | None = None) -> Tuple[str, dict]:
     """Returns (answer, metrics)."""
     t0 = time.perf_counter()
     llm = rag_chain.get_llm(model_override)
     try:
-        resp = llm.invoke(
-            INTERNAL_KNOWLEDGE_FALLBACK_PROMPT.format(query=query.strip())
+        resp = await asyncio.to_thread(
+            llm.invoke, INTERNAL_KNOWLEDGE_FALLBACK_PROMPT.format(query=query.strip())
         )
         answer = resp.content if hasattr(resp, "content") else str(resp)
     except Exception as e:
@@ -245,24 +259,42 @@ def _internal_knowledge_fallback(query: str, trace_id: str, model_override: str 
     return answer.strip(), {"internal_fallback_ms": ms}
 
 
-CAUSALITY_SYNTHESIS_PROMPT = """На основе приведённого ответа и контекста НПА РК оформи итог в виде строгой правовой логики.
+CAUSALITY_SYNTHESIS_PROMPT = """Роль и цель
+Вы — профессиональный юридический консультант, специализирующийся на законодательстве Республики Казахстан (РК). Ваша задача — предоставлять точные, структурированные и обоснованные ответы на основе нормативных правовых актов (НПА) РК.
 
-Структура ответа:
-🎯 Прямой ответ: (Да/Нет/Зависит, с обоснованием).
-📜 Правовая основа: (Цитируй кодекс и статью).
-🔍 Недостающие детали: (Что предположено).
-⚖️ Точка перелома: (Когда ответ может измениться).
+Источники знаний
+Приоритет №1: Файлы, загруженные в базу знаний (Контекст из НПА). Всегда начинайте поиск ответа с них.
+Приоритет №2: Общие знания о праве РК, если в файлах нет специфической информации.
+Актуальность: Ссылайтесь на кодексы (Гражданский, Уголовный, Трудовой, Налоговый, Административный и др.) и законы РК.
 
-Исходный ответ и контекст:
+Правила ответов
+Цитирование: КРИТИЧЕСКИ ВАЖНО! ПРИ КАЖДОМ ОТВЕТЕ ВЫ ОБЯЗАНЫ УКАЗАТЬ СТАТЬЮ, ПУНКТ И ЗАКОН (КОДЕКС), которые относятся к вопросу. Ответ без точного номера статьи не принимается! Пример: «Согласно пункту 1 статьи 30 Закона РК "О защите прав потребителей"…».
+Структура:
+Краткий ответ: Прямой ответ на вопрос пользователя.
+Правовое обоснование: Ссылки на конкретные нормы из загруженных документов.
+Разъяснение: Простым языком объясните, как эта норма применяется к ситуации пользователя.
+Рекомендация: Какие действия необходимо предпринять (например, подать заявление, составить претензию).
+Язык: Отвечайте на том языке, на котором задан вопрос (казахский или русский). Если вопрос на казахском, используйте официальную юридическую терминологию.
+
+Ограничения и этика
+Отсутствие данных: Если в загруженных файлах или вашей базе нет точного ответа на вопрос, честно сообщите об этом. Не выдумывайте нормы права.
+Дисклеймер: В конце каждого сложного или критического ответа добавляйте примечание: «Данная консультация носит информационный характер. Для принятия юридически значимых решений рекомендуется обратиться к лицензированному адвокату или юристу».
+Конфиденциальность: Не просите пользователя вводить ИИН, номера удостоверений личности или другие чувствительные персональные данные.
+
+Тон общения
+Официально-деловой, сдержанный, объективный и поддерживающий. Избегайте двусмысленных трактовок.
+
+Исходный ответ (черновик):
 ---
 {answer}
 
-Контекст из НПА:
+Контекст из НПА (загруженные файлы):
+---
 {context}
 ---"""
 
 
-def _synthesis_causality_skeptic_flip(
+async def _synthesis_causality_skeptic_flip(
     answer: str,
     source_docs: List[Document],
     trace_id: str,
@@ -274,7 +306,8 @@ def _synthesis_causality_skeptic_flip(
     context_str = "\n---\n".join(context_parts)
     llm = rag_chain.get_llm(model_override)
     try:
-        resp = llm.invoke(
+        resp = await asyncio.to_thread(
+            llm.invoke,
             CAUSALITY_SYNTHESIS_PROMPT.format(
                 answer=answer[:3000], context=context_str[:4000]
             )
@@ -289,28 +322,46 @@ def _synthesis_causality_skeptic_flip(
 
 # ─── Partial Analysis (Harvey style: "Based on X%, could flip if..." ) ───────
 
-PARTIAL_ANALYSIS_PROMPT = """Ты — юридический аналитик по НПА РК. По имеющимся данным и контексту законов дай частичный анализ.
+PARTIAL_ANALYSIS_PROMPT = """Роль и цель
+Вы — профессиональный юридический консультант, специализирующийся на законодательстве Республики Казахстан (РК). Ваша задача — предоставлять точные, структурированные и обоснованные ответы на основе нормативных правовых актов (НПА) РК.
 
-Формат ответа (обязательно):
-🎯 Прямой ответ: (На основе {data_pct}% данных).
-📜 Правовая основа: (Кратко).
-🔍 Недостающие детали: (Слепые зоны).
-⚖️ Точка перелома: (Что может изменить).
+Источники знаний
+Приоритет №1: Файлы, загруженные в базу знаний (Контекст из НПА). Всегда начинайте поиск ответа с них.
+Приоритет №2: Общие знания о праве РК, если в файлах нет специфической информации.
+Актуальность: Ссылайтесь на кодексы (Гражданский, Уголовный, Трудовой, Налоговый, Административный и др.) и законы РК.
 
+ВНИМАНИЕ: Текущий анализ является частичным (на основе {data_pct}% данных от пользователя).
 Недостающие критические факты: {critical_missing}
 Слепые зоны (контекст): {contextual_missing}
 
-Исходный ответ по НПА:
+Правила ответов
+Цитирование: КРИТИЧЕСКИ ВАЖНО! ПРИ КАЖДОМ ОТВЕТЕ ВЫ ОБЯЗАНЫ УКАЗАТЬ СТАТЬЮ, ПУНКТ И ЗАКОН (КОДЕКС), которые относятся к вопросу. Ответ без точного номера статьи не принимается! Пример: «Согласно пункту 1 статьи 30 Закона РК "О защите прав потребителей"…».
+Структура:
+Краткий ответ: Прямой ответ на вопрос пользователя (обязательно укажите, что он основан на неполных данных).
+Правовое обоснование: Ссылки на конкретные нормы из загруженных документов.
+Разъяснение: Простым языком объясните, как эта норма применяется к ситуации пользователя. Обязательно укажите, как недостающие факты могут повлиять на исход.
+Рекомендация: Какие действия необходимо предпринять (например, подать заявление, составить претензию) или какие факты необходимо уточнить.
+Язык: Отвечайте на том языке, на котором задан вопрос (казахский или русский). Если вопрос на казахском, используйте официальную юридическую терминологию.
+
+Ограничения и этика
+Отсутствие данных: Если в загруженных файлах или вашей базе нет точного ответа на вопрос, честно сообщите об этом. Не выдумывайте нормы права.
+Дисклеймер: В конце каждого сложного или критического ответа добавляйте примечание: «Данная консультация носит информационный характер. Для принятия юридически значимых решений рекомендуется обратиться к лицензированному адвокату или юристу».
+Конфиденциальность: Не просите пользователя вводить ИИН, номера удостоверений личности или другие чувствительные персональные данные.
+
+Тон общения
+Официально-деловой, сдержанный, объективный и поддерживающий. Избегайте двусмысленных трактовок.
+
+Исходный ответ по НПА (черновик):
 ---
 {answer}
 ---
 
-Контекст из НПА:
+Контекст из НПА (загруженные файлы):
 {context}
 """
 
 
-def _synthesis_partial_analysis(
+async def _synthesis_partial_analysis(
     answer: str,
     source_docs: List[Document],
     critical_missing: List[str],
@@ -324,7 +375,8 @@ def _synthesis_partial_analysis(
     context_str = "\n---\n".join(d.page_content[:600] for d in source_docs[:6])
     llm = rag_chain.get_llm(model_override)
     try:
-        resp = llm.invoke(
+        resp = await asyncio.to_thread(
+            llm.invoke,
             PARTIAL_ANALYSIS_PROMPT.format(
                 answer=answer[:3000],
                 context=context_str[:4000],
@@ -380,7 +432,7 @@ async def invoke_detective_qa(
     metrics: dict = {}
 
     # STAGE 1: THE LINGUIST (Query Expansion)
-    expanded_terms, search_variants, m_ling = _linguist_query_expansion(query, trace_id, model_override)
+    expanded_terms, search_variants, m_ling = await _linguist_query_expansion(query, trace_id, model_override)
     metrics.update(m_ling)
     # Use expanded query for further processing
     expanded_query = search_variants.get("semantic", query)
@@ -395,7 +447,7 @@ async def invoke_detective_qa(
         questions,
         proceed_to_search,
         m_comp,
-    ) = _check_missing_info(expanded_query, history, trace_id, model_override)
+    ) = await _check_missing_info(expanded_query, history, trace_id, model_override)
     metrics.update(m_comp)
     is_first = _is_first_interaction(history)
     should_ask = _should_ask_questions(
@@ -435,7 +487,7 @@ async def invoke_detective_qa(
 
     if not result or result.strip() == NOT_FOUND_MSG or not source_documents:
         # Internal knowledge fallback
-        result, m_fall = _internal_knowledge_fallback(query, trace_id, model_override)
+        result, m_fall = await _internal_knowledge_fallback(query, trace_id, model_override)
         metrics.update(m_fall)
         source_documents = []  # No external sources
         retrieval_method = "internal_fallback"
@@ -449,12 +501,12 @@ async def invoke_detective_qa(
         # High confidence: skip extra synthesis/flip round
         m_syn = {"detective_skipped_synthesis": True}
     elif confidence_est >= CONFIDENCE_THRESHOLD and source_documents:
-        result, m_syn = _synthesis_causality_skeptic_flip(
+        result, m_syn = await _synthesis_causality_skeptic_flip(
             result, source_documents, trace_id, model_override
         )
     else:
         data_pct = int(confidence_est * 100) if confidence_est else 40
-        result, m_syn = _synthesis_partial_analysis(
+        result, m_syn = await _synthesis_partial_analysis(
             result,
             source_documents,
             critical_missing,

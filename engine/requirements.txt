@@ -28,10 +28,14 @@ sentence-transformers>=2.2.0
 # Гибридный поиск: BM25
 rank_bm25>=0.2.2
 
-# Reranker для топ-релевантных чанков (transformers<5 required: is_torch_fx_available removed in v5)
-transformers>=4.44,<5.0
+# Reranker для топ-релевантных чанков.
+# Multilingual reranker (BAAI/bge-reranker-v2-m3) loads via sentence-transformers CrossEncoder,
+# which is matched to transformers 5.x. Keep transformers and sentence-transformers majors aligned.
+transformers>=4.44
 flashrank>=0.2.0
-FlagEmbedding>=1.2.0
+# FlagEmbedding is an optional faster backend for BGE rerankers. It is incompatible with
+# transformers>=5 (uses is_torch_fx_available, removed in v5); install only on a transformers<5 stack.
+# FlagEmbedding>=1.2.0
 peft>=0.10.0
 datasets>=2.19.0
 

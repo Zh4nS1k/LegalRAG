@@ -1,6 +1,7 @@
 """Crash-safe checkpoint manager for the Legal RAG pipeline."""
 from pathlib import Path
 from typing import List
+import json
 import excel_io
 from models.schemas import TestRow
 from logger import pipeline_logger
@@ -48,6 +49,12 @@ class CheckpointManager:
         tmp_path = path.with_suffix(".tmp.xlsx")
         excel_io.write_results(self.rows, output_path=tmp_path)
         tmp_path.replace(path)  # atomic rename — no corrupt file on crash
+
+        json_path = path.with_suffix(".json")
+        tmp_json = json_path.with_suffix(".tmp.json")
+        with open(tmp_json, "w", encoding="utf-8") as f:
+            json.dump([r.model_dump() for r in self.rows], f, ensure_ascii=False, indent=2)
+        tmp_json.replace(json_path)
 
     @staticmethod
     def find_latest_checkpoint(output_dir: str) -> "Path | None":

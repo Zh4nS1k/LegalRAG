@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python *)"
+      "Bash(python *)",
+      "Read(//home/zhanserik/Desktop/LegalRAG/engine/**)",
+      "Read(//home/zhanserik/Desktop/LegalRAG/**)",
+      "Bash(wc -l gold_citations*benchmark.py citations.py retrieval_quality_benchmark.py)",
+      "Bash(grep -lniE \"def main|__main__\" gold_citations*.py retrieval_quality_benchmark.py)"
     ]
   }
 }

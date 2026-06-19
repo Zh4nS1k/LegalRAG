@@ -3,6 +3,8 @@ import os
 import sys
 import signal
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from tqdm import tqdm
 from logger import pipeline_logger
@@ -133,16 +135,14 @@ class TestPipeline:
 
                 prev_model = None
 
-                for i, model_name in enumerate(self.models_to_test):
-                    # ── Inter-request delay ─────────────────────────────
-                    if prev_model:
-                        _inter_request_delay(prev_model, model_name)
-                    prev_model = model_name
-
+                
+                def process_model(args):
+                    i, model_name = args
                     with StepTimer("llm_call") as t_llm:
                         try:
                             result = self.llm_client.call(
-                                model_name, question.text, q_id=question.id
+                                model_name, question.text, q_id=question.id,
+                                history=[{"role": "assistant", "content": "Перейдите к поиску и частичному анализу."}]
                             )
                             # ---- AUTO-REPLY LOGIC ----
                             if "нужны уточнения:" in result.answer or "Ответьте, пожалуйста," in result.answer:
@@ -160,13 +160,13 @@ class TestPipeline:
                                     q_id=question.id,
                                     history=history
                                 )
-                                # Update result with the final answer
                                 result.answer = second_result.answer
                                 result.answer_raw = second_result.answer_raw
                                 result.latency_ms += second_result.latency_ms
                                 result.retrieve_ms += second_result.retrieve_ms
                                 result.embed_ms += second_result.embed_ms
-                                # --------------------------
+                                result.chunks_used = second_result.chunks_used
+                                result.source_documents = second_result.source_documents
                         except KeyboardInterrupt:
                             raise
                         except Exception as e:
@@ -174,12 +174,9 @@ class TestPipeline:
                             result = LLMResult(model=model_name, answer="", error=str(e),
                                                latency_ms=0, chunks_used=0)
 
-                    total_llm_ms += t_llm.elapsed_ms
-
                     result.llm_ms = t_llm.elapsed_ms
                     result.total_ms = result.latency_ms
 
-                    # Sanitize
                     def sanitize_answer(ans: str) -> str:
                         NO_ANSWER = "Контекстте жауап жоқ."
                         if ans.strip().startswith(NO_ANSWER):
@@ -203,30 +200,46 @@ class TestPipeline:
                     result.prompt_tokens = prompt_toks
                     result.completion_tokens = comp_toks
 
-                    # Auto-scoring + scorer RPM protection
-                    score_val, reason = self.answer_scorer.score(
-                        question.text, question.text, result.answer, question.id
-                    )
+                    with scorer_lock:
+                        score_val, reason = self.answer_scorer.score(
+                            question.text, question.text, result.answer, question.id
+                        )
+                        time.sleep(0.5)
+
                     result.quality_score = score_val
                     result.quality_reason = reason
-                    time.sleep(0.5)  # scorer shares Groq key — count against RPM
-
                     result.tokens_per_sec = comp_toks / (result.llm_ms / 1000.0) if result.llm_ms > 0 else 0.0
-                    self.token_counter.record(model_name, prompt_toks, comp_toks)
+                    
+                    with counter_lock:
+                        self.token_counter.record(model_name, prompt_toks, comp_toks)
 
-                    model_results.append(TestRow(question=question, result=result))
+                    row = TestRow(question=question, result=result)
+                    
+                    with print_lock:
+                        pipeline_logger.log_model_result(i + 1, len(self.models_to_test), model_name, result)
+                        if not result.error:
+                            pipeline_logger.log_request(question.id, model_name, "", question.text, prompt_toks)
+                            pipeline_logger.log_response(question.id, model_name, result.answer, result.llm_ms)
+                            pipeline_logger.log_tokens(question.id, model_name, prompt_toks, comp_toks, total_toks, result.llm_ms)
+                            
+                    return row, t_llm.elapsed_ms
 
-                    # ✅ Print immediately
-                    pipeline_logger.log_model_result(i + 1, len(self.models_to_test), model_name, result)
-
-                    # Verbose logs
-                    if not result.error:
-                        pipeline_logger.log_request(question.id, model_name, "", question.text, prompt_toks)
-                        pipeline_logger.log_response(question.id, model_name, result.answer, result.llm_ms)
-                        pipeline_logger.log_tokens(question.id, model_name, prompt_toks, comp_toks, total_toks, result.llm_ms)
+                scorer_lock = threading.Lock()
+                counter_lock = threading.Lock()
+                print_lock = threading.Lock()
+                
+                with ThreadPoolExecutor(max_workers=len(self.models_to_test)) as executor:
+                    futures = [executor.submit(process_model, (i, m)) for i, m in enumerate(self.models_to_test)]
+                    for future in as_completed(futures):
+                        try:
+                            row, t_ms = future.result()
+                            model_results.append(row)
+                            total_llm_ms += t_ms
+                        except Exception as e:
+                            pipeline_logger.log_error("pipeline", "worker", str(e))
 
                 # ── Rank models for this question ───────────────────────
-                model_results_sorted = sorted(model_results, key=lambda r: r.result.quality_score, reverse=True)
+                model_results_sorted = sorted(model_results, key=lambda r: r.result.quality_score if r.result.quality_score is not None else -1, reverse=True)
                 for rank, row in enumerate(model_results_sorted, 1):
                     row.result.quality_rank = rank
 

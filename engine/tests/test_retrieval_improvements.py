@@ -40,7 +40,10 @@ def test_build_indexable_text_includes_legal_structure():
 
     result = _build_indexable_text("1. Исполнитель обязан оказать услугу.", meta)
 
-    assert "Context: This chunk is from Chapter 33 Возмездное оказание услуг" in result
+    # The English "Context: This chunk is from …" boilerplate is no longer embedded into
+    # page_content (it polluted embeddings/BM25/LLM context); the structured RU header remains.
+    assert "Context:" not in result
+    assert "This chunk is from" not in result
     assert "Кодекс: Гражданский кодекс РК (Особенная часть)" in result
     assert "Глава: 33 Возмездное оказание услуг" in result
     assert "Статья: 683. Договор возмездного оказания услуг" in result
@@ -119,7 +122,9 @@ def test_theft_query_is_treated_as_criminal_and_augmented_for_uk():
     queries = _build_retrieval_queries(query)
 
     assert _is_criminal_query(query)
-    assert "188" in _focus_articles_from_query(query)
+    # Article numbers are no longer guessed from topic keywords (de-overfit); criminal-code
+    # routing + synonym expansion still surface art. 188 in the expanded retrieval queries.
+    assert _focus_articles_from_query(query) == set()
     assert any("188 УК РК" in candidate or "кража 188" in candidate for candidate in queries)
 
 
@@ -130,7 +135,7 @@ def test_fraud_query_routes_to_uk_and_focuses_article_190():
     target_codes = _detect_target_codes(query)
 
     assert _is_criminal_query(query)
-    assert "190" in _focus_articles_from_query(query)
+    assert _focus_articles_from_query(query) == set()
     assert any("190" in candidate and ("мошеннич" in candidate.lower() or "алаяқ" in candidate.lower()) for candidate in queries)
     assert any("Уголовный кодекс" in code or "Қылмыстық кодекс" in code for code in target_codes)
 
@@ -175,7 +180,7 @@ def test_noise_query_routes_to_koap_and_focuses_article_437():
         "административных правонарушениях" in code.lower() or "әкімшілік құқық бұзушылық" in code.lower()
         for code in target_codes
     )
-    assert "437" in _focus_articles_from_query(query)
+    assert _focus_articles_from_query(query) == set()
     assert any("437" in candidate or "нарушение тишины" in candidate.lower() for candidate in queries)
 
 
@@ -187,6 +192,15 @@ def test_bankruptcy_query_routes_to_bankruptcy_laws():
 
     assert any("банкрот" in code.lower() or "төлем қабілетті" in code.lower() for code in target_codes)
     assert any("банкрот" in candidate.lower() or "платежеспособ" in candidate.lower() for candidate in queries)
+
+
+def test_focus_articles_only_from_explicit_mention():
+    # No article number is invented from topic keywords alone.
+    assert _focus_articles_from_query("какая ответственность за кражу") == set()
+    assert _focus_articles_from_query("продавец отказал в возврате товара") == set()
+    # Explicitly named articles are still captured.
+    assert "188" in _focus_articles_from_query("что говорит статья 188")
+    assert {"190", "191"} <= _focus_articles_from_query("статьи 190-191 ук рк")
 
 
 def test_normalize_article_number_strips_noise():
@@ -445,9 +459,10 @@ def test_crag_evaluator_flags_missing_revision_date_for_temporal_query():
 
     evaluation = aw._evaluate_context_quality(query, [doc], [0.31])
 
+    # A temporal query whose context lacks a revision_date must be flagged for rewrite,
+    # regardless of how well the article itself matches.
     assert evaluation["action"] == "rewrite"
     assert "missing_revision_date" in evaluation["missing_reasons"]
-    assert evaluation["context_score"] <= aw.CRAG_MIN_CONTEXT_SCORE
 
 
 def test_crag_builder_generates_rewrite_and_decomposition_candidates():

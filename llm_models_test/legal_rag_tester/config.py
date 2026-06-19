@@ -2,8 +2,8 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (force override to pick up new keys)
+load_dotenv(override=True)
 
 class Settings:
     """Application settings loaded from environment variables."""

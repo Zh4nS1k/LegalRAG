@@ -20,6 +20,31 @@ def test_response_cites_context_detects_article_mention():
     assert response_cites_context(response, sources) is True
 
 
+def test_response_cites_context_detects_kazakh_article_order():
+    sources = [_doc("188", "Қылмыстық кодекс")]
+    response = "188-бап бойынша бөтен мүлікті жасырын ұрлау жаза тартады."
+
+    assert response_cites_context(response, sources) is True
+
+
+def test_response_cites_context_rejects_ungrounded_article():
+    # The answer cites a well-formed article that is NOT in the retrieved context.
+    sources = [_doc("190", "Уголовный кодекс РК")]
+    response = "Ответственность наступает по статье 999 (Статья 999 УК РК)."
+
+    assert response_cites_context(response, sources) is False
+
+
+def test_ensure_answer_citations_appends_when_citation_is_ungrounded():
+    sources = [_doc("190", "Уголовный кодекс РК")]
+    response = "Это мошенничество по статье 999."
+
+    enriched = ensure_answer_citations(response, sources, question="мошенничество")
+
+    assert "Источники:" in enriched
+    assert "ст. 190" in enriched
+
+
 def test_ensure_answer_citations_appends_sources_when_missing():
     sources = [_doc("10", "Закон о государственных закупках РК")]
     response = "Для субсидий нужно проверить условия предоставления."

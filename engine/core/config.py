@@ -195,8 +195,10 @@ else:
     HF_CACHE_DIR = _raw_cache if _raw_cache else _default_cache
 
 # Reranker model (used by agentic workflow and optional rag_chain reranker)
-RERANKER_MODEL = os.environ.get("LEGAL_RAG_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
-RERANKER_FALLBACK_MODEL = os.environ.get("LEGAL_RAG_RERANKER_FALLBACK", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+# Default is a multilingual reranker: the corpus is Russian/Kazakh legal text, so an
+# English-only cross-encoder (e.g. ms-marco-MiniLM) scores Cyrillic near-randomly.
+RERANKER_MODEL = os.environ.get("LEGAL_RAG_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+RERANKER_FALLBACK_MODEL = os.environ.get("LEGAL_RAG_RERANKER_FALLBACK", "BAAI/bge-reranker-base")
 USE_RERANKER = os.environ.get("LEGAL_RAG_USE_RERANKER", "1") == "1"
 
 
@@ -237,7 +239,7 @@ def build_openrouter_default_headers() -> dict[str, str]:
 # Backend/model can still be overridden via env.
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 LLM_BACKEND = "openrouter"
-LLM_MODEL = os.environ.get("LEGAL_RAG_LLM_MODEL", "deepseek/deepseek-v4-flash")
+LLM_MODEL = os.environ.get("LEGAL_RAG_LLM_MODEL", "meta-llama/llama-3.1-8b-instruct")
 LLM_TEMPERATURE = 0.0
 LLM_MAX_TOKENS = int(os.environ.get("LEGAL_RAG_LLM_MAX_TOKENS", "1024"))
 HF_LLM_BASE_MODEL = os.environ.get(
@@ -314,12 +316,17 @@ SUMMARY_EXPANSION_MAX_CODES = int(
 )
 # Reranker
 USE_RERANKER = os.environ.get("LEGAL_RAG_USE_RERANKER", "1") == "1"
-RERANKER_MANDATORY = os.environ.get("LEGAL_RAG_RERANKER_MANDATORY", "1") == "1"
+# RERANKER_MANDATORY: if 1, a reranker load failure raises and breaks the retriever.
+# Default 0 = graceful degradation (answer without reranking) — reliability over a hard crash.
+# USE_RERANKER is authoritative for whether reranking is attempted at all.
+RERANKER_MANDATORY = os.environ.get("LEGAL_RAG_RERANKER_MANDATORY", "0") == "1"
 RERANKER_FALLBACK_MODEL = os.environ.get(
     "LEGAL_RAG_RERANKER_FALLBACK_MODEL", "BAAI/bge-reranker-base"
 )
 # flag_embedding | jina | cross_encoder | auto (auto: jina if "jina" in RERANKER_MODEL else flag_embedding)
 RERANKER_BACKEND = os.environ.get("LEGAL_RAG_RERANKER_BACKEND", "auto").strip().lower()
+# Force CPU by default for reranker to avoid GPU OOM on small VRAM
+RERANKER_DEVICE = os.environ.get("LEGAL_RAG_RERANKER_DEVICE", "cpu").strip().lower()
 # Skip cross-encoder/Jina when hybrid top docs already match detected code_ru + lexical overlap
 RERANK_DYNAMIC_SKIP = os.environ.get("LEGAL_RAG_RERANK_DYNAMIC_SKIP", "0") == "1"
 RERANK_SKIP_LEXICAL_THRESHOLD = float(

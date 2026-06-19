@@ -65,7 +65,10 @@ class AnswerScorer:
                 max_tokens=60,
                 timeout=15,
             )
-            raw = response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            if content is None:
+                return None, "Scorer returned None content"
+            raw = content.strip()
 
             # Parse "8|Correctly cites Article 35..."
             parts = raw.split("|", 1)

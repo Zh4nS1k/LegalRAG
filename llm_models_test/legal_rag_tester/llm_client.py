@@ -48,6 +48,7 @@ class LLMClient:
                 chunks_used=len(
                     data.get("source_documents", [])
                 ),
+                source_documents=data.get("source_documents", []),
             )
 
         except requests.exceptions.ConnectionError:
